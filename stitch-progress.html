@@ -79,7 +79,28 @@
           <div class="panel-heading">
             <div>
               <h3 id="stitch-title">Broder</h3>
-              <p>Cette etape sera construite ensuite.</p>
+              <p>Selectionne une couleur, puis appuie sur Espace pour avancer dans son chemin.</p>
+            </div>
+          </div>
+
+          <div id="stitchStatus" class="coverage-status invalid">Charge un fichier pour commencer.</div>
+
+          <div class="pattern-viewer">
+            <div class="pattern-canvas-wrap">
+              <div id="stitchColorLabel" class="selected-color-label">Aucune couleur selectionnee</div>
+              <canvas id="stitchCanvas" width="1" height="1" aria-label="Grille de progression"></canvas>
+            </div>
+            <div>
+              <p class="field-label">Couleurs</p>
+              <div id="stitchColorLegend" class="path-color-legend"></div>
+              <div class="path-builder-panel">
+                <div id="stitchColorStatus" class="coverage-status invalid">Selectionne une couleur.</div>
+                <div class="actions split-actions">
+                  <button id="undoStitchButton" class="secondary-button" type="button">Reculer</button>
+                  <button id="resetColorProgressButton" class="secondary-button" type="button">Remettre a zero</button>
+                </div>
+                <button id="nextStitchButton" class="primary-button" type="button">Point suivant</button>
+              </div>
             </div>
           </div>
         </section>
