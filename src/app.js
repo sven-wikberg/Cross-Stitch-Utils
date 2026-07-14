@@ -84,6 +84,7 @@ const assignmentReview = document.querySelector("#assignmentReview");
 const assignmentPositionText = document.querySelector("#assignmentPositionText");
 const assignmentGroupName = document.querySelector("#assignmentGroupName");
 const assignmentCellCountText = document.querySelector("#assignmentCellCountText");
+const assignmentCurrentState = document.querySelector("#assignmentCurrentState");
 const assignmentPreviewWrap = document.querySelector("#assignmentPreviewWrap");
 const assignmentChoices = document.querySelector("#assignmentChoices");
 const emptyAssignmentsMessage = document.querySelector("#emptyAssignmentsMessage");
@@ -502,6 +503,7 @@ function renderAssignments() {
     assignmentPositionText.textContent = "Groupe 0 / 0";
     assignmentGroupName.textContent = "Groupe";
     assignmentCellCountText.textContent = "0 cellule";
+    updateAssignmentCurrentState(null);
     renderAssignmentsStatus();
     return;
   }
@@ -512,6 +514,7 @@ function renderAssignments() {
   assignmentPositionText.textContent = `Groupe ${assignmentGroupIndex + 1} / ${groups.length}`;
   assignmentGroupName.textContent = group.id;
   assignmentCellCountText.textContent = `${group.cellCount} ${group.cellCount > 1 ? "cellules" : "cellule"}`;
+  updateAssignmentCurrentState(group);
   assignmentPreviewWrap.innerHTML = "";
 
   if (group.previewDataUrl) {
@@ -544,6 +547,25 @@ function renderAssignments() {
   nextAssignmentButton.disabled = assignmentGroupIndex === groups.length - 1;
 
   renderAssignmentsStatus();
+}
+
+function updateAssignmentCurrentState(group) {
+  assignmentCurrentState.classList.remove("ready", "empty", "unready");
+
+  if (!group || !isGroupAssignmentReady(group)) {
+    assignmentCurrentState.textContent = "Non classe";
+    assignmentCurrentState.classList.add("unready");
+    return;
+  }
+
+  if (group.isEmpty) {
+    assignmentCurrentState.textContent = "Classe vide";
+    assignmentCurrentState.classList.add("empty");
+    return;
+  }
+
+  assignmentCurrentState.textContent = `Classe DMC ${group.dmc}`;
+  assignmentCurrentState.classList.add("ready");
 }
 
 function renderAssignmentsStatus() {

@@ -345,6 +345,29 @@ select:focus {
   font-size: 1.45rem;
 }
 
+.assignment-state {
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.assignment-state.unready {
+  color: #8b2633;
+  background: rgba(180, 75, 87, 0.12);
+}
+
+.assignment-state.ready {
+  color: var(--accent-strong);
+  background: rgba(36, 120, 109, 0.14);
+}
+
+.assignment-state.empty {
+  color: #4e5559;
+  background: #dfe6e3;
+}
+
 .assignment-preview-wrap {
   display: grid;
   place-items: center;
