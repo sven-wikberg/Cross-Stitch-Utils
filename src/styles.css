@@ -596,6 +596,17 @@ select:focus {
   width: 100%;
 }
 
+.path-algorithm-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.path-algorithm-panel .secondary-button {
+  width: 100%;
+}
+
 .embedded-save-panel {
   display: grid;
   gap: 8px;
