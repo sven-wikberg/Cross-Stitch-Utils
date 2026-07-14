@@ -246,6 +246,8 @@ function drawStitchProgress(context, cellSize) {
   context.lineJoin = "round";
   context.lineCap = "round";
 
+  drawOtherStitchedPoints(context, cellSize);
+
   if (stitchedPoints.length > 1) {
     context.beginPath();
     stitchedPoints.forEach((point, index) => {
@@ -269,6 +271,19 @@ function drawStitchProgress(context, cellSize) {
   }
 
   context.restore();
+}
+
+function drawOtherStitchedPoints(context, cellSize) {
+  loadedPaths.paths.forEach((path) => {
+    if (path.dmc === selectedDmc) {
+      return;
+    }
+
+    const stitchedPoints = path.points.slice(0, stitchedCountForDmc(path.dmc));
+    stitchedPoints.forEach((point) => {
+      drawCircle(context, point, cellSize, "#222426", "#222426");
+    });
+  });
 }
 
 function drawCircle(context, point, cellSize, fill, stroke) {
