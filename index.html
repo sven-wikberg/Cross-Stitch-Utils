@@ -15,9 +15,13 @@
         </div>
 
         <nav class="step-list" aria-label="Etapes d'import">
-          <button class="step-item active" type="button">
+          <button class="step-item active" type="button" data-step="project">
             <span class="step-number">1</span>
             <span>Nom du projet</span>
+          </button>
+          <button class="step-item" type="button" data-step="colors">
+            <span class="step-number">2</span>
+            <span>Couleurs DMC</span>
           </button>
         </nav>
       </aside>
@@ -25,16 +29,16 @@
       <section class="workspace" aria-labelledby="step-title">
         <div class="topbar">
           <div>
-            <p class="eyebrow">Etape 1</p>
+            <p id="stepEyebrow" class="eyebrow">Etape 1</p>
             <h2 id="step-title">Nom du projet</h2>
           </div>
           <button id="resetButton" class="icon-button" type="button" title="Reinitialiser">
-            <span aria-hidden="true">↺</span>
+            <span aria-hidden="true">Reset</span>
             <span class="sr-only">Reinitialiser</span>
           </button>
         </div>
 
-        <form id="projectForm" class="tool-panel">
+        <form id="projectForm" class="tool-panel" data-panel="project">
           <label for="projectName">Nom</label>
           <input id="projectName" name="projectName" type="text" autocomplete="off" required>
 
@@ -42,6 +46,53 @@
             <button id="saveButton" class="primary-button" type="submit">Enregistrer</button>
           </div>
         </form>
+
+        <section id="colorsPanel" class="tool-panel hidden" data-panel="colors" aria-labelledby="colors-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="colors-title">Couleurs du pattern</h3>
+              <p>Ajoute les couleurs telles qu'elles apparaissent dans la legende du PDF.</p>
+            </div>
+          </div>
+
+          <form id="colorForm" class="color-form">
+            <div class="form-grid">
+              <label>
+                Symbole
+                <input id="colorSymbol" name="colorSymbol" type="text" autocomplete="off" maxlength="4" required>
+              </label>
+
+              <label>
+                DMC
+                <input id="dmcCode" name="dmcCode" type="text" inputmode="numeric" autocomplete="off" required>
+              </label>
+
+              <label>
+                Nom optionnel
+                <input id="dmcName" name="dmcName" type="text" autocomplete="off">
+              </label>
+            </div>
+
+            <div class="actions">
+              <button class="primary-button" type="submit">Ajouter</button>
+            </div>
+          </form>
+
+          <div class="color-list-wrap">
+            <table class="color-table">
+              <thead>
+                <tr>
+                  <th>Symbole</th>
+                  <th>DMC</th>
+                  <th>Nom</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="colorsTableBody"></tbody>
+            </table>
+            <p id="emptyColorsMessage" class="empty-message">Aucune couleur ajoutee.</p>
+          </div>
+        </section>
 
         <section class="json-panel" aria-labelledby="json-title">
           <div class="panel-title-row">

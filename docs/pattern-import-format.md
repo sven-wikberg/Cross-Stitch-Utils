@@ -43,8 +43,23 @@ Exemple :
 ## Etapes prevues
 
 - Nom du projet.
+- Liste des couleurs DMC.
 - Informations sur le PDF source.
 - Dimensions de la grille.
-- Liste des couleurs.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
+
+## Etape 2 : couleurs DMC
+
+L'utilisateur recopie la legende du PDF dans une liste de couleurs. Pour chaque couleur, on garde au minimum le symbole vu dans le pattern et le numero DMC.
+
+```json
+{
+  "id": "dmc-310",
+  "symbol": "X",
+  "dmc": "310",
+  "name": "Black"
+}
+```
+
+Pour l'instant, le nom est optionnel. Une prochaine evolution pourra utiliser une base locale de couleurs DMC pour remplir automatiquement le nom et afficher un apercu approximatif de la couleur.
