@@ -1767,11 +1767,12 @@ function loadImage(dataUrl) {
 
 function sampleCellImage(image, sx, sy, sw, sh) {
   const size = 8;
+  const sampleArea = insetSampleArea(sx, sy, sw, sh);
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(image, sx, sy, sw, sh, 0, 0, size, size);
+  context.drawImage(image, sampleArea.x, sampleArea.y, sampleArea.width, sampleArea.height, 0, 0, size, size);
   const data = context.getImageData(0, 0, size, size).data;
   const grays = [];
   let red = 0;
@@ -1804,7 +1805,18 @@ function sampleCellImage(image, sx, sy, sw, sh) {
   return {
     signature,
     mean,
-    previewDataUrl: createCellPreview(image, sx, sy, sw, sh)
+    previewDataUrl: createCellPreview(image, sampleArea.x, sampleArea.y, sampleArea.width, sampleArea.height)
+  };
+}
+
+function insetSampleArea(x, y, width, height) {
+  const insetX = width * 0.05;
+  const insetY = height * 0.05;
+  return {
+    x: x + insetX,
+    y: y + insetY,
+    width: Math.max(width - insetX * 2, 1),
+    height: Math.max(height - insetY * 2, 1)
   };
 }
 
