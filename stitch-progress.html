@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cross Stitch Utils - Suivre la broderie</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <a class="eyebrow app-home-link" href="index.html">Cross Stitch Utils</a>
+          <h1>Suivre la broderie</h1>
+        </div>
+
+        <nav class="step-list" aria-label="Etapes de suivi">
+          <button class="step-item active" type="button" data-step="load">
+            <span class="step-number">1</span>
+            <span>Charger les chemins</span>
+          </button>
+          <button class="step-item locked" type="button" data-step="stitch" disabled>
+            <span class="step-number">2</span>
+            <span>Broder</span>
+          </button>
+          <button class="step-item locked" type="button" data-step="export" disabled>
+            <span class="step-number">3</span>
+            <span>Sauvegarde</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workspace" aria-labelledby="progress-step-title">
+        <div class="topbar">
+          <div>
+            <p id="progressStepEyebrow" class="eyebrow">Etape 1</p>
+            <h2 id="progress-step-title">Charger les chemins</h2>
+          </div>
+          <button id="resetProgressToolButton" class="icon-button" type="button" title="Reinitialiser">
+            <span aria-hidden="true">Reset</span>
+            <span class="sr-only">Reinitialiser</span>
+          </button>
+        </div>
+
+        <section id="progressLoadPanel" class="tool-panel" data-panel="load" aria-labelledby="progress-load-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="progress-load-title">Fichier JSON avec chemins</h3>
+              <p>Charge le fichier produit par l'outil 2. L'outil verifie les chemins avant de continuer.</p>
+            </div>
+          </div>
+
+          <label for="pathsJsonFile">
+            JSON des chemins
+            <input id="pathsJsonFile" type="file" accept="application/json,.json">
+          </label>
+
+          <div id="progressLoadStatus" class="coverage-status invalid">Aucun fichier charge.</div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Projet</span>
+              <strong id="progressProjectText">-</strong>
+            </div>
+            <div>
+              <span class="stat-label">Dimensions</span>
+              <strong id="progressDimensionsText">0 x 0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Points</span>
+              <strong id="progressPointsText">0</strong>
+            </div>
+          </div>
+
+          <p id="progressLoadError" class="form-error" hidden>Le fichier choisi n'a pas le format attendu.</p>
+        </section>
+
+        <section id="stitchPanel" class="tool-panel hidden" data-panel="stitch" aria-labelledby="stitch-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="stitch-title">Broder</h3>
+              <p>Cette etape sera construite ensuite.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="progressExportPanel" class="tool-panel hidden" data-panel="export" aria-labelledby="progress-export-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="progress-export-title">Sauvegarde</h3>
+              <p>Cette etape sera construite ensuite.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="json-panel" aria-labelledby="progress-json-title">
+          <div class="panel-title-row">
+            <h3 id="progress-json-title">JSON charge</h3>
+            <span id="progressSaveStatus" class="status-pill">Brouillon</span>
+          </div>
+          <pre id="progressJsonPreview"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="src/stitch-progress.js"></script>
+  </body>
+</html>
