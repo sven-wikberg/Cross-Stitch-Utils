@@ -240,6 +240,17 @@ function saveProgress() {
   localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress));
 }
 
+function trySaveDraft() {
+  try {
+    savePattern();
+    saveProgress();
+    return true;
+  } catch {
+    saveStatus.textContent = "Sauvegarde impossible";
+    return false;
+  }
+}
+
 function render() {
   if (!canOpenStep(activeStep)) {
     activeStep = firstOpenStep();
@@ -1328,12 +1339,12 @@ function classifyCurrentGroup({ dmc, isEmpty }) {
   group.symbol = null;
   progress.assignments = false;
   assignmentsError.hidden = true;
-  savePattern();
-  saveProgress();
   advanceToNextAssignment();
   renderAssignments();
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
-  showSavedStatus();
+  if (trySaveDraft()) {
+    showSavedStatus();
+  }
 }
 
 function advanceToNextAssignment() {
