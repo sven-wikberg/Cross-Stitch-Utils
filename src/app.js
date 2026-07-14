@@ -1,5 +1,8 @@
 const STORAGE_KEY = "cross-stitch-pattern-draft";
 const PROGRESS_STORAGE_KEY = "cross-stitch-import-progress";
+const IMAGE_DB_NAME = "cross-stitch-utils";
+const IMAGE_DB_VERSION = 1;
+const IMAGE_STORE_NAME = "pattern-part-images";
 
 const defaultPattern = {
   schemaVersion: 1,
@@ -117,6 +120,7 @@ let progress = loadProgress(pattern);
 let activeStep = "project";
 let pastedPartImage = null;
 let assignmentGroupIndex = 0;
+migrateInlinePartImagesToStore();
 
 const stepLabels = {
   project: {
@@ -247,7 +251,7 @@ function colorFromReference(referenceColor) {
 }
 
 function savePattern() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pattern, null, 2));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patternForLocalStorage(pattern), null, 2));
 }
 
 function saveProgress() {
@@ -265,6 +269,48 @@ function trySaveDraft() {
   }
 }
 
+function patternForLocalStorage(patternToStore) {
+  return {
+    ...patternToStore,
+    parts: (patternToStore.parts || []).map((part) => {
+      if (part.imageStored) {
+        const { imageDataUrl, ...storedPart } = part;
+        return storedPart;
+      }
+
+      return part;
+    }),
+    grid: {
+      ...patternToStore.grid,
+      cells: (patternToStore.grid.cells || []).map((cell) => {
+        const { samplePreviewDataUrl, ...storedCell } = cell;
+        return storedCell;
+      })
+    },
+    symbolGroups: (patternToStore.symbolGroups || []).map((group) => {
+      const { previewDataUrl, ...storedGroup } = group;
+      return storedGroup;
+    })
+  };
+}
+
+async function migrateInlinePartImagesToStore() {
+  const partsToMigrate = pattern.parts.filter((part) => part.imageDataUrl && !part.imageStored);
+  if (partsToMigrate.length === 0) {
+    return;
+  }
+
+  try {
+    await Promise.all(partsToMigrate.map((part) => writePartImage(part.id, part.imageDataUrl)));
+    partsToMigrate.forEach((part) => {
+      part.imageStored = true;
+    });
+    savePattern();
+  } catch {
+    saveStatus.textContent = "Migration images impossible";
+  }
+}
+
 function render() {
   if (!canOpenStep(activeStep)) {
     activeStep = firstOpenStep();
@@ -275,7 +321,7 @@ function render() {
   gridHeightInput.value = pattern.grid.height || "";
   partsExpectedInput.value = pattern.partsExpected || "";
   groupingToleranceSelect.value = String(pattern.groupingTolerance);
-  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
+  jsonPreview.textContent = JSON.stringify(patternForLocalStorage(pattern), null, 2);
   renderStep();
   renderColors();
   renderParts();
@@ -836,6 +882,75 @@ function fileToDataUrl(file) {
   });
 }
 
+function openImageDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IMAGE_DB_NAME, IMAGE_DB_VERSION);
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(IMAGE_STORE_NAME)) {
+        database.createObjectStore(IMAGE_STORE_NAME);
+      }
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function writePartImage(partId, dataUrl) {
+  const database = await openImageDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
+    transaction.objectStore(IMAGE_STORE_NAME).put(dataUrl, partId);
+    transaction.addEventListener("complete", () => {
+      database.close();
+      resolve();
+    });
+    transaction.addEventListener("error", () => {
+      database.close();
+      reject(transaction.error);
+    });
+  });
+}
+
+async function readPartImage(part) {
+  if (part.imageDataUrl) {
+    return part.imageDataUrl;
+  }
+
+  const database = await openImageDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(IMAGE_STORE_NAME, "readonly");
+    const request = transaction.objectStore(IMAGE_STORE_NAME).get(part.id);
+    request.addEventListener("success", () => resolve(request.result || ""));
+    request.addEventListener("error", () => reject(request.error));
+    transaction.addEventListener("complete", () => database.close());
+    transaction.addEventListener("error", () => database.close());
+  });
+}
+
+async function deletePartImage(partId) {
+  const database = await openImageDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
+    transaction.objectStore(IMAGE_STORE_NAME).delete(partId);
+    transaction.addEventListener("complete", () => {
+      database.close();
+      resolve();
+    });
+    transaction.addEventListener("error", () => {
+      database.close();
+      reject(transaction.error);
+    });
+  });
+}
+
+function clearPartImages() {
+  const request = indexedDB.deleteDatabase(IMAGE_DB_NAME);
+  request.addEventListener("error", () => {
+    saveStatus.textContent = "Images locales non supprimees";
+  });
+}
+
 async function readImageFromClipboardEvent(event) {
   const items = [...event.clipboardData?.items || []];
   const imageItem = items.find((item) => item.type.startsWith("image/"));
@@ -994,7 +1109,7 @@ backToColorsButton.addEventListener("click", () => {
   goToStep("colors");
 });
 
-dimensionsForm.addEventListener("submit", (event) => {
+dimensionsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const width = Number(gridWidthInput.value);
@@ -1010,6 +1125,7 @@ dimensionsForm.addEventListener("submit", (event) => {
   pattern.grid.height = height;
 
   if (dimensionsChanged) {
+    await Promise.all(pattern.parts.map((part) => deletePartImage(part.id)));
     pattern.grid.cells = [];
     pattern.parts = [];
     pattern.partsExpected = 0;
@@ -1041,7 +1157,7 @@ backToDimensionsButton.addEventListener("click", () => {
   goToStep("dimensions");
 });
 
-partCountForm.addEventListener("submit", (event) => {
+partCountForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const expected = Number(partsExpectedInput.value);
@@ -1052,6 +1168,7 @@ partCountForm.addEventListener("submit", (event) => {
   }
 
   if (expected !== pattern.partsExpected) {
+    await Promise.all(pattern.parts.map((part) => deletePartImage(part.id)));
     pattern.partsExpected = expected;
     pattern.parts = [];
     pattern.grid.cells = [];
@@ -1126,12 +1243,22 @@ async function addPartFromForm() {
     imageDataUrl = await fileToDataUrl(selectedFile);
   }
 
+  const partId = `part-${Date.now()}`;
+  try {
+    await writePartImage(partId, imageDataUrl);
+  } catch {
+    partError.textContent = "Impossible de stocker l'image du morceau dans le navigateur.";
+    partError.hidden = false;
+    return;
+  }
+
   pattern.parts.push({
-    id: `part-${Date.now()}`,
+    id: partId,
     name,
     imageName,
     imageSource,
     imageDataUrl,
+    imageStored: true,
     startX,
     startY,
     width,
@@ -1180,14 +1307,17 @@ document.addEventListener("paste", (event) => {
   }
 });
 
-partsTableBody.addEventListener("click", (event) => {
+partsTableBody.addEventListener("click", async (event) => {
   const removeButton = event.target.closest("[data-remove-part]");
   if (!removeButton) {
     return;
   }
 
   const index = Number(removeButton.dataset.removePart);
-  pattern.parts.splice(index, 1);
+  const [removedPart] = pattern.parts.splice(index, 1);
+  if (removedPart?.id) {
+    await deletePartImage(removedPart.id);
+  }
   renumberParts();
   pattern.grid.cells = [];
   progress.parts = false;
@@ -1265,7 +1395,14 @@ sliceImagesButton.addEventListener("click", async () => {
     return;
   }
 
-  const partsWithoutImage = pattern.parts.filter((part) => !part.imageDataUrl);
+  const partsWithoutImage = [];
+  for (const part of pattern.parts) {
+    const imageDataUrl = await readPartImage(part);
+    if (!imageDataUrl) {
+      partsWithoutImage.push(part);
+    }
+  }
+
   if (partsWithoutImage.length > 0) {
     analysisError.textContent = `Image manquante pour ${partsWithoutImage[0].name}.`;
     analysisError.hidden = false;
@@ -1578,7 +1715,8 @@ async function slicePartImagesIntoCells() {
   const previewBySignature = new Map();
 
   for (const part of pattern.parts) {
-    const image = await loadImage(part.imageDataUrl);
+    const imageDataUrl = await readPartImage(part);
+    const image = await loadImage(imageDataUrl);
     const cellWidth = image.naturalWidth / part.width;
     const cellHeight = image.naturalHeight / part.height;
 
@@ -1717,6 +1855,7 @@ resetButton.addEventListener("click", () => {
   pattern = structuredClone(defaultPattern);
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(PROGRESS_STORAGE_KEY);
+  clearPartImages();
   progress = {
     project: false,
     colors: false,
