@@ -66,6 +66,7 @@ let activePathStep = "load";
 let selectedDmc = storedState.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
 let isDrawingPath = false;
 let lastDrawnCellKey = null;
+let lastPointerCell = null;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -749,12 +750,64 @@ function addCellToCurrentPath(cell) {
 
   path.push({ x: cell.x, y: cell.y });
   lastDrawnCellKey = key;
+  return true;
+}
+
+function addCellsToCurrentPath(cells) {
+  let changed = false;
+  cells.forEach((cell) => {
+    changed = addCellToCurrentPath(cell) || changed;
+  });
+
+  if (!changed) {
+    return false;
+  }
+
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
   savePathPlannerState();
   renderPathTool();
   showPathSavedStatus();
   return true;
+}
+
+function cellsBetween(startCell, endCell) {
+  if (!startCell || !endCell) {
+    return endCell ? [endCell] : [];
+  }
+
+  const cells = [];
+  let x = startCell.x;
+  let y = startCell.y;
+  const dx = Math.abs(endCell.x - startCell.x);
+  const dy = Math.abs(endCell.y - startCell.y);
+  const stepX = startCell.x < endCell.x ? 1 : -1;
+  const stepY = startCell.y < endCell.y ? 1 : -1;
+  let error = dx - dy;
+
+  while (true) {
+    const cell = findCellAt(x, y);
+    if (cell) {
+      cells.push(cell);
+    }
+
+    if (x === endCell.x && y === endCell.y) {
+      break;
+    }
+
+    const doubledError = error * 2;
+    if (doubledError > -dy) {
+      error -= dy;
+      x += stepX;
+    }
+
+    if (doubledError < dx) {
+      error += dx;
+      y += stepY;
+    }
+  }
+
+  return cells;
 }
 
 function isPathComplete(dmc) {
@@ -957,8 +1010,9 @@ patternCanvas.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   isDrawingPath = true;
   lastDrawnCellKey = null;
+  lastPointerCell = cellFromCanvasEvent(event);
   patternCanvas.setPointerCapture(event.pointerId);
-  addCellToCurrentPath(cellFromCanvasEvent(event));
+  addCellsToCurrentPath([lastPointerCell]);
 });
 
 patternCanvas.addEventListener("pointermove", (event) => {
@@ -967,12 +1021,19 @@ patternCanvas.addEventListener("pointermove", (event) => {
   }
 
   event.preventDefault();
-  addCellToCurrentPath(cellFromCanvasEvent(event));
+  const currentCell = cellFromCanvasEvent(event);
+  if (!currentCell) {
+    return;
+  }
+
+  addCellsToCurrentPath(cellsBetween(lastPointerCell, currentCell));
+  lastPointerCell = currentCell;
 });
 
 patternCanvas.addEventListener("pointerup", (event) => {
   isDrawingPath = false;
   lastDrawnCellKey = null;
+  lastPointerCell = null;
   if (patternCanvas.hasPointerCapture(event.pointerId)) {
     patternCanvas.releasePointerCapture(event.pointerId);
   }
@@ -981,6 +1042,7 @@ patternCanvas.addEventListener("pointerup", (event) => {
 patternCanvas.addEventListener("pointercancel", () => {
   isDrawingPath = false;
   lastDrawnCellKey = null;
+  lastPointerCell = null;
 });
 
 pathColorLegend.addEventListener("click", (event) => {
