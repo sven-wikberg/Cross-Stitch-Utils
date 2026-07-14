@@ -1810,8 +1810,8 @@ function sampleCellImage(image, sx, sy, sw, sh) {
 }
 
 function insetSampleArea(x, y, width, height) {
-  const insetX = 0;
-  const insetY = 0;
+  const insetX = width * 0.1;
+  const insetY = height * 0.1;
   return {
     x: x + insetX,
     y: y + insetY,
