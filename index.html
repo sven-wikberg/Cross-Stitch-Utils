@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cross Stitch Utils</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Cross Stitch Utils</p>
+          <h1>Import pattern</h1>
+        </div>
+
+        <nav class="step-list" aria-label="Etapes d'import">
+          <button class="step-item active" type="button">
+            <span class="step-number">1</span>
+            <span>Nom du projet</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workspace" aria-labelledby="step-title">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Etape 1</p>
+            <h2 id="step-title">Nom du projet</h2>
+          </div>
+          <button id="resetButton" class="icon-button" type="button" title="Reinitialiser">
+            <span aria-hidden="true">↺</span>
+            <span class="sr-only">Reinitialiser</span>
+          </button>
+        </div>
+
+        <form id="projectForm" class="tool-panel">
+          <label for="projectName">Nom</label>
+          <input id="projectName" name="projectName" type="text" autocomplete="off" required>
+
+          <div class="actions">
+            <button id="saveButton" class="primary-button" type="submit">Enregistrer</button>
+          </div>
+        </form>
+
+        <section class="json-panel" aria-labelledby="json-title">
+          <div class="panel-title-row">
+            <h3 id="json-title">JSON</h3>
+            <span id="saveStatus" class="status-pill">Brouillon</span>
+          </div>
+          <pre id="jsonPreview"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="src/app.js"></script>
+  </body>
+</html>

@@ -24,6 +24,10 @@ Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application
 - `data/` : donnees locales non sensibles utiles au projet.
 - `exports/` : fichiers generes a ignorer ou versionner selon le besoin.
 
+## Ouvrir l'application
+
+Le premier prototype est une page locale. Ouvrir `index.html` dans un navigateur sur PC.
+
 ## Direction technique
 
 Le projet devrait evoluer vers une application avec interface graphique plutot qu'une suite de scripts. Une bonne approche est de commencer avec une application web locale simple, puis de pouvoir la transformer plus tard en application desktop Windows si besoin.
