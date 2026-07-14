@@ -52,6 +52,7 @@ Exemple :
 - Dimensions de la grille.
 - Morceaux du pattern.
 - Grille vide.
+- Decoupage des cellules.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -142,3 +143,29 @@ Une fois les morceaux valides, l'outil genere une cellule vide pour chaque point
 ```
 
 Cette etape ne lit pas encore les symboles dans l'image. Elle prepare seulement la structure uniforme qui sera remplie plus tard.
+
+## Etape 6 : decoupage des cellules
+
+Les images fournies pour les morceaux sont considerees comme contenant uniquement la grille, sans marges, sans numerotation, sans legende et sans titre.
+
+L'outil decoupe chaque image en fonction de la taille du morceau :
+
+- largeur d'une cellule = largeur de l'image / `part.width` ;
+- hauteur d'une cellule = hauteur de l'image / `part.height`.
+
+Chaque cellule recoit ensuite une signature visuelle compacte qui servira plus tard a regrouper les symboles similaires.
+
+```json
+{
+  "x": 0,
+  "y": 0,
+  "partId": "part-1",
+  "symbol": null,
+  "dmc": null,
+  "sampleSignature": "ff00aa55ff00aa55",
+  "sampleMean": "#F4F4F4",
+  "sampleSource": "image-slice"
+}
+```
+
+Cette signature n'est pas le symbole final. Elle est seulement une aide pour la prochaine etape de reconnaissance ou de regroupement manuel.

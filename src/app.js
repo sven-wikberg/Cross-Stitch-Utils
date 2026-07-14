@@ -59,6 +59,13 @@ const gridGeneratedCellsText = document.querySelector("#gridGeneratedCellsText")
 const backToPartsButton = document.querySelector("#backToPartsButton");
 const generateGridButton = document.querySelector("#generateGridButton");
 const gridError = document.querySelector("#gridError");
+const analysisStatus = document.querySelector("#analysisStatus");
+const analysisPartsText = document.querySelector("#analysisPartsText");
+const analysisCellsText = document.querySelector("#analysisCellsText");
+const analysisSignaturesText = document.querySelector("#analysisSignaturesText");
+const backToGridButton = document.querySelector("#backToGridButton");
+const sliceImagesButton = document.querySelector("#sliceImagesButton");
+const analysisError = document.querySelector("#analysisError");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -94,10 +101,14 @@ const stepLabels = {
   grid: {
     eyebrow: "Etape 5",
     title: "Grille vide"
+  },
+  analysis: {
+    eyebrow: "Etape 6",
+    title: "Decoupage"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions", "parts", "grid"];
+const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -137,6 +148,7 @@ function loadProgress(currentPattern) {
         dimensions: false,
         parts: false,
         grid: false,
+        analysis: false,
         ...JSON.parse(stored)
       };
     } catch {
@@ -149,7 +161,8 @@ function loadProgress(currentPattern) {
     colors: currentPattern.colors.length > 0,
     dimensions: currentPattern.grid.width > 0 && currentPattern.grid.height > 0,
     parts: validatePartsCoverage(currentPattern).valid,
-    grid: isGridGenerated(currentPattern)
+    grid: isGridGenerated(currentPattern),
+    analysis: isImageAnalysisComplete(currentPattern)
   };
 }
 
@@ -200,6 +213,7 @@ function render() {
   renderColors();
   renderParts();
   renderGrid();
+  renderAnalysis();
   renderDmcOptions();
 }
 
@@ -246,6 +260,10 @@ function isStepComplete(step) {
 
   if (step === "grid") {
     return progress.grid && isGridGenerated(pattern);
+  }
+
+  if (step === "analysis") {
+    return progress.analysis && isImageAnalysisComplete(pattern);
   }
 
   return false;
@@ -368,6 +386,28 @@ function renderGrid() {
   gridStatus.textContent = generated
     ? `Grille generee: ${generatedCells} cases.`
     : `Grille non generee: ${generatedCells} / ${expectedCells || 0} cases.`;
+}
+
+function renderAnalysis() {
+  const totalCells = pattern.grid.cells.length;
+  const signedCells = pattern.grid.cells.filter((cell) => cell.sampleSignature).length;
+  const complete = isImageAnalysisComplete(pattern);
+
+  analysisPartsText.textContent = String(pattern.parts.length);
+  analysisCellsText.textContent = String(totalCells);
+  analysisSignaturesText.textContent = String(signedCells);
+  analysisStatus.className = `coverage-status ${complete ? "valid" : "invalid"}`;
+  analysisStatus.textContent = complete
+    ? `Decoupage termine: ${signedCells} signatures.`
+    : `Decoupage incomplet: ${signedCells} / ${totalCells} signatures.`;
+}
+
+function isImageAnalysisComplete(patternToValidate) {
+  if (!isGridGenerated(patternToValidate)) {
+    return false;
+  }
+
+  return patternToValidate.grid.cells.every((cell) => Boolean(cell.sampleSignature));
 }
 
 function isGridGenerated(patternToValidate) {
@@ -564,6 +604,7 @@ projectNameInput.addEventListener("input", () => {
   progress.dimensions = false;
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
   saveProgress();
   projectError.hidden = true;
   render();
@@ -599,6 +640,7 @@ colorForm.addEventListener("submit", (event) => {
   progress.dimensions = false;
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
 
   savePattern();
   saveProgress();
@@ -621,6 +663,7 @@ colorsTableBody.addEventListener("click", (event) => {
   progress.dimensions = false;
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
   savePattern();
   saveProgress();
   render();
@@ -643,6 +686,7 @@ validateColorsButton.addEventListener("click", () => {
   progress.dimensions = false;
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
   savePattern();
   saveProgress();
   goToStep("dimensions");
@@ -674,6 +718,7 @@ dimensionsForm.addEventListener("submit", (event) => {
     pattern.partsExpected = 0;
     progress.parts = false;
     progress.grid = false;
+    progress.analysis = false;
   }
 
   progress.dimensions = true;
@@ -712,6 +757,7 @@ partCountForm.addEventListener("submit", (event) => {
     pattern.grid.cells = [];
     progress.parts = false;
     progress.grid = false;
+    progress.analysis = false;
   }
 
   partCountError.hidden = true;
@@ -792,6 +838,7 @@ async function addPartFromForm() {
   pattern.grid.cells = [];
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
   savePattern();
   saveProgress();
   partForm.reset();
@@ -839,6 +886,7 @@ partsTableBody.addEventListener("click", (event) => {
   pattern.grid.cells = [];
   progress.parts = false;
   progress.grid = false;
+  progress.analysis = false;
   savePattern();
   saveProgress();
   render();
@@ -861,6 +909,7 @@ validatePartsButton.addEventListener("click", () => {
 
   progress.parts = true;
   progress.grid = false;
+  progress.analysis = false;
   partsError.hidden = true;
   saveProgress();
   goToStep("grid");
@@ -881,12 +930,134 @@ generateGridButton.addEventListener("click", () => {
 
   pattern.grid.cells = generateGridCells(pattern);
   progress.grid = true;
+  progress.analysis = false;
   gridError.hidden = true;
   savePattern();
   saveProgress();
-  render();
+  goToStep("analysis");
   showSavedStatus();
 });
+
+backToGridButton.addEventListener("click", () => {
+  goToStep("grid");
+});
+
+sliceImagesButton.addEventListener("click", async () => {
+  if (!progress.grid || !isGridGenerated(pattern)) {
+    analysisError.textContent = "La grille doit etre generee avant le decoupage.";
+    analysisError.hidden = false;
+    return;
+  }
+
+  const partsWithoutImage = pattern.parts.filter((part) => !part.imageDataUrl);
+  if (partsWithoutImage.length > 0) {
+    analysisError.textContent = `Image manquante pour ${partsWithoutImage[0].name}.`;
+    analysisError.hidden = false;
+    return;
+  }
+
+  try {
+    await slicePartImagesIntoCells();
+    progress.analysis = true;
+    analysisError.hidden = true;
+    savePattern();
+    saveProgress();
+    render();
+    showSavedStatus();
+  } catch (error) {
+    analysisError.textContent = error.message;
+    analysisError.hidden = false;
+  }
+});
+
+async function slicePartImagesIntoCells() {
+  const cellByKey = new Map(pattern.grid.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
+
+  for (const part of pattern.parts) {
+    const image = await loadImage(part.imageDataUrl);
+    const cellWidth = image.naturalWidth / part.width;
+    const cellHeight = image.naturalHeight / part.height;
+
+    if (!Number.isFinite(cellWidth) || !Number.isFinite(cellHeight) || cellWidth <= 0 || cellHeight <= 0) {
+      throw new Error(`Impossible de decouper ${part.name}.`);
+    }
+
+    for (let localY = 0; localY < part.height; localY += 1) {
+      for (let localX = 0; localX < part.width; localX += 1) {
+        const x = part.startX + localX;
+        const y = part.startY + localY;
+        const cell = cellByKey.get(`${x},${y}`);
+        if (!cell) {
+          throw new Error(`Cellule introuvable pour ${part.name} (${x}, ${y}).`);
+        }
+
+        const sample = sampleCellImage(
+          image,
+          localX * cellWidth,
+          localY * cellHeight,
+          cellWidth,
+          cellHeight
+        );
+
+        cell.sampleSignature = sample.signature;
+        cell.sampleMean = sample.mean;
+        cell.sampleSource = "image-slice";
+      }
+    }
+  }
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => reject(new Error("Impossible de charger une image de morceau.")));
+    image.src = dataUrl;
+  });
+}
+
+function sampleCellImage(image, sx, sy, sw, sh) {
+  const size = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, size, size);
+  const data = context.getImageData(0, 0, size, size).data;
+  const grays = [];
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    red += r;
+    green += g;
+    blue += b;
+    grays.push(Math.round((r * 0.299) + (g * 0.587) + (b * 0.114)));
+  }
+
+  const averageGray = grays.reduce((sum, value) => sum + value, 0) / grays.length;
+  let bits = "";
+  grays.forEach((gray) => {
+    bits += gray >= averageGray ? "1" : "0";
+  });
+
+  let signature = "";
+  for (let index = 0; index < bits.length; index += 4) {
+    signature += parseInt(bits.slice(index, index + 4), 2).toString(16);
+  }
+
+  const pixelCount = grays.length;
+  const mean = `#${toHex(red / pixelCount)}${toHex(green / pixelCount)}${toHex(blue / pixelCount)}`;
+  return { signature, mean };
+}
+
+function toHex(value) {
+  return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
+}
 
 function generateGridCells(patternToGenerate) {
   const cells = [];
@@ -923,7 +1094,8 @@ resetButton.addEventListener("click", () => {
     colors: false,
     dimensions: false,
     parts: false,
-    grid: false
+    grid: false,
+    analysis: false
   };
   render();
 });

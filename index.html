@@ -35,6 +35,10 @@
             <span class="step-number">5</span>
             <span>Grille vide</span>
           </button>
+          <button class="step-item locked" type="button" data-step="analysis" disabled>
+            <span class="step-number">6</span>
+            <span>Decoupage</span>
+          </button>
         </nav>
       </aside>
 
@@ -256,6 +260,38 @@
             <button id="generateGridButton" class="primary-button" type="button">Generer la grille</button>
           </div>
           <p id="gridError" class="form-error" hidden>Les morceaux doivent etre valides avant de generer la grille.</p>
+        </section>
+
+        <section id="analysisPanel" class="tool-panel hidden" data-panel="analysis" aria-labelledby="analysis-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="analysis-title">Decoupage des cellules</h3>
+              <p>Les images des morceaux sont considerees comme des grilles completes, sans marge ni legende.</p>
+            </div>
+          </div>
+
+          <div id="analysisStatus" class="coverage-status"></div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Morceaux</span>
+              <strong id="analysisPartsText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Cellules</span>
+              <strong id="analysisCellsText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Signatures</span>
+              <strong id="analysisSignaturesText">0</strong>
+            </div>
+          </div>
+
+          <div class="actions split-actions">
+            <button id="backToGridButton" class="secondary-button" type="button">Retour</button>
+            <button id="sliceImagesButton" class="primary-button" type="button">Decouper les images</button>
+          </div>
+          <p id="analysisError" class="form-error" hidden>La grille doit etre generee avant le decoupage.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">
