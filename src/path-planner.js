@@ -64,6 +64,8 @@ let pathProgress = {
 };
 let activePathStep = "load";
 let selectedDmc = storedState.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
+let isDrawingPath = false;
+let lastDrawnCellKey = null;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -714,6 +716,47 @@ function findCellAt(x, y) {
   return loadedPattern.grid.cells.find((cell) => cell.x === x && cell.y === y) || null;
 }
 
+function cellFromCanvasEvent(event) {
+  if (!loadedPattern) {
+    return null;
+  }
+
+  const cellSize = patternCanvas.width / loadedPattern.grid.width;
+  const rect = patternCanvas.getBoundingClientRect();
+  const scaleX = patternCanvas.width / rect.width;
+  const scaleY = patternCanvas.height / rect.height;
+  const x = Math.floor(((event.clientX - rect.left) * scaleX) / cellSize);
+  const y = Math.floor(((event.clientY - rect.top) * scaleY) / cellSize);
+  return findCellAt(x, y);
+}
+
+function addCellToCurrentPath(cell) {
+  if (!loadedPattern || !selectedDmc || !cell || cell.empty || cell.dmc !== selectedDmc) {
+    return false;
+  }
+
+  const key = cellKey(cell);
+  if (key === lastDrawnCellKey) {
+    return false;
+  }
+
+  const path = currentPath();
+  const alreadySelected = path.some((point) => cellKey(point) === key);
+  if (alreadySelected) {
+    lastDrawnCellKey = key;
+    return false;
+  }
+
+  path.push({ x: cell.x, y: cell.y });
+  lastDrawnCellKey = key;
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
+  return true;
+}
+
 function isPathComplete(dmc) {
   return isCompletePathForColor(loadedPattern, pathsByDmc, dmc);
 }
@@ -906,36 +949,38 @@ patternJsonFileInput.addEventListener("change", async () => {
   }
 });
 
-patternCanvas.addEventListener("click", (event) => {
+patternCanvas.addEventListener("pointerdown", (event) => {
   if (!loadedPattern || !selectedDmc) {
     return;
   }
 
-  const cellSize = patternCanvas.width / loadedPattern.grid.width;
-  const rect = patternCanvas.getBoundingClientRect();
-  const scaleX = patternCanvas.width / rect.width;
-  const scaleY = patternCanvas.height / rect.height;
-  const x = Math.floor(((event.clientX - rect.left) * scaleX) / cellSize);
-  const y = Math.floor(((event.clientY - rect.top) * scaleY) / cellSize);
-  const cell = findCellAt(x, y);
+  event.preventDefault();
+  isDrawingPath = true;
+  lastDrawnCellKey = null;
+  patternCanvas.setPointerCapture(event.pointerId);
+  addCellToCurrentPath(cellFromCanvasEvent(event));
+});
 
-  if (!cell || cell.empty || cell.dmc !== selectedDmc) {
+patternCanvas.addEventListener("pointermove", (event) => {
+  if (!isDrawingPath) {
     return;
   }
 
-  const path = currentPath();
-  const key = cellKey(cell);
-  const alreadySelected = path.some((point) => cellKey(point) === key);
-  if (alreadySelected) {
-    return;
-  }
+  event.preventDefault();
+  addCellToCurrentPath(cellFromCanvasEvent(event));
+});
 
-  path.push({ x: cell.x, y: cell.y });
-  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
-  pathProgress.export = false;
-  savePathPlannerState();
-  renderPathTool();
-  showPathSavedStatus();
+patternCanvas.addEventListener("pointerup", (event) => {
+  isDrawingPath = false;
+  lastDrawnCellKey = null;
+  if (patternCanvas.hasPointerCapture(event.pointerId)) {
+    patternCanvas.releasePointerCapture(event.pointerId);
+  }
+});
+
+patternCanvas.addEventListener("pointercancel", () => {
+  isDrawingPath = false;
+  lastDrawnCellKey = null;
 });
 
 pathColorLegend.addEventListener("click", (event) => {

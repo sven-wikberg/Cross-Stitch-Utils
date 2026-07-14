@@ -555,6 +555,8 @@ select:focus {
 .pattern-canvas-wrap canvas {
   display: block;
   image-rendering: pixelated;
+  cursor: crosshair;
+  user-select: none;
 }
 
 .path-color-legend {
