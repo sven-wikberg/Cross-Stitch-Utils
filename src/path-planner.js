@@ -49,7 +49,8 @@ const pathStepLabels = {
 
 const pathStepOrder = ["load", "paths", "export"];
 const ISLAND_GAP_TOLERANCE = 3;
-const BACKTRACK_MAX_STEP_DISTANCE = 3;
+const BACKTRACK_ISLAND_GAP_TOLERANCE = 1;
+const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
 
 let storedState = loadStoredState();
@@ -431,7 +432,7 @@ function islandSnakePathForColor(dmc) {
 }
 
 function backtrackIslandPathForColor(dmc) {
-  const islands = islandsForCells(cellsForColor(dmc));
+  const islands = islandsForCells(cellsForColor(dmc), BACKTRACK_ISLAND_GAP_TOLERANCE);
   const islandPaths = islands.map((island) => backtrackedPathForIsland(island));
   return orderIslandPaths(islandPaths).flat();
 }
@@ -594,7 +595,7 @@ function isBetterPathScore(candidate, current) {
     || (candidate.largeJumps === current.largeJumps && candidate.totalDistance < current.totalDistance);
 }
 
-function islandsForCells(cells) {
+function islandsForCells(cells, gapTolerance = ISLAND_GAP_TOLERANCE) {
   const remaining = new Map(cells.map((cell) => [cellKey(cell), cell]));
   const islands = [];
 
@@ -609,7 +610,7 @@ function islandsForCells(cells) {
       island.push(current);
 
       Array.from(remaining.values()).forEach((candidate) => {
-        if (belongsToSameIsland(current, candidate)) {
+        if (belongsToSameIsland(current, candidate, gapTolerance)) {
           remaining.delete(cellKey(candidate));
           queue.push(candidate);
         }
@@ -622,10 +623,10 @@ function islandsForCells(cells) {
   return islands.sort((a, b) => islandSortValue(a).y - islandSortValue(b).y || islandSortValue(a).x - islandSortValue(b).x);
 }
 
-function belongsToSameIsland(a, b) {
+function belongsToSameIsland(a, b, gapTolerance) {
   const horizontalGap = Math.max(Math.abs(a.x - b.x) - 1, 0);
   const verticalGap = Math.max(Math.abs(a.y - b.y) - 1, 0);
-  return Math.max(horizontalGap, verticalGap) <= ISLAND_GAP_TOLERANCE;
+  return Math.max(horizontalGap, verticalGap) <= gapTolerance;
 }
 
 function islandSortValue(island) {
