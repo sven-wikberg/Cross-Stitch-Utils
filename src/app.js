@@ -81,6 +81,11 @@ const groupingToleranceSelect = document.querySelector("#groupingTolerance");
 const groupsTableBody = document.querySelector("#groupsTableBody");
 const emptyGroupsMessage = document.querySelector("#emptyGroupsMessage");
 const referenceRows = document.querySelector("#referenceRows");
+const referencePreviewPanel = document.querySelector("#referencePreviewPanel");
+const referencePreviewTitle = document.querySelector("#referencePreviewTitle");
+const referencePreviewMeta = document.querySelector("#referencePreviewMeta");
+const referencePreviewWrap = document.querySelector("#referencePreviewWrap");
+const confirmReferenceButton = document.querySelector("#confirmReferenceButton");
 const generateReferenceGroupsButton = document.querySelector("#generateReferenceGroupsButton");
 const referenceGroupsError = document.querySelector("#referenceGroupsError");
 const backToAnalysisButton = document.querySelector("#backToAnalysisButton");
@@ -125,6 +130,7 @@ let progress = loadProgress(pattern);
 let activeStep = "project";
 let pastedPartImage = null;
 let assignmentGroupIndex = 0;
+let previewedReferenceKey = null;
 migrateInlinePartImagesToStore();
 
 const stepLabels = {
@@ -604,6 +610,10 @@ function renderReferenceRows() {
       <td></td>
       <td><input class="compact-input" type="number" min="0" step="1" data-reference-key="${item.key}" data-axis="x"></td>
       <td><input class="compact-input" type="number" min="0" step="1" data-reference-key="${item.key}" data-axis="y"></td>
+      <td>
+        <button class="secondary-button compact-button" type="button" data-preview-reference="${item.key}">Voir</button>
+        <span class="reference-state ${reference.confirmed ? "ready" : "unready"}">${reference.confirmed ? "Validee" : "A verifier"}</span>
+      </td>
     `;
 
     row.querySelector(".color-swatch").style.background = item.swatch;
@@ -1507,7 +1517,8 @@ referenceRows.addEventListener("input", (event) => {
   const value = input.value === "" ? null : Number(input.value);
   pattern.symbolReferences[referenceKey] = {
     ...(pattern.symbolReferences[referenceKey] || {}),
-    [axis]: Number.isInteger(value) ? value : null
+    [axis]: Number.isInteger(value) ? value : null,
+    confirmed: false
   };
   progress.groups = false;
   progress.assignments = false;
@@ -1517,6 +1528,39 @@ referenceRows.addEventListener("input", (event) => {
   savePattern();
   saveProgress();
   jsonPreview.textContent = JSON.stringify(patternForLocalStorage(pattern), null, 2);
+  showSavedStatus();
+});
+
+referenceRows.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-preview-reference]");
+  if (!button) {
+    return;
+  }
+
+  try {
+    referenceGroupsError.hidden = true;
+    await previewReference(button.dataset.previewReference);
+  } catch (error) {
+    referencePreviewPanel.classList.add("hidden");
+    previewedReferenceKey = null;
+    referenceGroupsError.textContent = error.message;
+    referenceGroupsError.hidden = false;
+  }
+});
+
+confirmReferenceButton.addEventListener("click", () => {
+  if (!previewedReferenceKey) {
+    return;
+  }
+
+  pattern.symbolReferences[previewedReferenceKey] = {
+    ...(pattern.symbolReferences[previewedReferenceKey] || {}),
+    confirmed: true
+  };
+  savePattern();
+  saveProgress();
+  renderReferenceRows();
+  referencePreviewMeta.textContent = `${referenceLabel(previewedReferenceKey)} validee.`;
   showSavedStatus();
 });
 
@@ -1740,6 +1784,9 @@ function buildSymbolReferences(patternToGroup) {
     if (!cell || !cell.sampleSignature) {
       throw new Error(`Reference invalide pour DMC ${color.dmc}.`);
     }
+    if (!reference.confirmed) {
+      throw new Error(`Reference DMC ${color.dmc} a verifier avant de classer.`);
+    }
 
     return {
       dmc: color.dmc,
@@ -1751,6 +1798,9 @@ function buildSymbolReferences(patternToGroup) {
   const emptyCell = findSampleCell(patternToGroup, emptyReference?.x, emptyReference?.y);
   if (!emptyCell || !emptyCell.sampleSignature) {
     throw new Error("Reference invalide pour les cases vides.");
+  }
+  if (!emptyReference.confirmed) {
+    throw new Error("Reference vide a verifier avant de classer.");
   }
 
   return [
@@ -1769,6 +1819,58 @@ function findSampleCell(patternToSearch, x, y) {
   }
 
   return patternToSearch.grid.cells.find((cell) => cell.x === x && cell.y === y) || null;
+}
+
+async function previewReference(referenceKey) {
+  const reference = pattern.symbolReferences[referenceKey] || {};
+  const cell = findSampleCell(pattern, reference.x, reference.y);
+  if (!cell) {
+    throw new Error("Reference introuvable dans la grille.");
+  }
+
+  const part = pattern.parts.find((candidate) => candidate.id === cell.partId);
+  if (!part) {
+    throw new Error("Morceau introuvable pour cette reference.");
+  }
+
+  const imageDataUrl = await readPartImage(part);
+  if (!imageDataUrl) {
+    throw new Error("Image du morceau introuvable pour cette reference.");
+  }
+
+  const image = await loadImage(imageDataUrl);
+  const cellWidth = image.naturalWidth / part.width;
+  const cellHeight = image.naturalHeight / part.height;
+  const localX = cell.x - part.startX;
+  const localY = cell.y - part.startY;
+  const previewDataUrl = createCellPreview(
+    image,
+    localX * cellWidth,
+    localY * cellHeight,
+    cellWidth,
+    cellHeight
+  );
+
+  const label = referenceLabel(referenceKey);
+  previewedReferenceKey = referenceKey;
+  referencePreviewPanel.classList.remove("hidden");
+  referencePreviewTitle.textContent = label;
+  referencePreviewMeta.textContent = `Case ${cell.x}, ${cell.y} dans ${part.name}.`;
+  referencePreviewWrap.innerHTML = "";
+  const preview = document.createElement("img");
+  preview.className = "symbol-preview large";
+  preview.src = previewDataUrl;
+  preview.alt = `Reference ${label}`;
+  referencePreviewWrap.appendChild(preview);
+  confirmReferenceButton.disabled = false;
+}
+
+function referenceLabel(referenceKey) {
+  if (referenceKey === EMPTY_REFERENCE_KEY) {
+    return "Vide";
+  }
+
+  return `DMC ${referenceKey}`;
 }
 
 function signatureDistance(firstSignature, secondSignature) {

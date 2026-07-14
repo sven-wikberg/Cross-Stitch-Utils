@@ -330,10 +330,21 @@
                     <th>DMC</th>
                     <th>X</th>
                     <th>Y</th>
+                    <th>Verification</th>
                   </tr>
                 </thead>
                 <tbody id="referenceRows"></tbody>
               </table>
+            </div>
+            <div id="referencePreviewPanel" class="reference-preview-panel hidden">
+              <div>
+                <span id="referencePreviewTitle" class="status-pill">Reference</span>
+                <p id="referencePreviewMeta" class="empty-message">Choisis une reference a verifier.</p>
+              </div>
+              <div id="referencePreviewWrap" class="assignment-preview-wrap">
+                <span class="symbol-preview-empty">Apercu</span>
+              </div>
+              <button id="confirmReferenceButton" class="primary-button" type="button">Valider cette reference</button>
             </div>
             <div class="actions">
               <button id="generateReferenceGroupsButton" class="primary-button" type="button">Classer avec les references</button>
