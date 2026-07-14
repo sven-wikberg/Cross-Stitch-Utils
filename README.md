@@ -33,6 +33,8 @@ Ouvrir `index.html` dans un navigateur sur PC, puis choisir l'outil voulu.
 
 L'outil 1, `Importer un pattern`, est disponible dans `import-pattern.html`.
 
+L'outil 2, `Definir les chemins`, est disponible dans `plan-paths.html`.
+
 ## Direction technique
 
 Le projet devrait evoluer vers une application avec interface graphique plutot qu'une suite de scripts. Une bonne approche est de commencer avec une application web locale simple, puis de pouvoir la transformer plus tard en application desktop Windows si besoin.

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cross Stitch Utils - Definir les chemins</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <a class="eyebrow app-home-link" href="index.html">Cross Stitch Utils</a>
+          <h1>Definir les chemins</h1>
+        </div>
+
+        <nav class="step-list" aria-label="Etapes de creation des chemins">
+          <button class="step-item active" type="button" data-step="load">
+            <span class="step-number">1</span>
+            <span>Charger le pattern</span>
+          </button>
+          <button class="step-item locked" type="button" data-step="paths" disabled>
+            <span class="step-number">2</span>
+            <span>Chemins par couleur</span>
+          </button>
+          <button class="step-item locked" type="button" data-step="export" disabled>
+            <span class="step-number">3</span>
+            <span>Export</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workspace" aria-labelledby="path-step-title">
+        <div class="topbar">
+          <div>
+            <p id="pathStepEyebrow" class="eyebrow">Etape 1</p>
+            <h2 id="path-step-title">Charger le pattern</h2>
+          </div>
+          <button id="resetPathToolButton" class="icon-button" type="button" title="Reinitialiser">
+            <span aria-hidden="true">Reset</span>
+            <span class="sr-only">Reinitialiser</span>
+          </button>
+        </div>
+
+        <section id="loadPanel" class="tool-panel" data-panel="load" aria-labelledby="load-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="load-title">Fichier JSON du pattern</h3>
+              <p>Charge le fichier final produit par l'outil 1. L'outil verifie le format avant de continuer.</p>
+            </div>
+          </div>
+
+          <label for="patternJsonFile">
+            JSON du pattern
+            <input id="patternJsonFile" type="file" accept="application/json,.json">
+          </label>
+
+          <div id="loadStatus" class="coverage-status invalid">Aucun fichier charge.</div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Projet</span>
+              <strong id="loadedProjectText">-</strong>
+            </div>
+            <div>
+              <span class="stat-label">Dimensions</span>
+              <strong id="loadedDimensionsText">0 x 0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Couleurs</span>
+              <strong id="loadedColorsText">0</strong>
+            </div>
+          </div>
+
+          <p id="loadError" class="form-error" hidden>Le fichier choisi n'a pas le format attendu.</p>
+        </section>
+
+        <section id="pathsPanel" class="tool-panel hidden" data-panel="paths" aria-labelledby="paths-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="paths-title">Chemins par couleur</h3>
+              <p>Cette etape sera construite ensuite.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="pathExportPanel" class="tool-panel hidden" data-panel="export" aria-labelledby="path-export-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="path-export-title">Export des chemins</h3>
+              <p>Cette etape sera construite ensuite.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="json-panel" aria-labelledby="loaded-json-title">
+          <div class="panel-title-row">
+            <h3 id="loaded-json-title">JSON charge</h3>
+            <span id="pathSaveStatus" class="status-pill">Brouillon</span>
+          </div>
+          <pre id="loadedJsonPreview"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="src/path-planner.js"></script>
+  </body>
+</html>
