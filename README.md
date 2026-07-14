@@ -6,6 +6,8 @@ Un projet pour regrouper plusieurs petits outils utiles aux projets de cross sti
 
 L'idee est de construire une boite a outils personnelle, synchronisee avec GitHub, afin de pouvoir continuer le travail depuis plusieurs machines avec Codex, par exemple un PC principal et un laptop.
 
+Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application, utiliser l'outil voulu, puis fermer simplement. La cible principale est un usage sur PC.
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.
@@ -21,6 +23,18 @@ L'idee est de construire une boite a outils personnelle, synchronisee avec GitHu
 - `src/` : code des outils.
 - `data/` : donnees locales non sensibles utiles au projet.
 - `exports/` : fichiers generes a ignorer ou versionner selon le besoin.
+
+## Direction technique
+
+Le projet devrait evoluer vers une application avec interface graphique plutot qu'une suite de scripts. Une bonne approche est de commencer avec une application web locale simple, puis de pouvoir la transformer plus tard en application desktop Windows si besoin.
+
+Objectifs d'usage :
+
+- Lancement simple depuis un PC.
+- Interface claire avec un menu d'outils.
+- Aucun besoin de terminal pour utiliser les outils une fois l'application prete.
+- Donnees sauvegardees localement dans des fichiers faciles a versionner ou exporter.
+- Code synchronise via GitHub pour continuer le developpement depuis plusieurs machines.
 
 ## Travailler depuis plusieurs machines
 
@@ -40,4 +54,3 @@ git commit -m "Describe the change"
 git push
 git pull
 ```
-
