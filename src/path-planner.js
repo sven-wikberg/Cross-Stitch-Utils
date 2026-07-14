@@ -359,10 +359,12 @@ function availableGridWidth(canvas) {
 }
 
 function drawGridLines(context, width, height, cellSize) {
-  context.strokeStyle = "rgba(34, 36, 38, 0.18)";
-  context.lineWidth = 1;
+  context.save();
 
   for (let x = 0; x <= width; x += 1) {
+    const isMajorLine = x % 10 === 0;
+    context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
+    context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
     context.moveTo(x * cellSize + 0.5, 0);
     context.lineTo(x * cellSize + 0.5, height * cellSize);
@@ -370,11 +372,16 @@ function drawGridLines(context, width, height, cellSize) {
   }
 
   for (let y = 0; y <= height; y += 1) {
+    const isMajorLine = y % 10 === 0;
+    context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
+    context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
     context.moveTo(0, y * cellSize + 0.5);
     context.lineTo(width * cellSize, y * cellSize + 0.5);
     context.stroke();
   }
+
+  context.restore();
 }
 
 function renderPathColorLegend() {
