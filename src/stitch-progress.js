@@ -246,17 +246,21 @@ function drawCircle(context, point, cellSize, fill, stroke) {
 
 function renderStitchColorLegend() {
   stitchColorLegend.innerHTML = "";
+  const activePaths = loadedPaths.paths.filter((path) => stitchedCountForDmc(path.dmc) < path.points.length);
 
-  loadedPaths.paths.forEach((path) => {
+  if (activePaths.length === 0) {
+    stitchColorLegend.innerHTML = '<p class="empty-message">Toutes les couleurs sont terminees.</p>';
+    return;
+  }
+
+  activePaths.forEach((path) => {
     const color = loadedPaths.pattern.colors.find((candidate) => candidate.dmc === path.dmc);
     const stitched = stitchedCountForDmc(path.dmc);
-    const complete = stitched === path.points.length;
     const item = document.createElement("button");
     item.className = "path-color-item";
     item.type = "button";
     item.dataset.dmc = path.dmc;
     item.classList.toggle("selected", path.dmc === selectedDmc);
-    item.classList.toggle("complete", complete);
     item.innerHTML = `
       <span class="color-swatch"></span>
       <span>DMC ${path.dmc}</span>

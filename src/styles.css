@@ -576,20 +576,6 @@ select:focus {
   outline: 3px solid rgba(36, 120, 109, 0.16);
 }
 
-.path-color-item.complete .stat-label {
-  color: var(--accent-strong);
-}
-
-.path-color-item.complete {
-  color: #7f8783;
-  background: #eef1ef;
-  opacity: 0.68;
-}
-
-.path-color-item.complete .color-swatch {
-  filter: grayscale(1);
-}
-
 .path-builder-panel {
   display: grid;
   gap: 12px;
