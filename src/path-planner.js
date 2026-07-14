@@ -16,6 +16,7 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
 const islandPathButton = document.querySelector("#islandPathButton");
+const backtrackIslandPathButton = document.querySelector("#backtrackIslandPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -48,6 +49,8 @@ const pathStepLabels = {
 
 const pathStepOrder = ["load", "paths", "export"];
 const ISLAND_GAP_TOLERANCE = 3;
+const BACKTRACK_MAX_STEP_DISTANCE = 3;
+const BACKTRACK_MAX_VISITS = 45000;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -248,6 +251,7 @@ function renderPathBuilder() {
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     autoPathButton.disabled = true;
     islandPathButton.disabled = true;
+    backtrackIslandPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -263,6 +267,7 @@ function renderPathBuilder() {
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
   autoPathButton.disabled = expected === 0;
   islandPathButton.disabled = expected === 0;
+  backtrackIslandPathButton.disabled = expected === 0;
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
   savePathAndNextButton.disabled = !complete;
@@ -423,6 +428,170 @@ function islandSnakePathForColor(dmc) {
   const islands = islandsForCells(cellsForColor(dmc));
   const islandPaths = islands.map((island) => snakePathForCells(island));
   return orderIslandPaths(islandPaths).flat();
+}
+
+function backtrackIslandPathForColor(dmc) {
+  const islands = islandsForCells(cellsForColor(dmc));
+  const islandPaths = islands.map((island) => backtrackedPathForIsland(island));
+  return orderIslandPaths(islandPaths).flat();
+}
+
+function backtrackedPathForIsland(island) {
+  if (island.length <= 2) {
+    return snakePathForCells(island);
+  }
+
+  const basePath = snakePathForCells(island);
+  if (maxStepDistance(basePath) <= BACKTRACK_MAX_STEP_DISTANCE) {
+    return basePath;
+  }
+
+  const starts = candidateStartPoints(island);
+  let bestPath = basePath;
+  let bestScore = pathJumpScore(basePath);
+  let visits = 0;
+
+  for (const start of starts) {
+    const result = searchIslandPath(island, start, () => {
+      visits += 1;
+      return visits <= BACKTRACK_MAX_VISITS;
+    });
+
+    if (result.path && isBetterPathScore(result.score, bestScore)) {
+      bestPath = result.path;
+      bestScore = result.score;
+    }
+
+    if (bestScore.largeJumps === 0) {
+      break;
+    }
+  }
+
+  return bestPath;
+}
+
+function candidateStartPoints(island) {
+  return island
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .slice(0, 10);
+}
+
+function searchIslandPath(island, start, shouldContinue) {
+  const cellsByKey = new Map(island.map((cell) => [cellKey(cell), cell]));
+  const visited = new Set([cellKey(start)]);
+  const path = [{ x: start.x, y: start.y }];
+  let bestPath = path.slice();
+  let bestScore = pathJumpScore(bestPath);
+
+  function visit(current) {
+    if (!shouldContinue()) {
+      return false;
+    }
+
+    const score = pathJumpScore(path);
+    if (score.largeJumps < bestScore.largeJumps || (score.largeJumps === bestScore.largeJumps && path.length > bestPath.length)) {
+      bestPath = path.slice();
+      bestScore = score;
+    }
+
+    if (path.length === island.length) {
+      bestPath = path.slice();
+      bestScore = pathJumpScore(path);
+      return bestScore.largeJumps === 0;
+    }
+
+    const candidates = backtrackCandidates(current, cellsByKey, visited);
+    for (const candidate of candidates) {
+      visited.add(cellKey(candidate));
+      path.push({ x: candidate.x, y: candidate.y });
+
+      if (visit(candidate)) {
+        return true;
+      }
+
+      path.pop();
+      visited.delete(cellKey(candidate));
+    }
+
+    return false;
+  }
+
+  visit(start);
+  const completedPath = completePathWithNearestRemainder(bestPath, island);
+  return { path: completedPath, score: pathJumpScore(completedPath) };
+}
+
+function backtrackCandidates(current, cellsByKey, visited) {
+  return Array.from(cellsByKey.values())
+    .filter((cell) => !visited.has(cellKey(cell)))
+    .map((cell) => ({
+      cell,
+      distance: pointDistance(current, cell),
+      onward: onwardCandidateCount(cell, cellsByKey, visited)
+    }))
+    .filter((entry) => entry.distance <= BACKTRACK_MAX_STEP_DISTANCE)
+    .sort((a, b) => a.onward - b.onward || a.distance - b.distance || a.cell.y - b.cell.y || a.cell.x - b.cell.x)
+    .map((entry) => entry.cell);
+}
+
+function onwardCandidateCount(cell, cellsByKey, visited) {
+  return Array.from(cellsByKey.values()).filter((candidate) => (
+    !visited.has(cellKey(candidate)) && cellKey(candidate) !== cellKey(cell) && pointDistance(cell, candidate) <= BACKTRACK_MAX_STEP_DISTANCE
+  )).length;
+}
+
+function completePathWithNearestRemainder(path, island) {
+  const used = new Set(path.map(cellKey));
+  const remaining = island
+    .filter((cell) => !used.has(cellKey(cell)))
+    .map((cell) => ({ x: cell.x, y: cell.y }));
+  const completed = path.slice();
+
+  while (remaining.length > 0) {
+    const last = completed[completed.length - 1];
+    const nextIndex = remaining.reduce((bestIndex, point, index) => {
+      const bestPoint = remaining[bestIndex];
+      return pointDistance(last, point) < pointDistance(last, bestPoint) ? index : bestIndex;
+    }, 0);
+    completed.push(remaining.splice(nextIndex, 1)[0]);
+  }
+
+  return completed;
+}
+
+function maxStepDistance(path) {
+  return path.reduce((maxDistance, point, index) => {
+    if (index === 0) {
+      return maxDistance;
+    }
+
+    return Math.max(maxDistance, pointDistance(path[index - 1], point));
+  }, 0);
+}
+
+function pathJumpScore(path) {
+  let largeJumps = 0;
+  let totalDistance = 0;
+
+  path.forEach((point, index) => {
+    if (index === 0) {
+      return;
+    }
+
+    const distance = pointDistance(path[index - 1], point);
+    totalDistance += distance;
+    if (distance > BACKTRACK_MAX_STEP_DISTANCE) {
+      largeJumps += 1;
+    }
+  });
+
+  return { largeJumps, totalDistance };
+}
+
+function isBetterPathScore(candidate, current) {
+  return candidate.largeJumps < current.largeJumps
+    || (candidate.largeJumps === current.largeJumps && candidate.totalDistance < current.totalDistance);
 }
 
 function islandsForCells(cells) {
@@ -777,6 +946,19 @@ islandPathButton.addEventListener("click", () => {
   }
 
   pathsByDmc[selectedDmc] = islandSnakePathForColor(selectedDmc);
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
+});
+
+backtrackIslandPathButton.addEventListener("click", () => {
+  if (!loadedPattern || !selectedDmc) {
+    return;
+  }
+
+  pathsByDmc[selectedDmc] = backtrackIslandPathForColor(selectedDmc);
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
   savePathPlannerState();
