@@ -1524,6 +1524,11 @@ function applyGroupAssignmentsToCells() {
 }
 
 function buildFinalPattern() {
+  const symbolsByDmc = new Map(pattern.colors.map((color, index) => [
+    color.dmc,
+    symbolForColorIndex(index)
+  ]));
+
   return {
     schemaVersion: 1,
     kind: "cross-stitch-pattern",
@@ -1537,6 +1542,7 @@ function buildFinalPattern() {
         x: cell.x,
         y: cell.y,
         dmc: cell.empty ? null : cell.dmc,
+        symbol: cell.empty ? null : symbolsByDmc.get(cell.dmc),
         empty: Boolean(cell.empty)
       }))
     },
@@ -1544,9 +1550,19 @@ function buildFinalPattern() {
       brand: color.brand,
       series: color.series,
       dmc: color.dmc,
-      hex: color.hex
+      hex: color.hex,
+      symbol: symbolsByDmc.get(color.dmc)
     }))
   };
+}
+
+function symbolForColorIndex(index) {
+  const symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz@#$%&*+=?/!";
+  if (index < symbols.length) {
+    return symbols[index];
+  }
+
+  return `S${index + 1}`;
 }
 
 function slugify(value) {

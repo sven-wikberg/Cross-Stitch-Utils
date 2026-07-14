@@ -239,6 +239,8 @@ Pour un groupe vide, `symbol` et `dmc` restent a `null`, et les cellules recoive
 
 L'export final retire toutes les informations temporaires utilisees pendant l'import : images, apercus, signatures, groupes et donnees de decoupage. Il garde seulement les informations necessaires pour reutiliser le pattern.
 
+Un symbole arbitraire est attribue a chaque couleur DMC au moment de l'export. Ce symbole ne correspond pas forcement au symbole du PDF d'origine, il sert seulement a identifier la couleur dans les futurs outils.
+
 ```json
 {
   "schemaVersion": 1,
@@ -254,12 +256,14 @@ L'export final retire toutes les informations temporaires utilisees pendant l'im
         "x": 0,
         "y": 0,
         "dmc": "310",
+        "symbol": "A",
         "empty": false
       },
       {
         "x": 1,
         "y": 0,
         "dmc": null,
+        "symbol": null,
         "empty": true
       }
     ]
@@ -269,7 +273,8 @@ L'export final retire toutes les informations temporaires utilisees pendant l'im
       "brand": "DMC",
       "series": "MoulinÃ© SpÃ©cial",
       "dmc": "310",
-      "hex": "#000000"
+      "hex": "#000000",
+      "symbol": "A"
     }
   ]
 }
