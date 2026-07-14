@@ -491,7 +491,6 @@ function renderAssignments() {
       <td></td>
       <td><span class="symbol-preview-empty">A regenerer</span></td>
       <td></td>
-      <td><input class="assignment-symbol-input" type="text" autocomplete="off" maxlength="12"></td>
       <td><select class="assignment-dmc-select"></select></td>
       <td class="checkbox-cell"><input class="assignment-empty-checkbox" type="checkbox"></td>
     `;
@@ -506,11 +505,6 @@ function renderAssignments() {
       preview.alt = `Apercu ${group.id}`;
       row.children[1].replaceChildren(preview);
     }
-
-    const symbolInput = row.querySelector(".assignment-symbol-input");
-    symbolInput.dataset.groupId = group.id;
-    symbolInput.value = group.symbol || "";
-    symbolInput.disabled = Boolean(group.isEmpty);
 
     const dmcSelect = row.querySelector(".assignment-dmc-select");
     dmcSelect.dataset.groupId = group.id;
@@ -566,7 +560,7 @@ function isGroupAssignmentReady(group) {
     return true;
   }
 
-  return Boolean((group.symbol || "").trim()) && Boolean(group.dmc);
+  return Boolean(group.dmc);
 }
 
 function areAssignmentsApplied(patternToValidate) {
@@ -592,7 +586,7 @@ function areAssignmentsApplied(patternToValidate) {
     }
 
     return cell.empty !== true
-      && cell.symbol === group.symbol
+      && cell.symbol === null
       && cell.dmc === group.dmc;
   }));
 }
@@ -1224,25 +1218,6 @@ backToGroupsButton.addEventListener("click", () => {
   goToStep("groups");
 });
 
-assignmentsTableBody.addEventListener("input", (event) => {
-  if (!event.target.classList.contains("assignment-symbol-input")) {
-    return;
-  }
-
-  const group = findGroupById(event.target.dataset.groupId);
-  if (!group) {
-    return;
-  }
-
-  group.symbol = event.target.value.trim() || null;
-  progress.assignments = false;
-  assignmentsError.hidden = true;
-  savePattern();
-  saveProgress();
-  renderAssignmentsStatus();
-  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
-});
-
 assignmentsTableBody.addEventListener("change", (event) => {
   const group = findGroupById(event.target.dataset.groupId);
   if (!group) {
@@ -1285,7 +1260,7 @@ applyAssignmentsButton.addEventListener("click", () => {
 
   const missingGroup = pattern.symbolGroups.find((group) => !isGroupAssignmentReady(group));
   if (missingGroup) {
-    assignmentsError.textContent = `${missingGroup.id} doit avoir un symbole et une couleur DMC, ou etre marque comme vide.`;
+    assignmentsError.textContent = `${missingGroup.id} doit avoir une couleur DMC, ou etre marque comme vide.`;
     assignmentsError.hidden = false;
     return;
   }
@@ -1356,6 +1331,7 @@ function applyGroupAssignmentsToCells() {
         return;
       }
 
+      group.symbol = null;
       cell.symbol = group.symbol;
       cell.dmc = group.dmc;
       cell.empty = false;

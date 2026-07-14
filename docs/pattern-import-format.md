@@ -56,7 +56,7 @@ Exemple :
 - Grille vide.
 - Decoupage des cellules.
 - Groupes de symboles.
-- Associations symboles et couleurs.
+- Associations des couleurs.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -77,7 +77,7 @@ Le code est verifie dans `data/dmc-colors.json`, puis la couleur est ajoutee au 
 }
 ```
 
-Les symboles du pattern seront relies aux couleurs dans une etape separee, plus tard.
+Les symboles du pattern pourront etre ajoutes dans une etape separee, plus tard. Pour l'instant, l'import final se base surtout sur les couleurs DMC.
 
 ## Etape 3 : dimensions de la grille
 
@@ -192,11 +192,11 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
 }
 ```
 
-`symbol` et `dmc` seront remplis plus tard, quand l'utilisateur associera un groupe visuel a un symbole puis a une couleur DMC.
+`dmc` sera rempli plus tard, quand l'utilisateur associera le groupe visuel a une couleur DMC. `symbol` reste a `null` pour l'instant.
 
-## Etape 8 : associations symboles et couleurs
+## Etape 8 : associations des couleurs
 
-L'utilisateur associe chaque groupe visuel a un symbole et a une couleur DMC deja ajoutee dans l'etape 2. Un groupe peut aussi etre marque comme vide si les cellules correspondantes ne doivent pas etre brodees.
+L'utilisateur associe chaque groupe visuel a une couleur DMC deja ajoutee dans l'etape 2. Un groupe peut aussi etre marque comme vide si les cellules correspondantes ne doivent pas etre brodees.
 
 L'outil ne devine pas automatiquement la couleur d'un groupe. Il affiche un apercu du symbole extrait depuis la grille pour permettre de le comparer a la legende du PDF, puis l'utilisateur choisit la couleur DMC correspondante.
 
@@ -208,7 +208,7 @@ L'outil ne devine pas automatiquement la couleur d'un groupe. Il affiche un aper
   "previewDataUrl": "data:image/png;base64,...",
   "cellCount": 142,
   "cellKeys": ["0,0", "1,0"],
-  "symbol": "x",
+  "symbol": null,
   "dmc": "310",
   "isEmpty": false
 }
@@ -221,7 +221,7 @@ Quand les associations sont appliquees, chaque cellule du groupe recoit aussi l'
   "x": 0,
   "y": 0,
   "partId": "part-1",
-  "symbol": "x",
+  "symbol": null,
   "dmc": "310",
   "empty": false,
   "sampleSignature": "ff00aa55ff00aa55",

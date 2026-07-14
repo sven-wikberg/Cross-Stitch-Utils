@@ -319,10 +319,6 @@ select:focus {
   min-height: 38px;
 }
 
-.assignment-table .assignment-symbol-input {
-  width: 100px;
-}
-
 .assignment-table .assignment-dmc-select {
   width: 130px;
 }
