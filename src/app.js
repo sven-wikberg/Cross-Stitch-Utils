@@ -13,6 +13,7 @@ const defaultPattern = {
   partsExpected: 0,
   parts: [],
   symbolGroups: [],
+  symbolReferences: {},
   groupingTolerance: 4,
   grid: {
     width: 0,
@@ -78,6 +79,9 @@ const largestGroupText = document.querySelector("#largestGroupText");
 const groupingToleranceSelect = document.querySelector("#groupingTolerance");
 const groupsTableBody = document.querySelector("#groupsTableBody");
 const emptyGroupsMessage = document.querySelector("#emptyGroupsMessage");
+const referenceRows = document.querySelector("#referenceRows");
+const generateReferenceGroupsButton = document.querySelector("#generateReferenceGroupsButton");
+const referenceGroupsError = document.querySelector("#referenceGroupsError");
 const backToAnalysisButton = document.querySelector("#backToAnalysisButton");
 const generateGroupsButton = document.querySelector("#generateGroupsButton");
 const groupsError = document.querySelector("#groupsError");
@@ -185,6 +189,7 @@ function loadPattern() {
       partsExpected: Number.isInteger(parsed.partsExpected) ? parsed.partsExpected : 0,
       parts: Array.isArray(parsed.parts) ? parsed.parts : [],
       symbolGroups: Array.isArray(parsed.symbolGroups) ? parsed.symbolGroups : [],
+      symbolReferences: parsed.symbolReferences && typeof parsed.symbolReferences === "object" ? parsed.symbolReferences : {},
       groupingTolerance: Number.isInteger(parsed.groupingTolerance) ? parsed.groupingTolerance : defaultPattern.groupingTolerance,
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
@@ -536,14 +541,21 @@ function renderGroups() {
   const generated = areSymbolGroupsGenerated(pattern);
   const largestGroupSize = groups.reduce((largest, group) => Math.max(largest, group.cellCount), 0);
   const toleranceLabel = groupingToleranceSelect.selectedOptions[0]?.textContent || "Normal";
+  const generatedByReferences = groups.length > 0 && groups.every((group) => group.matchingMode === "reference");
 
   groupsCellsText.textContent = String(cells.length);
   groupsCountText.textContent = String(groups.length);
   largestGroupText.textContent = String(largestGroupSize);
   groupsStatus.className = `coverage-status ${generated ? "valid" : "invalid"}`;
-  groupsStatus.textContent = generated
-    ? `Groupes generes: ${groups.length}. Tolerance: ${toleranceLabel}.`
-    : `Groupes non generes. Tolerance: ${toleranceLabel}.`;
+  if (generatedByReferences) {
+    groupsStatus.textContent = `Groupes generes par references: ${groups.length}.`;
+  } else {
+    groupsStatus.textContent = generated
+      ? `Groupes generes: ${groups.length}. Tolerance: ${toleranceLabel}.`
+      : `Groupes non generes. Tolerance: ${toleranceLabel}.`;
+  }
+
+  renderReferenceRows();
 
   groupsTableBody.innerHTML = "";
   emptyGroupsMessage.hidden = groups.length > 0;
@@ -564,6 +576,27 @@ function renderGroups() {
     swatch.style.background = group.sampleMean || "#ffffff";
     swatch.title = group.sampleMean || "";
     groupsTableBody.appendChild(row);
+  });
+}
+
+function renderReferenceRows() {
+  referenceRows.innerHTML = "";
+
+  pattern.colors.forEach((color) => {
+    const reference = pattern.symbolReferences[color.dmc] || {};
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><span class="color-swatch"></span></td>
+      <td></td>
+      <td><input class="compact-input" type="number" min="0" step="1" data-reference-dmc="${color.dmc}" data-axis="x"></td>
+      <td><input class="compact-input" type="number" min="0" step="1" data-reference-dmc="${color.dmc}" data-axis="y"></td>
+    `;
+
+    row.querySelector(".color-swatch").style.background = color.hex || "#ffffff";
+    row.children[1].textContent = color.dmc;
+    row.querySelector('[data-axis="x"]').value = Number.isInteger(reference.x) ? reference.x : "";
+    row.querySelector('[data-axis="y"]').value = Number.isInteger(reference.y) ? reference.y : "";
+    referenceRows.appendChild(row);
   });
 }
 
@@ -1449,6 +1482,54 @@ generateGroupsButton.addEventListener("click", () => {
   showSavedStatus();
 });
 
+referenceRows.addEventListener("input", (event) => {
+  const input = event.target.closest("[data-reference-dmc]");
+  if (!input) {
+    return;
+  }
+
+  const dmc = input.dataset.referenceDmc;
+  const axis = input.dataset.axis;
+  const value = input.value === "" ? null : Number(input.value);
+  pattern.symbolReferences[dmc] = {
+    ...(pattern.symbolReferences[dmc] || {}),
+    [axis]: Number.isInteger(value) ? value : null
+  };
+  progress.groups = false;
+  progress.assignments = false;
+  pattern.symbolGroups = [];
+  assignmentGroupIndex = 0;
+  referenceGroupsError.hidden = true;
+  savePattern();
+  saveProgress();
+  jsonPreview.textContent = JSON.stringify(patternForLocalStorage(pattern), null, 2);
+  showSavedStatus();
+});
+
+generateReferenceGroupsButton.addEventListener("click", () => {
+  if (!progress.analysis || !isImageAnalysisComplete(pattern)) {
+    referenceGroupsError.textContent = "Le decoupage doit etre termine avant de classer avec les references.";
+    referenceGroupsError.hidden = false;
+    return;
+  }
+
+  try {
+    pattern.symbolGroups = generateReferenceSymbolGroups(pattern);
+    progress.groups = true;
+    progress.assignments = false;
+    assignmentGroupIndex = 0;
+    referenceGroupsError.hidden = true;
+    groupsError.hidden = true;
+    savePattern();
+    saveProgress();
+    goToStep("assignments");
+    showSavedStatus();
+  } catch (error) {
+    referenceGroupsError.textContent = error.message;
+    referenceGroupsError.hidden = false;
+  }
+});
+
 groupingToleranceSelect.addEventListener("change", () => {
   pattern.groupingTolerance = Number(groupingToleranceSelect.value);
   progress.groups = false;
@@ -1604,6 +1685,61 @@ function generateSymbolGroups(patternToGroup) {
       dmc: null,
       isEmpty: false
     }));
+}
+
+function generateReferenceSymbolGroups(patternToGroup) {
+  const references = buildSymbolReferences(patternToGroup);
+  const grouped = references.map((reference) => ({
+    id: `ref-${reference.dmc}`,
+    signature: reference.cell.sampleSignature,
+    sampleMean: reference.cell.sampleMean,
+    previewDataUrl: reference.cell.samplePreviewDataUrl || "",
+    tolerance: null,
+    cellCount: 0,
+    cellKeys: [],
+    symbol: null,
+    dmc: reference.dmc,
+    isEmpty: false,
+    matchingMode: "reference"
+  }));
+
+  patternToGroup.grid.cells.forEach((cell) => {
+    const bestIndex = references.reduce((best, reference, index) => {
+      const distance = signatureDistance(reference.cell.sampleSignature, cell.sampleSignature);
+      return distance < best.distance ? { index, distance } : best;
+    }, { index: 0, distance: Number.POSITIVE_INFINITY }).index;
+    grouped[bestIndex].cellKeys.push(`${cell.x},${cell.y}`);
+  });
+
+  return grouped
+    .filter((group) => group.cellKeys.length > 0)
+    .map((group) => ({
+      ...group,
+      cellCount: group.cellKeys.length
+    }));
+}
+
+function buildSymbolReferences(patternToGroup) {
+  return patternToGroup.colors.map((color) => {
+    const reference = patternToGroup.symbolReferences[color.dmc];
+    const cell = findSampleCell(patternToGroup, reference?.x, reference?.y);
+    if (!cell || !cell.sampleSignature) {
+      throw new Error(`Reference invalide pour DMC ${color.dmc}.`);
+    }
+
+    return {
+      dmc: color.dmc,
+      cell
+    };
+  });
+}
+
+function findSampleCell(patternToSearch, x, y) {
+  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+    return null;
+  }
+
+  return patternToSearch.grid.cells.find((cell) => cell.x === x && cell.y === y) || null;
 }
 
 function signatureDistance(firstSignature, secondSignature) {

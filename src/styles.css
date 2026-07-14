@@ -258,6 +258,12 @@ select {
   background: #ffffff;
 }
 
+.compact-input {
+  width: 90px;
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
 input:focus,
 select:focus {
   border-color: var(--accent);
@@ -367,6 +373,21 @@ select:focus {
   display: grid;
   gap: 10px;
   overflow-x: auto;
+}
+
+.reference-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.compact-title-row {
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
 }
 
 .color-table {
