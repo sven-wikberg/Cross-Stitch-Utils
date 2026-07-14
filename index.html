@@ -23,6 +23,10 @@
             <span class="step-number">2</span>
             <span>Couleurs DMC</span>
           </button>
+          <button class="step-item locked" type="button" data-step="dimensions" disabled>
+            <span class="step-number">3</span>
+            <span>Dimensions</span>
+          </button>
         </nav>
       </aside>
 
@@ -90,6 +94,34 @@
           </div>
           <p id="colorsError" class="form-error" hidden>Ajoute au moins un code DMC pour valider cette etape.</p>
         </section>
+
+        <form id="dimensionsForm" class="tool-panel hidden" data-panel="dimensions" aria-labelledby="dimensions-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="dimensions-title">Dimensions de la grille</h3>
+              <p>Indique la taille totale du pattern en points, pas la taille d'une page.</p>
+            </div>
+          </div>
+
+          <div class="form-grid two-columns">
+            <label for="gridWidth">
+              Largeur
+              <input id="gridWidth" name="gridWidth" type="number" inputmode="numeric" min="1" step="1" required>
+            </label>
+
+            <label for="gridHeight">
+              Hauteur
+              <input id="gridHeight" name="gridHeight" type="number" inputmode="numeric" min="1" step="1" required>
+            </label>
+          </div>
+
+          <p id="dimensionsError" class="form-error" hidden>Entre une largeur et une hauteur superieures a 0.</p>
+
+          <div class="actions split-actions">
+            <button id="backToColorsButton" class="secondary-button" type="button">Retour</button>
+            <button class="primary-button" type="submit">Valider les dimensions</button>
+          </div>
+        </form>
 
         <section class="json-panel" aria-labelledby="json-title">
           <div class="panel-title-row">

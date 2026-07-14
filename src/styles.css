@@ -259,6 +259,10 @@ input:focus {
   gap: 12px;
 }
 
+.form-grid.two-columns {
+  grid-template-columns: repeat(2, minmax(140px, 220px));
+}
+
 .color-list-wrap {
   display: grid;
   gap: 10px;
@@ -374,6 +378,10 @@ pre {
   }
 
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid.two-columns {
     grid-template-columns: 1fr;
   }
 }

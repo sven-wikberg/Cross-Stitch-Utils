@@ -45,8 +45,8 @@ Exemple :
 
 - Nom du projet.
 - Liste des couleurs DMC.
-- Informations sur le PDF source.
 - Dimensions de la grille.
+- Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
 
@@ -67,3 +67,19 @@ Le code est verifie dans `data/dmc-colors.json`, puis la couleur est ajoutee au 
 ```
 
 Les symboles du pattern seront relies aux couleurs dans une etape separee, plus tard.
+
+## Etape 3 : dimensions de la grille
+
+L'utilisateur saisit les dimensions totales du pattern en points. Ces dimensions representent toute la grille finale, meme si le PDF est decoupe sur plusieurs pages.
+
+```json
+{
+  "grid": {
+    "width": 120,
+    "height": 180,
+    "cells": []
+  }
+}
+```
+
+Si les dimensions changent plus tard, les cases deja importees devront etre verifiees ou reconstruites.

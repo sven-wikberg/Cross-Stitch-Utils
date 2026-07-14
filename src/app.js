@@ -1,4 +1,5 @@
 const STORAGE_KEY = "cross-stitch-pattern-draft";
+const PROGRESS_STORAGE_KEY = "cross-stitch-import-progress";
 
 const defaultPattern = {
   schemaVersion: 1,
@@ -24,6 +25,11 @@ const emptyColorsMessage = document.querySelector("#emptyColorsMessage");
 const colorsError = document.querySelector("#colorsError");
 const backToProjectButton = document.querySelector("#backToProjectButton");
 const validateColorsButton = document.querySelector("#validateColorsButton");
+const dimensionsForm = document.querySelector("#dimensionsForm");
+const gridWidthInput = document.querySelector("#gridWidth");
+const gridHeightInput = document.querySelector("#gridHeight");
+const dimensionsError = document.querySelector("#dimensionsError");
+const backToColorsButton = document.querySelector("#backToColorsButton");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -35,6 +41,7 @@ const resetButton = document.querySelector("#resetButton");
 const dmcReference = Array.isArray(window.DMC_COLORS) ? window.DMC_COLORS : [];
 const dmcReferenceByCode = new Map(dmcReference.map((color) => [normalizeDmcCode(color.code), color]));
 let pattern = loadPattern();
+let progress = loadProgress(pattern);
 let activeStep = "project";
 
 const stepLabels = {
@@ -45,10 +52,14 @@ const stepLabels = {
   colors: {
     eyebrow: "Etape 2",
     title: "Couleurs DMC"
+  },
+  dimensions: {
+    eyebrow: "Etape 3",
+    title: "Dimensions"
   }
 };
 
-const stepOrder = ["project", "colors"];
+const stepOrder = ["project", "colors", "dimensions"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -74,6 +85,28 @@ function loadPattern() {
   } catch {
     return structuredClone(defaultPattern);
   }
+}
+
+function loadProgress(currentPattern) {
+  const stored = localStorage.getItem(PROGRESS_STORAGE_KEY);
+  if (stored) {
+    try {
+      return {
+        project: false,
+        colors: false,
+        dimensions: false,
+        ...JSON.parse(stored)
+      };
+    } catch {
+      // Fall through to inferred progress.
+    }
+  }
+
+  return {
+    project: currentPattern.project.name.trim().length > 0,
+    colors: currentPattern.colors.length > 0,
+    dimensions: currentPattern.grid.width > 0 && currentPattern.grid.height > 0
+  };
 }
 
 function normalizeDmcCode(code) {
@@ -105,12 +138,18 @@ function savePattern() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pattern, null, 2));
 }
 
+function saveProgress() {
+  localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress));
+}
+
 function render() {
   if (!canOpenStep(activeStep)) {
     activeStep = firstOpenStep();
   }
 
   projectNameInput.value = pattern.project.name;
+  gridWidthInput.value = pattern.grid.width || "";
+  gridHeightInput.value = pattern.grid.height || "";
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
@@ -139,11 +178,19 @@ function renderStep() {
 
 function isStepComplete(step) {
   if (step === "project") {
-    return pattern.project.name.trim().length > 0;
+    return progress.project && pattern.project.name.trim().length > 0;
   }
 
   if (step === "colors") {
-    return pattern.colors.length > 0;
+    return progress.colors && pattern.colors.length > 0;
+  }
+
+  if (step === "dimensions") {
+    return progress.dimensions
+      && Number.isInteger(pattern.grid.width)
+      && Number.isInteger(pattern.grid.height)
+      && pattern.grid.width > 0
+      && pattern.grid.height > 0;
   }
 
   return false;
@@ -230,13 +277,19 @@ projectForm.addEventListener("submit", (event) => {
 
   projectError.hidden = true;
   pattern.project.name = name;
+  progress.project = true;
   savePattern();
+  saveProgress();
   goToStep("colors");
   showSavedStatus();
 });
 
 projectNameInput.addEventListener("input", () => {
   pattern.project.name = projectNameInput.value;
+  progress.project = false;
+  progress.colors = false;
+  progress.dimensions = false;
+  saveProgress();
   projectError.hidden = true;
   render();
 });
@@ -267,8 +320,11 @@ colorForm.addEventListener("submit", (event) => {
   }
 
   pattern.colors.push(colorFromReference(referenceColor));
+  progress.colors = false;
+  progress.dimensions = false;
 
   savePattern();
+  saveProgress();
   colorsError.hidden = true;
   colorForm.reset();
   dmcCodeInput.focus();
@@ -284,7 +340,10 @@ colorsTableBody.addEventListener("click", (event) => {
 
   const index = Number(removeButton.dataset.removeColor);
   pattern.colors.splice(index, 1);
+  progress.colors = false;
+  progress.dimensions = false;
   savePattern();
+  saveProgress();
   render();
 });
 
@@ -301,8 +360,51 @@ validateColorsButton.addEventListener("click", () => {
   }
 
   colorsError.hidden = true;
+  progress.colors = true;
+  progress.dimensions = false;
   savePattern();
+  saveProgress();
+  goToStep("dimensions");
   showSavedStatus();
+});
+
+backToColorsButton.addEventListener("click", () => {
+  goToStep("colors");
+});
+
+dimensionsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const width = Number(gridWidthInput.value);
+  const height = Number(gridHeightInput.value);
+
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    dimensionsError.hidden = false;
+    return;
+  }
+
+  const dimensionsChanged = pattern.grid.width !== width || pattern.grid.height !== height;
+  pattern.grid.width = width;
+  pattern.grid.height = height;
+
+  if (dimensionsChanged) {
+    pattern.grid.cells = [];
+  }
+
+  progress.dimensions = true;
+  dimensionsError.hidden = true;
+  savePattern();
+  saveProgress();
+  render();
+  showSavedStatus();
+});
+
+gridWidthInput.addEventListener("input", () => {
+  dimensionsError.hidden = true;
+});
+
+gridHeightInput.addEventListener("input", () => {
+  dimensionsError.hidden = true;
 });
 
 stepButtons.forEach((button) => {
@@ -314,6 +416,12 @@ stepButtons.forEach((button) => {
 resetButton.addEventListener("click", () => {
   pattern = structuredClone(defaultPattern);
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(PROGRESS_STORAGE_KEY);
+  progress = {
+    project: false,
+    colors: false,
+    dimensions: false
+  };
   render();
 });
 
