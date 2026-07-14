@@ -14,6 +14,7 @@ const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
+const autoPathButton = document.querySelector("#autoPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -235,6 +236,7 @@ function renderPathBuilder() {
   if (!loadedPattern || !selectedDmc) {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
+    autoPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -248,6 +250,7 @@ function renderPathBuilder() {
   pathBuildStatus.textContent = complete
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
+  autoPathButton.disabled = expected === 0;
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
   savePathAndNextButton.disabled = !complete;
@@ -360,6 +363,27 @@ function cellsForColor(dmc) {
   }
 
   return loadedPattern.grid.cells.filter((cell) => !cell.empty && cell.dmc === dmc);
+}
+
+function automaticPathForColor(dmc) {
+  const rows = new Map();
+  cellsForColor(dmc).forEach((cell) => {
+    if (!rows.has(cell.y)) {
+      rows.set(cell.y, []);
+    }
+
+    rows.get(cell.y).push(cell);
+  });
+
+  return [...rows.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .flatMap(([y, rowCells]) => {
+      const sorted = rowCells
+        .slice()
+        .sort((a, b) => a.x - b.x);
+      return y % 2 === 0 ? sorted : sorted.reverse();
+    })
+    .map((cell) => ({ x: cell.x, y: cell.y }));
 }
 
 function cellKey(point) {
@@ -579,6 +603,19 @@ pathColorLegend.addEventListener("click", (event) => {
   selectedDmc = button.dataset.dmc;
   savePathPlannerState();
   renderPathTool();
+});
+
+autoPathButton.addEventListener("click", () => {
+  if (!loadedPattern || !selectedDmc) {
+    return;
+  }
+
+  pathsByDmc[selectedDmc] = automaticPathForColor(selectedDmc);
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
 });
 
 undoPathPointButton.addEventListener("click", () => {
