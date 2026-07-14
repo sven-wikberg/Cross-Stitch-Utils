@@ -119,24 +119,6 @@ select {
   background: #243a3a;
 }
 
-.sidebar-link {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 38px;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 6px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.sidebar-link:hover {
-  background: rgba(255, 255, 255, 0.16);
-}
-
 .eyebrow {
   margin: 0 0 8px;
   color: currentColor;
@@ -145,6 +127,16 @@ select {
   letter-spacing: 0;
   text-transform: uppercase;
   opacity: 0.72;
+}
+
+.app-home-link {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.app-home-link:hover {
+  opacity: 1;
+  text-decoration: underline;
 }
 
 h1,
