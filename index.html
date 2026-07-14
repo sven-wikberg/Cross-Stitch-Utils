@@ -31,6 +31,10 @@
             <span class="step-number">4</span>
             <span>Morceaux</span>
           </button>
+          <button class="step-item locked" type="button" data-step="grid" disabled>
+            <span class="step-number">5</span>
+            <span>Grille vide</span>
+          </button>
         </nav>
       </aside>
 
@@ -220,6 +224,38 @@
             <button id="validatePartsButton" class="primary-button" type="button">Valider les morceaux</button>
           </div>
           <p id="partsError" class="form-error" hidden>Les morceaux doivent couvrir toute la grille sans trou ni chevauchement.</p>
+        </section>
+
+        <section id="gridPanel" class="tool-panel hidden" data-panel="grid" aria-labelledby="grid-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="grid-title">Grille vide</h3>
+              <p>Genere toutes les cases du pattern a partir des dimensions et des morceaux valides.</p>
+            </div>
+          </div>
+
+          <div id="gridStatus" class="coverage-status"></div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Dimensions</span>
+              <strong id="gridDimensionsText">0 x 0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Cases attendues</span>
+              <strong id="gridExpectedCellsText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Cases generees</span>
+              <strong id="gridGeneratedCellsText">0</strong>
+            </div>
+          </div>
+
+          <div class="actions split-actions">
+            <button id="backToPartsButton" class="secondary-button" type="button">Retour</button>
+            <button id="generateGridButton" class="primary-button" type="button">Generer la grille</button>
+          </div>
+          <p id="gridError" class="form-error" hidden>Les morceaux doivent etre valides avant de generer la grille.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">

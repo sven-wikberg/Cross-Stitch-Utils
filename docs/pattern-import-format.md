@@ -51,6 +51,7 @@ Exemple :
 - Liste des couleurs DMC.
 - Dimensions de la grille.
 - Morceaux du pattern.
+- Grille vide.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -125,3 +126,19 @@ La validation verifie que les morceaux couvrent exactement les dimensions global
 L'analyse automatique des images sera ajoutee plus tard, une fois ce decoupage fiable.
 
 `imageSource` vaut `file` pour une image choisie depuis le disque, ou `clipboard` pour une image collee depuis le presse-papier. `imageDataUrl` contient l'image quand elle est disponible pour permettre une analyse locale plus tard.
+
+## Etape 5 : grille vide
+
+Une fois les morceaux valides, l'outil genere une cellule vide pour chaque point du pattern. Chaque cellule connait sa position globale et le morceau dont elle provient.
+
+```json
+{
+  "x": 0,
+  "y": 0,
+  "partId": "part-1",
+  "symbol": null,
+  "dmc": null
+}
+```
+
+Cette etape ne lit pas encore les symboles dans l'image. Elle prepare seulement la structure uniforme qui sera remplie plus tard.

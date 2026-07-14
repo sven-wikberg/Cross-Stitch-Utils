@@ -348,6 +348,31 @@ input:focus {
   background: rgba(180, 75, 87, 0.1);
 }
 
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.stats-row > div {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.stats-row strong {
+  font-size: 1.35rem;
+}
+
 .clipboard-drop-zone {
   display: grid;
   align-items: center;
@@ -440,6 +465,10 @@ pre {
   }
 
   .form-grid.parts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-row {
     grid-template-columns: 1fr;
   }
 }
