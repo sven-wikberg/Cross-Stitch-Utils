@@ -1331,15 +1331,6 @@ function classifyCurrentGroup({ dmc, isEmpty }) {
 
 function advanceToNextAssignment() {
   const groups = pattern.symbolGroups || [];
-  const nextUnreadyIndex = groups.findIndex((group, index) => (
-    index > assignmentGroupIndex && !isGroupAssignmentReady(group)
-  ));
-
-  if (nextUnreadyIndex >= 0) {
-    assignmentGroupIndex = nextUnreadyIndex;
-    return;
-  }
-
   assignmentGroupIndex = Math.min(assignmentGroupIndex + 1, groups.length - 1);
 }
 
