@@ -52,25 +52,15 @@
           <div class="panel-heading">
             <div>
               <h3 id="colors-title">Couleurs du pattern</h3>
-              <p>Ajoute les couleurs telles qu'elles apparaissent dans la legende du PDF.</p>
+              <p>Ajoute uniquement les codes DMC utilises dans le pattern.</p>
             </div>
           </div>
 
           <form id="colorForm" class="color-form">
             <div class="form-grid">
               <label>
-                Symbole
-                <input id="colorSymbol" name="colorSymbol" type="text" autocomplete="off" maxlength="4" required>
-              </label>
-
-              <label>
-                DMC
+                Code DMC
                 <input id="dmcCode" name="dmcCode" type="text" inputmode="numeric" autocomplete="off" required>
-              </label>
-
-              <label>
-                Nom optionnel
-                <input id="dmcName" name="dmcName" type="text" autocomplete="off">
               </label>
             </div>
 
@@ -83,9 +73,7 @@
             <table class="color-table">
               <thead>
                 <tr>
-                  <th>Symbole</th>
-                  <th>DMC</th>
-                  <th>Nom</th>
+                  <th>Code DMC</th>
                   <th></th>
                 </tr>
               </thead>
@@ -98,7 +86,7 @@
             <button id="backToProjectButton" class="secondary-button" type="button">Retour</button>
             <button id="validateColorsButton" class="primary-button" type="button">Valider les couleurs</button>
           </div>
-          <p id="colorsError" class="form-error" hidden>Ajoute au moins une couleur DMC pour valider cette etape.</p>
+          <p id="colorsError" class="form-error" hidden>Ajoute au moins un code DMC pour valider cette etape.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">

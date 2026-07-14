@@ -17,9 +17,7 @@ const projectForm = document.querySelector("#projectForm");
 const projectNameInput = document.querySelector("#projectName");
 const projectError = document.querySelector("#projectError");
 const colorForm = document.querySelector("#colorForm");
-const colorSymbolInput = document.querySelector("#colorSymbol");
 const dmcCodeInput = document.querySelector("#dmcCode");
-const dmcNameInput = document.querySelector("#dmcName");
 const colorsTableBody = document.querySelector("#colorsTableBody");
 const emptyColorsMessage = document.querySelector("#emptyColorsMessage");
 const colorsError = document.querySelector("#colorsError");
@@ -152,8 +150,6 @@ function renderColors() {
     const row = document.createElement("tr");
 
     row.innerHTML = `
-      <td><span class="symbol-cell"></span></td>
-      <td></td>
       <td></td>
       <td class="row-actions">
         <button class="danger-button" type="button" data-remove-color="${index}" title="Supprimer">
@@ -162,9 +158,7 @@ function renderColors() {
       </td>
     `;
 
-    row.querySelector(".symbol-cell").textContent = color.symbol;
-    row.children[1].textContent = color.dmc;
-    row.children[2].textContent = color.name || "-";
+    row.children[0].textContent = color.dmc;
     colorsTableBody.appendChild(row);
   });
 }
@@ -202,25 +196,21 @@ projectNameInput.addEventListener("input", () => {
 colorForm.addEventListener("submit", (event) => {
   event.preventDefault();
 
-  const symbol = colorSymbolInput.value.trim();
   const dmc = dmcCodeInput.value.trim();
-  const name = dmcNameInput.value.trim();
 
-  if (!symbol || !dmc) {
+  if (!dmc) {
     return;
   }
 
   pattern.colors.push({
     id: `dmc-${dmc}`,
-    symbol,
-    dmc,
-    name
+    dmc
   });
 
   savePattern();
   colorsError.hidden = true;
   colorForm.reset();
-  colorSymbolInput.focus();
+  dmcCodeInput.focus();
   render();
   showSavedStatus();
 });
@@ -244,7 +234,7 @@ backToProjectButton.addEventListener("click", () => {
 validateColorsButton.addEventListener("click", () => {
   if (pattern.colors.length === 0) {
     colorsError.hidden = false;
-    colorSymbolInput.focus();
+    dmcCodeInput.focus();
     return;
   }
 
