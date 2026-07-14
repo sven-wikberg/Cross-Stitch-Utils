@@ -40,6 +40,76 @@ select {
   min-height: 100vh;
 }
 
+.toolbox-shell {
+  display: grid;
+  align-content: start;
+  gap: 28px;
+  width: min(960px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 42px 34px;
+}
+
+.toolbox-header {
+  display: grid;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #ffffff;
+  background: #243a3a;
+  box-shadow: var(--shadow);
+}
+
+.toolbox-header p:last-child {
+  max-width: 620px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.tool-card {
+  display: grid;
+  gap: 10px;
+  min-height: 170px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+}
+
+.tool-card:hover {
+  border-color: var(--accent);
+  outline: 3px solid rgba(36, 120, 109, 0.16);
+}
+
+.tool-number {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: rgba(36, 120, 109, 0.12);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.tool-card strong {
+  font-size: 1.2rem;
+}
+
+.tool-card span:last-child {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -47,6 +117,24 @@ select {
   padding: 28px;
   color: #ffffff;
   background: #243a3a;
+}
+
+.sidebar-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .eyebrow {

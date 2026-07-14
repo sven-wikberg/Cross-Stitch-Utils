@@ -19,6 +19,9 @@ Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application
 
 ## Organisation proposee
 
+- Chaque outil a sa propre page HTML.
+- Les outils ne doivent jamais dependre les uns des autres.
+- La page `index.html` sert uniquement de boite a outils pour ouvrir les pages dediees.
 - `docs/` : notes, idees, decisions de conception.
 - `src/` : code des outils.
 - `data/` : donnees locales non sensibles utiles au projet.
@@ -26,7 +29,9 @@ Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application
 
 ## Ouvrir l'application
 
-Le premier prototype est une page locale. Ouvrir `index.html` dans un navigateur sur PC.
+Ouvrir `index.html` dans un navigateur sur PC, puis choisir l'outil voulu.
+
+L'outil 1, `Importer un pattern`, est disponible dans `import-pattern.html`.
 
 ## Direction technique
 
