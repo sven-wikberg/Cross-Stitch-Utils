@@ -41,6 +41,7 @@ const progressStepLabels = {
 
 const progressStepOrder = ["load", "stitch"];
 const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
+const MAX_RESPONSIVE_CELL_SIZE = 18;
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -181,7 +182,7 @@ function renderStitchView() {
 
   const pattern = loadedPaths.pattern;
   const colorByDmc = new Map(pattern.colors.map((color) => [color.dmc, color]));
-  const cellSize = gridCellSize(pattern.grid.width, pattern.grid.height);
+  const cellSize = gridCellSize(pattern.grid.width, pattern.grid.height, availableGridWidth(stitchCanvas));
   const selectedColor = colorByDmc.get(selectedDmc);
   stitchColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
@@ -539,17 +540,33 @@ function areAllColorsStitched(pathsFile, stitchedState) {
   return pathsFile.paths.every((path) => (stitchedState[path.dmc] || 0) >= path.points.length);
 }
 
-function gridCellSize(width, height) {
+function gridCellSize(width, height, availableWidth = 0) {
   const largestSide = Math.max(width, height);
+  let baseSize = 4;
   if (largestSide <= 80) {
-    return 10;
+    baseSize = 10;
+  } else if (largestSide <= 160) {
+    baseSize = 6;
   }
 
-  if (largestSide <= 160) {
-    return 6;
+  if (!availableWidth || width <= 0) {
+    return baseSize;
   }
 
-  return 4;
+  const fittedSize = Math.floor(availableWidth / width);
+  return Math.max(baseSize, Math.min(MAX_RESPONSIVE_CELL_SIZE, fittedSize));
+}
+
+function availableGridWidth(canvas) {
+  const wrapper = canvas.parentElement;
+  if (!wrapper) {
+    return 0;
+  }
+
+  const wrapperStyle = window.getComputedStyle(wrapper);
+  const horizontalPadding =
+    parseFloat(wrapperStyle.paddingLeft || "0") + parseFloat(wrapperStyle.paddingRight || "0");
+  return Math.max(0, wrapper.clientWidth - horizontalPadding);
 }
 
 function drawGridLines(context, width, height, cellSize) {
@@ -855,6 +872,18 @@ function advanceSelectedColor() {
 progressStepButtons.forEach((button) => {
   button.addEventListener("click", () => {
     goToProgressStep(button.dataset.step);
+  });
+});
+
+let resizeRenderFrame = null;
+window.addEventListener("resize", () => {
+  if (resizeRenderFrame) {
+    cancelAnimationFrame(resizeRenderFrame);
+  }
+
+  resizeRenderFrame = requestAnimationFrame(() => {
+    resizeRenderFrame = null;
+    renderProgressTool();
   });
 });
 

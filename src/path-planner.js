@@ -52,6 +52,7 @@ const ISLAND_GAP_TOLERANCE = 3;
 const BACKTRACK_ISLAND_GAP_TOLERANCE = 1;
 const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
+const MAX_RESPONSIVE_CELL_SIZE = 18;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -170,7 +171,11 @@ function renderPatternGrid() {
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
   }
 
-  const cellSize = gridCellSize(loadedPattern.grid.width, loadedPattern.grid.height);
+  const cellSize = gridCellSize(
+    loadedPattern.grid.width,
+    loadedPattern.grid.height,
+    availableGridWidth(patternCanvas)
+  );
   const selectedColor = colorByDmc.get(selectedDmc);
   selectedColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
@@ -321,17 +326,33 @@ function toHex(value) {
   return value.toString(16).padStart(2, "0").toUpperCase();
 }
 
-function gridCellSize(width, height) {
+function gridCellSize(width, height, availableWidth = 0) {
   const largestSide = Math.max(width, height);
+  let baseSize = 4;
   if (largestSide <= 80) {
-    return 10;
+    baseSize = 10;
+  } else if (largestSide <= 160) {
+    baseSize = 6;
   }
 
-  if (largestSide <= 160) {
-    return 6;
+  if (!availableWidth || width <= 0) {
+    return baseSize;
   }
 
-  return 4;
+  const fittedSize = Math.floor(availableWidth / width);
+  return Math.max(baseSize, Math.min(MAX_RESPONSIVE_CELL_SIZE, fittedSize));
+}
+
+function availableGridWidth(canvas) {
+  const wrapper = canvas.parentElement;
+  if (!wrapper) {
+    return 0;
+  }
+
+  const wrapperStyle = window.getComputedStyle(wrapper);
+  const horizontalPadding =
+    parseFloat(wrapperStyle.paddingLeft || "0") + parseFloat(wrapperStyle.paddingRight || "0");
+  return Math.max(0, wrapper.clientWidth - horizontalPadding);
 }
 
 function drawGridLines(context, width, height, cellSize) {
@@ -890,7 +911,7 @@ patternCanvas.addEventListener("click", (event) => {
     return;
   }
 
-  const cellSize = gridCellSize(loadedPattern.grid.width, loadedPattern.grid.height);
+  const cellSize = patternCanvas.width / loadedPattern.grid.width;
   const rect = patternCanvas.getBoundingClientRect();
   const scaleX = patternCanvas.width / rect.width;
   const scaleY = patternCanvas.height / rect.height;
@@ -1024,6 +1045,18 @@ downloadPathJsonButton.addEventListener("click", () => {
 pathStepButtons.forEach((button) => {
   button.addEventListener("click", () => {
     goToPathStep(button.dataset.step);
+  });
+});
+
+let resizeRenderFrame = null;
+window.addEventListener("resize", () => {
+  if (resizeRenderFrame) {
+    cancelAnimationFrame(resizeRenderFrame);
+  }
+
+  resizeRenderFrame = requestAnimationFrame(() => {
+    resizeRenderFrame = null;
+    renderPathTool();
   });
 });
 
