@@ -576,6 +576,20 @@ select:focus {
   outline: 3px solid rgba(36, 120, 109, 0.16);
 }
 
+.path-color-item.complete .stat-label {
+  color: var(--accent-strong);
+}
+
+.path-builder-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.path-builder-panel .primary-button {
+  width: 100%;
+}
+
 .assignment-nav {
   display: flex;
   justify-content: space-between;

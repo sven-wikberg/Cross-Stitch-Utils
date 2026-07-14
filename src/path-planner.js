@@ -13,6 +13,10 @@ const pathGridStatus = document.querySelector("#pathGridStatus");
 const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
+const pathBuildStatus = document.querySelector("#pathBuildStatus");
+const undoPathPointButton = document.querySelector("#undoPathPointButton");
+const clearPathButton = document.querySelector("#clearPathButton");
+const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
 const pathStepButtons = document.querySelectorAll("[data-step]");
@@ -35,36 +39,54 @@ const pathStepLabels = {
 
 const pathStepOrder = ["load", "paths", "export"];
 
-let loadedPattern = loadStoredPattern();
+let storedState = loadStoredState();
+let loadedPattern = storedState.pattern;
+let pathsByDmc = storedState.pathsByDmc;
 let pathProgress = {
   load: Boolean(loadedPattern),
-  paths: false,
+  paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, storedState.pathsByDmc),
   export: false
 };
 let activePathStep = "load";
-let selectedDmc = loadedPattern?.colors[0]?.dmc || null;
+let selectedDmc = storedState.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
 
-function loadStoredPattern() {
+function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
   if (!stored) {
-    return null;
+    return { pattern: null, pathsByDmc: {} };
   }
 
   try {
     const parsed = JSON.parse(stored);
-    return validateFinalPattern(parsed).valid ? parsed : null;
+    if (validateFinalPattern(parsed).valid) {
+      return { pattern: parsed, pathsByDmc: {} };
+    }
+
+    if (validateFinalPattern(parsed.pattern).valid) {
+      return {
+        pattern: parsed.pattern,
+        pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
+        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
+      };
+    }
+
+    return { pattern: null, pathsByDmc: {} };
   } catch {
-    return null;
+    return { pattern: null, pathsByDmc: {} };
   }
 }
 
-function saveLoadedPattern() {
+function savePathPlannerState() {
   if (!loadedPattern) {
     localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
     return;
   }
 
-  localStorage.setItem(PATH_PLANNER_STORAGE_KEY, JSON.stringify(loadedPattern));
+  localStorage.setItem(PATH_PLANNER_STORAGE_KEY, JSON.stringify({
+    pattern: loadedPattern,
+    pathsByDmc,
+    selectedDmc
+  }));
 }
 
 function renderPathTool() {
@@ -159,9 +181,76 @@ function renderPatternGrid() {
     drawGridLines(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   }
 
+  drawSelectedPath(context, cellSize);
+
   renderPathColorLegend();
+  renderPathBuilder();
   pathGridStatus.className = "coverage-status valid";
   pathGridStatus.textContent = `Couleur selectionnee: DMC ${selectedDmc}.`;
+}
+
+function drawSelectedPath(context, cellSize) {
+  const path = currentPath();
+  if (path.length === 0) {
+    return;
+  }
+
+  context.save();
+  context.strokeStyle = "#222426";
+  context.lineWidth = Math.max(2, Math.floor(cellSize / 3));
+  context.lineJoin = "round";
+  context.lineCap = "round";
+
+  if (path.length > 1) {
+    context.beginPath();
+    path.forEach((point, index) => {
+      const centerX = (point.x + 0.5) * cellSize;
+      const centerY = (point.y + 0.5) * cellSize;
+      if (index === 0) {
+        context.moveTo(centerX, centerY);
+      } else {
+        context.lineTo(centerX, centerY);
+      }
+    });
+    context.stroke();
+  }
+
+  path.forEach((point, index) => {
+    const centerX = (point.x + 0.5) * cellSize;
+    const centerY = (point.y + 0.5) * cellSize;
+    const radius = Math.max(3, Math.floor(cellSize * 0.38));
+    context.fillStyle = index === path.length - 1 ? "#ffffff" : "#222426";
+    context.strokeStyle = "#222426";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  });
+
+  context.restore();
+}
+
+function renderPathBuilder() {
+  if (!loadedPattern || !selectedDmc) {
+    pathBuildStatus.className = "coverage-status invalid";
+    pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
+    undoPathPointButton.disabled = true;
+    clearPathButton.disabled = true;
+    savePathAndNextButton.disabled = true;
+    return;
+  }
+
+  const path = currentPath();
+  const expected = cellsForSelectedColor().length;
+  const complete = isPathComplete(selectedDmc);
+  pathBuildStatus.className = `coverage-status ${complete ? "valid" : "invalid"}`;
+  pathBuildStatus.textContent = complete
+    ? `Chemin complet: ${path.length} / ${expected} cases.`
+    : `Chemin en cours: ${path.length} / ${expected} cases.`;
+  undoPathPointButton.disabled = path.length === 0;
+  clearPathButton.disabled = path.length === 0;
+  savePathAndNextButton.disabled = !complete;
 }
 
 function mutedHex(hex) {
@@ -230,19 +319,104 @@ function renderPathColorLegend() {
   pathColorLegend.innerHTML = "";
 
   loadedPattern.colors.forEach((color) => {
+    const path = pathsByDmc[color.dmc] || [];
+    const expected = cellsForColor(color.dmc).length;
+    const complete = expected > 0 && path.length === expected;
     const item = document.createElement("button");
     item.className = "path-color-item";
     item.type = "button";
     item.dataset.dmc = color.dmc;
     item.classList.toggle("selected", color.dmc === selectedDmc);
+    item.classList.toggle("complete", complete);
     item.innerHTML = `
       <span class="color-swatch"></span>
       <span>DMC ${color.dmc}</span>
-      <span class="stat-label">${color.symbol || ""}</span>
+      <span class="stat-label">${path.length}/${expected}</span>
     `;
     item.querySelector(".color-swatch").style.background = color.hex;
     pathColorLegend.appendChild(item);
   });
+}
+
+function currentPath() {
+  if (!selectedDmc) {
+    return [];
+  }
+
+  if (!Array.isArray(pathsByDmc[selectedDmc])) {
+    pathsByDmc[selectedDmc] = [];
+  }
+
+  return pathsByDmc[selectedDmc];
+}
+
+function cellsForSelectedColor() {
+  return cellsForColor(selectedDmc);
+}
+
+function cellsForColor(dmc) {
+  if (!loadedPattern || !dmc) {
+    return [];
+  }
+
+  return loadedPattern.grid.cells.filter((cell) => !cell.empty && cell.dmc === dmc);
+}
+
+function cellKey(point) {
+  return `${point.x},${point.y}`;
+}
+
+function findCellAt(x, y) {
+  if (!loadedPattern) {
+    return null;
+  }
+
+  return loadedPattern.grid.cells.find((cell) => cell.x === x && cell.y === y) || null;
+}
+
+function isPathComplete(dmc) {
+  return isCompletePathForColor(loadedPattern, pathsByDmc, dmc);
+}
+
+function areAllColorPathsComplete(pattern, paths) {
+  if (!pattern) {
+    return false;
+  }
+
+  return pattern.colors.every((color) => isCompletePathForColor(pattern, paths, color.dmc));
+}
+
+function isCompletePathForColor(pattern, paths, dmc) {
+  if (!pattern || !dmc) {
+    return false;
+  }
+
+  const expectedKeys = new Set(
+    pattern.grid.cells
+      .filter((cell) => !cell.empty && cell.dmc === dmc)
+      .map(cellKey)
+  );
+  const path = Array.isArray(paths[dmc]) ? paths[dmc] : [];
+  const pathKeys = new Set(path.map(cellKey));
+
+  if (expectedKeys.size === 0 || path.length !== expectedKeys.size || pathKeys.size !== path.length) {
+    return false;
+  }
+
+  return path.every((point) => expectedKeys.has(cellKey(point)));
+}
+
+function selectNextIncompleteColor() {
+  if (!loadedPattern) {
+    return;
+  }
+
+  const currentIndex = loadedPattern.colors.findIndex((color) => color.dmc === selectedDmc);
+  const nextColor = loadedPattern.colors.find((color, index) => index > currentIndex && !isPathComplete(color.dmc))
+    || loadedPattern.colors.find((color) => !isPathComplete(color.dmc))
+    || loadedPattern.colors[Math.min(currentIndex + 1, loadedPattern.colors.length - 1)];
+
+  selectedDmc = nextColor?.dmc || selectedDmc;
 }
 
 function isPathStepComplete(step) {
@@ -341,17 +515,19 @@ patternJsonFileInput.addEventListener("change", async () => {
 
   try {
     loadedPattern = await readSelectedPattern(file);
+    pathsByDmc = {};
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathProgress.load = true;
     pathProgress.paths = false;
     pathProgress.export = false;
     loadError.hidden = true;
-    saveLoadedPattern();
+    savePathPlannerState();
     goToPathStep("paths");
     showPathSavedStatus();
   } catch (error) {
     loadedPattern = null;
     selectedDmc = null;
+    pathsByDmc = {};
     pathProgress.load = false;
     pathProgress.paths = false;
     pathProgress.export = false;
@@ -362,6 +538,38 @@ patternJsonFileInput.addEventListener("change", async () => {
   }
 });
 
+patternCanvas.addEventListener("click", (event) => {
+  if (!loadedPattern || !selectedDmc) {
+    return;
+  }
+
+  const cellSize = gridCellSize(loadedPattern.grid.width, loadedPattern.grid.height);
+  const rect = patternCanvas.getBoundingClientRect();
+  const scaleX = patternCanvas.width / rect.width;
+  const scaleY = patternCanvas.height / rect.height;
+  const x = Math.floor(((event.clientX - rect.left) * scaleX) / cellSize);
+  const y = Math.floor(((event.clientY - rect.top) * scaleY) / cellSize);
+  const cell = findCellAt(x, y);
+
+  if (!cell || cell.empty || cell.dmc !== selectedDmc) {
+    return;
+  }
+
+  const path = currentPath();
+  const key = cellKey(cell);
+  const alreadySelected = path.some((point) => cellKey(point) === key);
+  if (alreadySelected) {
+    return;
+  }
+
+  path.push({ x: cell.x, y: cell.y });
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
+});
+
 pathColorLegend.addEventListener("click", (event) => {
   const button = event.target.closest("[data-dmc]");
   if (!button) {
@@ -369,7 +577,37 @@ pathColorLegend.addEventListener("click", (event) => {
   }
 
   selectedDmc = button.dataset.dmc;
-  renderPatternGrid();
+  savePathPlannerState();
+  renderPathTool();
+});
+
+undoPathPointButton.addEventListener("click", () => {
+  currentPath().pop();
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+});
+
+clearPathButton.addEventListener("click", () => {
+  pathsByDmc[selectedDmc] = [];
+  pathProgress.paths = false;
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+});
+
+savePathAndNextButton.addEventListener("click", () => {
+  if (!isPathComplete(selectedDmc)) {
+    return;
+  }
+
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  selectNextIncompleteColor();
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
 });
 
 pathStepButtons.forEach((button) => {
@@ -381,6 +619,7 @@ pathStepButtons.forEach((button) => {
 resetPathToolButton.addEventListener("click", () => {
   loadedPattern = null;
   selectedDmc = null;
+  pathsByDmc = {};
   pathProgress = {
     load: false,
     paths: false,
