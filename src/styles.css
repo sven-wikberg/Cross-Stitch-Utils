@@ -592,6 +592,10 @@ select:focus {
   width: 100%;
 }
 
+.path-builder-panel > .secondary-button {
+  width: 100%;
+}
+
 .embedded-save-panel {
   display: grid;
   gap: 8px;

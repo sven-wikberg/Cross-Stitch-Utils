@@ -20,6 +20,8 @@ const undoStitchButton = document.querySelector("#undoStitchButton");
 const resetColorProgressButton = document.querySelector("#resetColorProgressButton");
 const nextStitchButton = document.querySelector("#nextStitchButton");
 const downloadProgressSaveButton = document.querySelector("#downloadProgressSaveButton");
+const writeBuiltinProgressButton = document.querySelector("#writeBuiltinProgressButton");
+const writeBuiltinProgressStatus = document.querySelector("#writeBuiltinProgressStatus");
 const completedColorList = document.querySelector("#completedColorList");
 const progressStepEyebrow = document.querySelector("#progressStepEyebrow");
 const progressStepTitle = document.querySelector("#progress-step-title");
@@ -328,6 +330,7 @@ function renderStitchControls() {
     resetColorProgressButton.disabled = true;
     nextStitchButton.disabled = true;
     downloadProgressSaveButton.disabled = true;
+    writeBuiltinProgressButton.disabled = true;
     return;
   }
 
@@ -342,6 +345,7 @@ function renderStitchControls() {
   resetColorProgressButton.disabled = stitched === 0;
   nextStitchButton.disabled = complete;
   downloadProgressSaveButton.disabled = false;
+  writeBuiltinProgressButton.disabled = false;
 }
 
 function isProgressStepComplete(step) {
@@ -624,6 +628,42 @@ function downloadJson(data, filename) {
   URL.revokeObjectURL(url);
 }
 
+function buildBuiltinProgressFile() {
+  return `window.BUILTIN_STITCH_PROGRESS = ${JSON.stringify(buildProgressSave(), null, 2)};\n`;
+}
+
+function downloadText(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function writeBuiltinProgressFile(content) {
+  if (!window.showSaveFilePicker) {
+    downloadText(content, "builtin-progress.js", "text/javascript");
+    writeBuiltinProgressStatus.textContent = "Fichier telecharge. Remplace data/builtin-progress.js puis commit le fichier.";
+    return;
+  }
+
+  const handle = await window.showSaveFilePicker({
+    suggestedName: "builtin-progress.js",
+    types: [{
+      description: "JavaScript",
+      accept: { "text/javascript": [".js"] }
+    }]
+  });
+  const writable = await handle.createWritable();
+  await writable.write(content);
+  await writable.close();
+  writeBuiltinProgressStatus.textContent = "Fichier sauvegarde. Il reste a commit data/builtin-progress.js.";
+}
+
 function safeFilePart(value) {
   return String(value || "cross-stitch")
     .trim()
@@ -741,6 +781,24 @@ downloadProgressSaveButton.addEventListener("click", () => {
   const filename = `${safeFilePart(loadedPaths.project.name)}-progress-save.json`;
   downloadJson(buildProgressSave(), filename);
   showProgressSavedStatus();
+});
+
+writeBuiltinProgressButton.addEventListener("click", async () => {
+  if (!loadedPaths) {
+    return;
+  }
+
+  try {
+    await writeBuiltinProgressFile(buildBuiltinProgressFile());
+  } catch (error) {
+    if (error.name === "AbortError") {
+      writeBuiltinProgressStatus.textContent = "Sauvegarde integree annulee.";
+      return;
+    }
+
+    downloadText(buildBuiltinProgressFile(), "builtin-progress.js", "text/javascript");
+    writeBuiltinProgressStatus.textContent = "Ecriture directe impossible. Fichier telecharge a la place.";
+  }
 });
 
 undoStitchButton.addEventListener("click", () => {
