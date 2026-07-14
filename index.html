@@ -19,7 +19,7 @@
             <span class="step-number">1</span>
             <span>Nom du projet</span>
           </button>
-          <button class="step-item" type="button" data-step="colors">
+          <button class="step-item locked" type="button" data-step="colors" disabled>
             <span class="step-number">2</span>
             <span>Couleurs DMC</span>
           </button>
@@ -41,9 +41,10 @@
         <form id="projectForm" class="tool-panel" data-panel="project">
           <label for="projectName">Nom</label>
           <input id="projectName" name="projectName" type="text" autocomplete="off" required>
+          <p id="projectError" class="form-error" hidden>Entre un nom de projet pour continuer.</p>
 
           <div class="actions">
-            <button id="saveButton" class="primary-button" type="submit">Enregistrer</button>
+            <button id="saveButton" class="primary-button" type="submit">Valider et continuer</button>
           </div>
         </form>
 
@@ -92,6 +93,12 @@
             </table>
             <p id="emptyColorsMessage" class="empty-message">Aucune couleur ajoutee.</p>
           </div>
+
+          <div class="actions split-actions">
+            <button id="backToProjectButton" class="secondary-button" type="button">Retour</button>
+            <button id="validateColorsButton" class="primary-button" type="button">Valider les couleurs</button>
+          </div>
+          <p id="colorsError" class="form-error" hidden>Ajoute au moins une couleur DMC pour valider cette etape.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">

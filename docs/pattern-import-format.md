@@ -22,6 +22,7 @@ Le premier outil produit progressivement un fichier JSON uniforme. Le PDF d'orig
 ## Etape 1 : nom du projet
 
 L'utilisateur saisit seulement le nom du projet. Cette valeur alimente `project.name`.
+Cette etape doit etre validee avant de passer aux couleurs.
 
 Exemple :
 
@@ -52,6 +53,7 @@ Exemple :
 ## Etape 2 : couleurs DMC
 
 L'utilisateur recopie la legende du PDF dans une liste de couleurs. Pour chaque couleur, on garde au minimum le symbole vu dans le pattern et le numero DMC.
+Cette etape devient accessible seulement quand le nom du projet est valide.
 
 ```json
 {

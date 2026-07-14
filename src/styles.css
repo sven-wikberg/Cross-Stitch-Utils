@@ -102,6 +102,16 @@ h3 {
   background: rgba(255, 255, 255, 0.18);
 }
 
+.step-item.complete .step-number {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+.step-item.locked {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
 .step-number {
   display: grid;
   place-items: center;
@@ -171,6 +181,7 @@ input:focus {
 }
 
 .primary-button,
+.secondary-button,
 .icon-button,
 .danger-button {
   min-height: 40px;
@@ -188,6 +199,18 @@ input:focus {
 
 .primary-button:hover {
   background: var(--accent-strong);
+}
+
+.secondary-button {
+  padding: 0 16px;
+  color: var(--accent-strong);
+  background: #e8f0ed;
+  border: 1px solid var(--line);
+  font-weight: 800;
+}
+
+.secondary-button:hover {
+  background: #dae7e3;
 }
 
 .icon-button {
@@ -280,6 +303,16 @@ input:focus {
 
 .row-actions {
   width: 46px;
+}
+
+.split-actions {
+  justify-content: space-between;
+}
+
+.form-error {
+  margin: -4px 0 0;
+  color: #9f2937;
+  font-weight: 700;
 }
 
 .json-panel {

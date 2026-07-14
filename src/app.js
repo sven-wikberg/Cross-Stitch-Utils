@@ -15,12 +15,16 @@ const defaultPattern = {
 
 const projectForm = document.querySelector("#projectForm");
 const projectNameInput = document.querySelector("#projectName");
+const projectError = document.querySelector("#projectError");
 const colorForm = document.querySelector("#colorForm");
 const colorSymbolInput = document.querySelector("#colorSymbol");
 const dmcCodeInput = document.querySelector("#dmcCode");
 const dmcNameInput = document.querySelector("#dmcName");
 const colorsTableBody = document.querySelector("#colorsTableBody");
 const emptyColorsMessage = document.querySelector("#emptyColorsMessage");
+const colorsError = document.querySelector("#colorsError");
+const backToProjectButton = document.querySelector("#backToProjectButton");
+const validateColorsButton = document.querySelector("#validateColorsButton");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -42,6 +46,8 @@ const stepLabels = {
     title: "Couleurs DMC"
   }
 };
+
+const stepOrder = ["project", "colors"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -74,6 +80,10 @@ function savePattern() {
 }
 
 function render() {
+  if (!canOpenStep(activeStep)) {
+    activeStep = firstOpenStep();
+  }
+
   projectNameInput.value = pattern.project.name;
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
@@ -85,12 +95,53 @@ function renderStep() {
   stepTitle.textContent = stepLabels[activeStep].title;
 
   stepButtons.forEach((button) => {
+    const step = button.dataset.step;
+    const isComplete = isStepComplete(step);
+    const isLocked = !canOpenStep(step);
+
     button.classList.toggle("active", button.dataset.step === activeStep);
+    button.classList.toggle("complete", isComplete);
+    button.classList.toggle("locked", isLocked);
+    button.disabled = isLocked;
   });
 
   panels.forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.panel !== activeStep);
   });
+}
+
+function isStepComplete(step) {
+  if (step === "project") {
+    return pattern.project.name.trim().length > 0;
+  }
+
+  if (step === "colors") {
+    return pattern.colors.length > 0;
+  }
+
+  return false;
+}
+
+function canOpenStep(step) {
+  const stepIndex = stepOrder.indexOf(step);
+  if (stepIndex <= 0) {
+    return true;
+  }
+
+  return stepOrder.slice(0, stepIndex).every(isStepComplete);
+}
+
+function firstOpenStep() {
+  return stepOrder.find((step) => canOpenStep(step)) || "project";
+}
+
+function goToStep(step) {
+  if (!canOpenStep(step)) {
+    return;
+  }
+
+  activeStep = step;
+  render();
 }
 
 function renderColors() {
@@ -127,14 +178,24 @@ function showSavedStatus() {
 
 projectForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  pattern.project.name = projectNameInput.value.trim();
+  const name = projectNameInput.value.trim();
+
+  if (!name) {
+    projectError.hidden = false;
+    projectNameInput.focus();
+    return;
+  }
+
+  projectError.hidden = true;
+  pattern.project.name = name;
   savePattern();
-  render();
+  goToStep("colors");
   showSavedStatus();
 });
 
 projectNameInput.addEventListener("input", () => {
   pattern.project.name = projectNameInput.value;
+  projectError.hidden = true;
   render();
 });
 
@@ -157,6 +218,7 @@ colorForm.addEventListener("submit", (event) => {
   });
 
   savePattern();
+  colorsError.hidden = true;
   colorForm.reset();
   colorSymbolInput.focus();
   render();
@@ -175,10 +237,25 @@ colorsTableBody.addEventListener("click", (event) => {
   render();
 });
 
+backToProjectButton.addEventListener("click", () => {
+  goToStep("project");
+});
+
+validateColorsButton.addEventListener("click", () => {
+  if (pattern.colors.length === 0) {
+    colorsError.hidden = false;
+    colorSymbolInput.focus();
+    return;
+  }
+
+  colorsError.hidden = true;
+  savePattern();
+  showSavedStatus();
+});
+
 stepButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    activeStep = button.dataset.step;
-    render();
+    goToStep(button.dataset.step);
   });
 });
 
