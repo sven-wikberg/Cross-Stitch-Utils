@@ -18,6 +18,7 @@ const projectNameInput = document.querySelector("#projectName");
 const projectError = document.querySelector("#projectError");
 const colorForm = document.querySelector("#colorForm");
 const dmcCodeInput = document.querySelector("#dmcCode");
+const dmcCodeOptions = document.querySelector("#dmcCodeOptions");
 const colorsTableBody = document.querySelector("#colorsTableBody");
 const emptyColorsMessage = document.querySelector("#emptyColorsMessage");
 const colorsError = document.querySelector("#colorsError");
@@ -31,6 +32,8 @@ const jsonPreview = document.querySelector("#jsonPreview");
 const saveStatus = document.querySelector("#saveStatus");
 const resetButton = document.querySelector("#resetButton");
 
+const dmcReference = Array.isArray(window.DMC_COLORS) ? window.DMC_COLORS : [];
+const dmcReferenceByCode = new Map(dmcReference.map((color) => [normalizeDmcCode(color.code), color]));
 let pattern = loadPattern();
 let activeStep = "project";
 
@@ -66,11 +69,36 @@ function loadPattern() {
         ...structuredClone(defaultPattern.grid),
         ...parsed.grid
       },
-      colors: Array.isArray(parsed.colors) ? parsed.colors : []
+      colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
   } catch {
     return structuredClone(defaultPattern);
   }
+}
+
+function normalizeDmcCode(code) {
+  return code.trim().toUpperCase();
+}
+
+function hydrateStoredColors(colors) {
+  return colors.map((color) => {
+    const referenceColor = dmcReferenceByCode.get(normalizeDmcCode(color.dmc || color.code || ""));
+    if (!referenceColor) {
+      return color;
+    }
+
+    return colorFromReference(referenceColor);
+  });
+}
+
+function colorFromReference(referenceColor) {
+  return {
+    id: `dmc-${referenceColor.code}`,
+    brand: referenceColor.brand,
+    series: referenceColor.series,
+    dmc: referenceColor.code,
+    hex: referenceColor.hex
+  };
 }
 
 function savePattern() {
@@ -86,6 +114,7 @@ function render() {
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
+  renderDmcOptions();
 }
 
 function renderStep() {
@@ -150,6 +179,7 @@ function renderColors() {
     const row = document.createElement("tr");
 
     row.innerHTML = `
+      <td><span class="color-swatch"></span></td>
       <td></td>
       <td class="row-actions">
         <button class="danger-button" type="button" data-remove-color="${index}" title="Supprimer">
@@ -158,9 +188,27 @@ function renderColors() {
       </td>
     `;
 
-    row.children[0].textContent = color.dmc;
+    const swatch = row.querySelector(".color-swatch");
+    swatch.style.background = color.hex || "#ffffff";
+    swatch.title = color.hex || "";
+    row.children[1].textContent = color.dmc;
     colorsTableBody.appendChild(row);
   });
+}
+
+function renderDmcOptions() {
+  if (dmcCodeOptions.childElementCount > 0) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  dmcReference.forEach((color) => {
+    const option = document.createElement("option");
+    option.value = color.code;
+    option.label = `${color.code} ${color.hex}`;
+    fragment.appendChild(option);
+  });
+  dmcCodeOptions.appendChild(fragment);
 }
 
 function showSavedStatus() {
@@ -196,16 +244,29 @@ projectNameInput.addEventListener("input", () => {
 colorForm.addEventListener("submit", (event) => {
   event.preventDefault();
 
-  const dmc = dmcCodeInput.value.trim();
+  const dmc = normalizeDmcCode(dmcCodeInput.value);
 
   if (!dmc) {
     return;
   }
 
-  pattern.colors.push({
-    id: `dmc-${dmc}`,
-    dmc
-  });
+  const referenceColor = dmcReferenceByCode.get(dmc);
+  if (!referenceColor) {
+    colorsError.textContent = "Ce code DMC n'est pas dans la reference.";
+    colorsError.hidden = false;
+    dmcCodeInput.focus();
+    return;
+  }
+
+  const alreadyAdded = pattern.colors.some((color) => normalizeDmcCode(color.dmc) === dmc);
+  if (alreadyAdded) {
+    colorsError.textContent = "Ce code DMC est deja dans la liste.";
+    colorsError.hidden = false;
+    dmcCodeInput.focus();
+    return;
+  }
+
+  pattern.colors.push(colorFromReference(referenceColor));
 
   savePattern();
   colorsError.hidden = true;
@@ -233,6 +294,7 @@ backToProjectButton.addEventListener("click", () => {
 
 validateColorsButton.addEventListener("click", () => {
   if (pattern.colors.length === 0) {
+    colorsError.textContent = "Ajoute au moins un code DMC pour valider cette etape.";
     colorsError.hidden = false;
     dmcCodeInput.focus();
     return;

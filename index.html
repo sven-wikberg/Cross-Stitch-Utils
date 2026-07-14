@@ -60,8 +60,9 @@
             <div class="form-grid">
               <label>
                 Code DMC
-                <input id="dmcCode" name="dmcCode" type="text" inputmode="numeric" autocomplete="off" required>
+                <input id="dmcCode" name="dmcCode" type="text" list="dmcCodeOptions" autocomplete="off" required>
               </label>
+              <datalist id="dmcCodeOptions"></datalist>
             </div>
 
             <div class="actions">
@@ -73,6 +74,7 @@
             <table class="color-table">
               <thead>
                 <tr>
+                  <th>Couleur</th>
                   <th>Code DMC</th>
                   <th></th>
                 </tr>
@@ -99,6 +101,7 @@
       </section>
     </main>
 
+    <script src="data/dmc-colors.js"></script>
     <script src="src/app.js"></script>
   </body>
 </html>

@@ -54,11 +54,15 @@ Exemple :
 
 L'utilisateur recopie les codes DMC du PDF dans une liste de couleurs.
 Cette etape devient accessible seulement quand le nom du projet est valide.
+Le code est verifie dans `data/dmc-colors.json`, puis la couleur est ajoutee au pattern avec ses informations de reference.
 
 ```json
 {
   "id": "dmc-310",
-  "dmc": "310"
+  "brand": "DMC",
+  "series": "Mouliné Spécial",
+  "dmc": "310",
+  "hex": "#6A6B6D"
 }
 ```
 
