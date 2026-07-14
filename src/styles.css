@@ -530,7 +530,7 @@ select:focus {
 .pattern-canvas-wrap {
   width: 100%;
   max-width: 100%;
-  max-height: 70vh;
+  max-height: calc(100vh - 150px);
   overflow: auto;
   padding: 14px;
   border: 1px solid var(--line);
@@ -560,7 +560,7 @@ select:focus {
 .path-color-legend {
   display: grid;
   gap: 8px;
-  max-height: 70vh;
+  max-height: calc(100vh - 150px);
   overflow: auto;
 }
 
