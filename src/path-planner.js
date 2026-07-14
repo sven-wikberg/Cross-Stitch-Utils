@@ -18,6 +18,13 @@ const autoPathButton = document.querySelector("#autoPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
+const pathExportStatus = document.querySelector("#pathExportStatus");
+const pathExportColorsText = document.querySelector("#pathExportColorsText");
+const pathExportPathsText = document.querySelector("#pathExportPathsText");
+const pathExportPointsText = document.querySelector("#pathExportPointsText");
+const backToPathsButton = document.querySelector("#backToPathsButton");
+const downloadPathJsonButton = document.querySelector("#downloadPathJsonButton");
+const pathExportPreview = document.querySelector("#pathExportPreview");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
 const pathStepButtons = document.querySelectorAll("[data-step]");
@@ -116,6 +123,7 @@ function renderPathTool() {
 
   renderLoadedPattern();
   renderPatternGrid();
+  renderPathExport();
 }
 
 function renderLoadedPattern() {
@@ -254,6 +262,23 @@ function renderPathBuilder() {
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
   savePathAndNextButton.disabled = !complete;
+}
+
+function renderPathExport() {
+  const ready = Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  const exportData = loadedPattern ? buildPathExport() : null;
+  const pathCount = exportData?.paths.length || 0;
+  const pointCount = exportData?.paths.reduce((sum, path) => sum + path.points.length, 0) || 0;
+
+  pathExportColorsText.textContent = String(loadedPattern?.colors.length || 0);
+  pathExportPathsText.textContent = String(pathCount);
+  pathExportPointsText.textContent = String(pointCount);
+  pathExportStatus.className = `coverage-status ${ready ? "valid" : "invalid"}`;
+  pathExportStatus.textContent = ready
+    ? "JSON des chemins pret."
+    : "Complete tous les chemins avant l'export.";
+  downloadPathJsonButton.disabled = !ready;
+  pathExportPreview.textContent = exportData ? JSON.stringify(exportData, null, 2) : "";
 }
 
 function mutedHex(hex) {
@@ -441,6 +466,34 @@ function selectNextIncompleteColor() {
     || loadedPattern.colors[Math.min(currentIndex + 1, loadedPattern.colors.length - 1)];
 
   selectedDmc = nextColor?.dmc || selectedDmc;
+}
+
+function buildPathExport() {
+  return {
+    schemaVersion: 1,
+    kind: "cross-stitch-paths",
+    project: {
+      name: loadedPattern.project.name
+    },
+    pattern: loadedPattern,
+    paths: loadedPattern.colors.map((color) => ({
+      dmc: color.dmc,
+      symbol: color.symbol || null,
+      points: (pathsByDmc[color.dmc] || []).map((point, index) => ({
+        order: index + 1,
+        x: point.x,
+        y: point.y
+      }))
+    }))
+  };
+}
+
+function slugify(value) {
+  return (value || "cross-stitch-paths")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "cross-stitch-paths";
 }
 
 function isPathStepComplete(step) {
@@ -641,10 +694,35 @@ savePathAndNextButton.addEventListener("click", () => {
 
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
-  selectNextIncompleteColor();
   savePathPlannerState();
-  renderPathTool();
+  if (pathProgress.paths) {
+    goToPathStep("export");
+  } else {
+    selectNextIncompleteColor();
+    renderPathTool();
+  }
   showPathSavedStatus();
+});
+
+backToPathsButton.addEventListener("click", () => {
+  goToPathStep("paths");
+});
+
+downloadPathJsonButton.addEventListener("click", () => {
+  if (!loadedPattern || !areAllColorPathsComplete(loadedPattern, pathsByDmc)) {
+    return;
+  }
+
+  const json = JSON.stringify(buildPathExport(), null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(loadedPattern.project.name)}.paths.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 });
 
 pathStepButtons.forEach((button) => {
