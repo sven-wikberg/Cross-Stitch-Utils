@@ -37,6 +37,8 @@ const partsExpectedInput = document.querySelector("#partsExpected");
 const partCountError = document.querySelector("#partCountError");
 const partForm = document.querySelector("#partForm");
 const partImageInput = document.querySelector("#partImage");
+const clipboardDropZone = document.querySelector("#clipboardDropZone");
+const clipboardImageStatus = document.querySelector("#clipboardImageStatus");
 const partStartXInput = document.querySelector("#partStartX");
 const partStartYInput = document.querySelector("#partStartY");
 const partWidthInput = document.querySelector("#partWidth");
@@ -63,6 +65,7 @@ const dmcReferenceByCode = new Map(dmcReference.map((color) => [normalizeDmcCode
 let pattern = loadPattern();
 let progress = loadProgress(pattern);
 let activeStep = "project";
+let pastedPartImage = null;
 
 const stepLabels = {
   project: {
@@ -300,6 +303,10 @@ function renderParts() {
   partProgressText.textContent = pattern.partsExpected > 0
     ? `Morceau ${Math.min(pattern.parts.length + 1, pattern.partsExpected)} / ${pattern.partsExpected}`
     : "Definis d'abord le nombre de sous-parties.";
+  clipboardImageStatus.textContent = pastedPartImage
+    ? pastedPartImage.name
+    : "Aucune image collee";
+  clipboardDropZone.classList.toggle("has-image", Boolean(pastedPartImage));
 
   pattern.parts.forEach((part, index) => {
     const row = document.createElement("tr");
@@ -426,6 +433,42 @@ function showSavedStatus() {
   window.setTimeout(() => {
     saveStatus.textContent = "Brouillon";
   }, 1400);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function readImageFromClipboardEvent(event) {
+  const items = [...event.clipboardData?.items || []];
+  const imageItem = items.find((item) => item.type.startsWith("image/"));
+  if (!imageItem) {
+    return false;
+  }
+
+  const file = imageItem.getAsFile();
+  if (!file) {
+    return false;
+  }
+
+  event.preventDefault();
+  const partNumber = pattern.parts.length + 1;
+  const extension = file.type.split("/")[1] || "png";
+  pastedPartImage = {
+    source: "clipboard",
+    name: `clipboard-part-${partNumber}.${extension}`,
+    type: file.type,
+    dataUrl: await fileToDataUrl(file)
+  };
+  partImageInput.value = "";
+  partError.hidden = true;
+  render();
+  return true;
 }
 
 projectForm.addEventListener("submit", (event) => {
@@ -610,9 +653,14 @@ partsExpectedInput.addEventListener("input", () => {
 
 partForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  addPartFromForm();
+});
 
+async function addPartFromForm() {
   const name = `Part ${pattern.parts.length + 1}`;
-  const imageName = partImageInput.files[0]?.name || "";
+  const selectedFile = partImageInput.files[0] || null;
+  const imageName = pastedPartImage?.name || selectedFile?.name || "";
+  const imageSource = pastedPartImage?.source || (selectedFile ? "file" : "");
   const startX = Number(partStartXInput.value);
   const startY = Number(partStartYInput.value);
   const width = Number(partWidthInput.value);
@@ -650,10 +698,17 @@ partForm.addEventListener("submit", (event) => {
     return;
   }
 
+  let imageDataUrl = pastedPartImage?.dataUrl || "";
+  if (!imageDataUrl && selectedFile) {
+    imageDataUrl = await fileToDataUrl(selectedFile);
+  }
+
   pattern.parts.push({
     id: `part-${Date.now()}`,
     name,
     imageName,
+    imageSource,
+    imageDataUrl,
     startX,
     startY,
     width,
@@ -664,11 +719,36 @@ partForm.addEventListener("submit", (event) => {
   savePattern();
   saveProgress();
   partForm.reset();
+  pastedPartImage = null;
   partImageInput.focus();
   partError.hidden = true;
   partsError.hidden = true;
   render();
   showSavedStatus();
+}
+
+partImageInput.addEventListener("change", () => {
+  if (partImageInput.files.length > 0) {
+    pastedPartImage = null;
+  }
+  partError.hidden = true;
+  render();
+});
+
+clipboardDropZone.addEventListener("paste", (event) => {
+  readImageFromClipboardEvent(event);
+});
+
+document.addEventListener("paste", (event) => {
+  const target = event.target;
+  const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+  const canPastePartImage = activeStep === "parts"
+    && pattern.partsExpected > 0
+    && pattern.parts.length < pattern.partsExpected;
+
+  if (!isTypingTarget && canPastePartImage) {
+    readImageFromClipboardEvent(event);
+  }
 });
 
 partsTableBody.addEventListener("click", (event) => {

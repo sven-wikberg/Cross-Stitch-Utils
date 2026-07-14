@@ -159,6 +159,13 @@ label {
   font-weight: 700;
 }
 
+.field-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 input {
   width: 100%;
   min-height: 46px;
@@ -264,7 +271,7 @@ input:focus {
 }
 
 .form-grid.parts-grid {
-  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(110px, 0.8fr));
+  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) repeat(4, minmax(110px, 0.8fr));
 }
 
 .color-list-wrap {
@@ -339,6 +346,29 @@ input:focus {
 .coverage-status.invalid {
   color: #8b2633;
   background: rgba(180, 75, 87, 0.1);
+}
+
+.clipboard-drop-zone {
+  display: grid;
+  align-items: center;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px dashed #9da6a3;
+  border-radius: 6px;
+  color: var(--muted);
+  background: #fbfcfb;
+  font-weight: 700;
+}
+
+.clipboard-drop-zone:focus {
+  border-color: var(--accent);
+  outline: 3px solid rgba(36, 120, 109, 0.18);
+}
+
+.clipboard-drop-zone.has-image {
+  color: var(--accent-strong);
+  border-style: solid;
+  background: rgba(36, 120, 109, 0.08);
 }
 
 .json-panel {

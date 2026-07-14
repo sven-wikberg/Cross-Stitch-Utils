@@ -159,8 +159,15 @@
             <div class="form-grid parts-grid">
               <label for="partImage">
                 Image
-                <input id="partImage" name="partImage" type="file" accept="image/*" required>
+                <input id="partImage" name="partImage" type="file" accept="image/*">
               </label>
+
+              <div>
+                <span class="field-label">Presse-papier</span>
+                <div id="clipboardDropZone" class="clipboard-drop-zone" tabindex="0">
+                  <span id="clipboardImageStatus">Aucune image collee</span>
+                </div>
+              </div>
 
               <label for="partStartX">
                 Depart X

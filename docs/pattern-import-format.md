@@ -106,6 +106,8 @@ Chaque morceau indique son image source, sa position dans la grille globale, et 
   "id": "part-1",
   "name": "Page 1",
   "imageName": "page-1.png",
+  "imageSource": "file",
+  "imageDataUrl": "",
   "startX": 0,
   "startY": 0,
   "width": 60,
@@ -121,3 +123,5 @@ La validation verifie que les morceaux couvrent exactement les dimensions global
 - la couverture reelle doit remplir toute la grille.
 
 L'analyse automatique des images sera ajoutee plus tard, une fois ce decoupage fiable.
+
+`imageSource` vaut `file` pour une image choisie depuis le disque, ou `clipboard` pour une image collee depuis le presse-papier. `imageDataUrl` contient l'image quand elle est disponible pour permettre une analyse locale plus tard.
