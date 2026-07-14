@@ -264,7 +264,7 @@ input:focus {
 }
 
 .form-grid.parts-grid {
-  grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.4fr) repeat(4, minmax(110px, 0.8fr));
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(110px, 0.8fr));
 }
 
 .color-list-wrap {

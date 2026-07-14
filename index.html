@@ -131,17 +131,32 @@
           <div class="panel-heading">
             <div>
               <h3 id="parts-title">Morceaux du pattern</h3>
-              <p>Ajoute chaque sous-partie de la grille avec sa position dans le pattern complet.</p>
+              <p>Indique d'abord combien de sous-parties composent le pattern.</p>
             </div>
           </div>
 
-          <form id="partForm" class="part-form">
-            <div class="form-grid parts-grid">
-              <label for="partName">
-                Nom
-                <input id="partName" name="partName" type="text" autocomplete="off" required>
+          <form id="partCountForm" class="part-form">
+            <div class="form-grid two-columns">
+              <label for="partsExpected">
+                Nombre de sous-parties
+                <input id="partsExpected" name="partsExpected" type="number" inputmode="numeric" min="1" step="1" required>
               </label>
+            </div>
 
+            <p id="partCountError" class="form-error" hidden>Entre un nombre de sous-parties superieur a 0.</p>
+
+            <div class="actions">
+              <button class="primary-button" type="submit">Valider le nombre</button>
+            </div>
+          </form>
+
+          <form id="partForm" class="part-form hidden">
+            <div class="section-divider">
+              <h3 id="nextPartName">Part 1</h3>
+              <p id="partProgressText">Morceau 1 / 1</p>
+            </div>
+
+            <div class="form-grid parts-grid">
               <label for="partImage">
                 Image
                 <input id="partImage" name="partImage" type="file" accept="image/*" required>

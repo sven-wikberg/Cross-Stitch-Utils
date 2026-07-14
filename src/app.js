@@ -7,6 +7,7 @@ const defaultPattern = {
     name: ""
   },
   colors: [],
+  partsExpected: 0,
   parts: [],
   grid: {
     width: 0,
@@ -31,8 +32,10 @@ const gridWidthInput = document.querySelector("#gridWidth");
 const gridHeightInput = document.querySelector("#gridHeight");
 const dimensionsError = document.querySelector("#dimensionsError");
 const backToColorsButton = document.querySelector("#backToColorsButton");
+const partCountForm = document.querySelector("#partCountForm");
+const partsExpectedInput = document.querySelector("#partsExpected");
+const partCountError = document.querySelector("#partCountError");
 const partForm = document.querySelector("#partForm");
-const partNameInput = document.querySelector("#partName");
 const partImageInput = document.querySelector("#partImage");
 const partStartXInput = document.querySelector("#partStartX");
 const partStartYInput = document.querySelector("#partStartY");
@@ -42,6 +45,8 @@ const partError = document.querySelector("#partError");
 const partsTableBody = document.querySelector("#partsTableBody");
 const emptyPartsMessage = document.querySelector("#emptyPartsMessage");
 const partsCoverageStatus = document.querySelector("#partsCoverageStatus");
+const nextPartName = document.querySelector("#nextPartName");
+const partProgressText = document.querySelector("#partProgressText");
 const backToDimensionsButton = document.querySelector("#backToDimensionsButton");
 const validatePartsButton = document.querySelector("#validatePartsButton");
 const partsError = document.querySelector("#partsError");
@@ -99,6 +104,7 @@ function loadPattern() {
         ...structuredClone(defaultPattern.grid),
         ...parsed.grid
       },
+      partsExpected: Number.isInteger(parsed.partsExpected) ? parsed.partsExpected : 0,
       parts: Array.isArray(parsed.parts) ? parsed.parts : [],
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
@@ -172,6 +178,7 @@ function render() {
   projectNameInput.value = pattern.project.name;
   gridWidthInput.value = pattern.grid.width || "";
   gridHeightInput.value = pattern.grid.height || "";
+  partsExpectedInput.value = pattern.partsExpected || "";
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
@@ -288,6 +295,11 @@ function renderDmcOptions() {
 function renderParts() {
   partsTableBody.innerHTML = "";
   emptyPartsMessage.hidden = pattern.parts.length > 0;
+  partForm.classList.toggle("hidden", pattern.partsExpected <= 0 || pattern.parts.length >= pattern.partsExpected);
+  nextPartName.textContent = `Part ${pattern.parts.length + 1}`;
+  partProgressText.textContent = pattern.partsExpected > 0
+    ? `Morceau ${Math.min(pattern.parts.length + 1, pattern.partsExpected)} / ${pattern.partsExpected}`
+    : "Definis d'abord le nombre de sous-parties.";
 
   pattern.parts.forEach((part, index) => {
     const row = document.createElement("tr");
@@ -323,6 +335,7 @@ function validatePartsCoverage(patternToValidate) {
   const gridWidth = patternToValidate.grid.width;
   const gridHeight = patternToValidate.grid.height;
   const parts = patternToValidate.parts || [];
+  const partsExpected = patternToValidate.partsExpected || 0;
 
   if (!Number.isInteger(gridWidth) || !Number.isInteger(gridHeight) || gridWidth <= 0 || gridHeight <= 0) {
     return {
@@ -331,10 +344,24 @@ function validatePartsCoverage(patternToValidate) {
     };
   }
 
+  if (!Number.isInteger(partsExpected) || partsExpected <= 0) {
+    return {
+      valid: false,
+      message: "Le nombre de sous-parties doit etre defini."
+    };
+  }
+
   if (parts.length === 0) {
     return {
       valid: false,
-      message: `Couverture: 0 / ${gridWidth * gridHeight} points.`
+      message: `Morceaux: 0 / ${partsExpected}. Couverture: 0 / ${gridWidth * gridHeight} points.`
+    };
+  }
+
+  if (parts.length !== partsExpected) {
+    return {
+      valid: false,
+      message: `Morceaux: ${parts.length} / ${partsExpected}.`
     };
   }
 
@@ -530,6 +557,7 @@ dimensionsForm.addEventListener("submit", (event) => {
   if (dimensionsChanged) {
     pattern.grid.cells = [];
     pattern.parts = [];
+    pattern.partsExpected = 0;
     progress.parts = false;
   }
 
@@ -553,10 +581,37 @@ backToDimensionsButton.addEventListener("click", () => {
   goToStep("dimensions");
 });
 
+partCountForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const expected = Number(partsExpectedInput.value);
+  if (!Number.isInteger(expected) || expected <= 0) {
+    partCountError.hidden = false;
+    partsExpectedInput.focus();
+    return;
+  }
+
+  if (expected !== pattern.partsExpected) {
+    pattern.partsExpected = expected;
+    pattern.parts = [];
+    progress.parts = false;
+  }
+
+  partCountError.hidden = true;
+  savePattern();
+  saveProgress();
+  render();
+  showSavedStatus();
+});
+
+partsExpectedInput.addEventListener("input", () => {
+  partCountError.hidden = true;
+});
+
 partForm.addEventListener("submit", (event) => {
   event.preventDefault();
 
-  const name = partNameInput.value.trim();
+  const name = `Part ${pattern.parts.length + 1}`;
   const imageName = partImageInput.files[0]?.name || "";
   const startX = Number(partStartXInput.value);
   const startY = Number(partStartYInput.value);
@@ -573,6 +628,18 @@ partForm.addEventListener("submit", (event) => {
     || height <= 0
   ) {
     partError.textContent = "Verifie les valeurs du morceau.";
+    partError.hidden = false;
+    return;
+  }
+
+  if (pattern.partsExpected <= 0) {
+    partError.textContent = "Valide d'abord le nombre de sous-parties.";
+    partError.hidden = false;
+    return;
+  }
+
+  if (pattern.parts.length >= pattern.partsExpected) {
+    partError.textContent = "Toutes les sous-parties prevues sont deja ajoutees.";
     partError.hidden = false;
     return;
   }
@@ -597,7 +664,7 @@ partForm.addEventListener("submit", (event) => {
   savePattern();
   saveProgress();
   partForm.reset();
-  partNameInput.focus();
+  partImageInput.focus();
   partError.hidden = true;
   partsError.hidden = true;
   render();
@@ -612,11 +679,18 @@ partsTableBody.addEventListener("click", (event) => {
 
   const index = Number(removeButton.dataset.removePart);
   pattern.parts.splice(index, 1);
+  renumberParts();
   progress.parts = false;
   savePattern();
   saveProgress();
   render();
 });
+
+function renumberParts() {
+  pattern.parts.forEach((part, index) => {
+    part.name = `Part ${index + 1}`;
+  });
+}
 
 validatePartsButton.addEventListener("click", () => {
   const coverage = validatePartsCoverage(pattern);

@@ -11,6 +11,7 @@ Le premier outil produit progressivement un fichier JSON uniforme. Le PDF d'orig
     "name": ""
   },
   "colors": [],
+  "partsExpected": 0,
   "parts": [],
   "grid": {
     "width": 0,
@@ -34,6 +35,7 @@ Exemple :
     "name": "Winter Cottage"
   },
   "colors": [],
+  "partsExpected": 0,
   "parts": [],
   "grid": {
     "width": 0,
@@ -89,7 +91,15 @@ Si les dimensions changent plus tard, les cases deja importees devront etre veri
 
 ## Etape 4 : morceaux du pattern
 
-L'utilisateur ajoute chaque sous-partie du pattern. Chaque morceau indique son image source, sa position dans la grille globale, et sa taille en points.
+L'utilisateur indique d'abord combien de sous-parties composent le pattern. L'outil nomme ensuite automatiquement les morceaux `Part 1`, `Part 2`, `Part 3`, etc.
+
+```json
+{
+  "partsExpected": 4
+}
+```
+
+Chaque morceau indique son image source, sa position dans la grille globale, et sa taille en points.
 
 ```json
 {
