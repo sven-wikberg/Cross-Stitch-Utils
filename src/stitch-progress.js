@@ -42,6 +42,7 @@ const progressStepLabels = {
 const progressStepOrder = ["load", "stitch"];
 const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
+const GRID_RULER_SIZE = 26;
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -182,15 +183,21 @@ function renderStitchView() {
 
   const pattern = loadedPaths.pattern;
   const colorByDmc = new Map(pattern.colors.map((color) => [color.dmc, color]));
-  const cellSize = gridCellSize(pattern.grid.width, pattern.grid.height, availableGridWidth(stitchCanvas));
+  const cellSize = gridCellSize(
+    pattern.grid.width,
+    pattern.grid.height,
+    availableGridWidth(stitchCanvas) - GRID_RULER_SIZE
+  );
   const selectedColor = colorByDmc.get(selectedDmc);
   stitchColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
 
-  stitchCanvas.width = pattern.grid.width * cellSize;
-  stitchCanvas.height = pattern.grid.height * cellSize;
+  stitchCanvas.width = GRID_RULER_SIZE + pattern.grid.width * cellSize;
+  stitchCanvas.height = GRID_RULER_SIZE + pattern.grid.height * cellSize;
   context.clearRect(0, 0, stitchCanvas.width, stitchCanvas.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
 
   pattern.grid.cells.forEach((cell) => {
     const color = colorByDmc.get(cell.dmc);
@@ -202,13 +209,19 @@ function renderStitchView() {
       context.fillStyle = mutedHex(color?.hex || "#d9dddd");
     }
 
-    context.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
+    context.fillRect(
+      GRID_RULER_SIZE + cell.x * cellSize,
+      GRID_RULER_SIZE + cell.y * cellSize,
+      cellSize,
+      cellSize
+    );
   });
 
   if (cellSize >= 6) {
     drawGridLines(context, pattern.grid.width, pattern.grid.height, cellSize);
   }
 
+  drawGridRulers(context, pattern.grid.width, pattern.grid.height, cellSize);
   drawStitchProgress(context, cellSize);
   renderStitchColorLegend();
   renderCompletedColorList();
@@ -236,8 +249,8 @@ function drawStitchProgress(context, cellSize) {
   if (stitchedPoints.length > 1) {
     context.beginPath();
     stitchedPoints.forEach((point, index) => {
-      const centerX = (point.x + 0.5) * cellSize;
-      const centerY = (point.y + 0.5) * cellSize;
+      const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+      const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
       if (index === 0) {
         context.moveTo(centerX, centerY);
       } else {
@@ -259,8 +272,8 @@ function drawStitchProgress(context, cellSize) {
 }
 
 function drawCircle(context, point, cellSize, fill, stroke) {
-  const centerX = (point.x + 0.5) * cellSize;
-  const centerY = (point.y + 0.5) * cellSize;
+  const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+  const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
   const radius = Math.max(3, Math.floor(cellSize * 0.38));
   context.fillStyle = fill;
   context.strokeStyle = stroke;
@@ -577,8 +590,8 @@ function drawGridLines(context, width, height, cellSize) {
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
-    context.moveTo(x * cellSize + 0.5, 0);
-    context.lineTo(x * cellSize + 0.5, height * cellSize);
+    context.moveTo(GRID_RULER_SIZE + x * cellSize + 0.5, GRID_RULER_SIZE);
+    context.lineTo(GRID_RULER_SIZE + x * cellSize + 0.5, GRID_RULER_SIZE + height * cellSize);
     context.stroke();
   }
 
@@ -587,11 +600,52 @@ function drawGridLines(context, width, height, cellSize) {
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
-    context.moveTo(0, y * cellSize + 0.5);
-    context.lineTo(width * cellSize, y * cellSize + 0.5);
+    context.moveTo(GRID_RULER_SIZE, GRID_RULER_SIZE + y * cellSize + 0.5);
+    context.lineTo(GRID_RULER_SIZE + width * cellSize, GRID_RULER_SIZE + y * cellSize + 0.5);
     context.stroke();
   }
 
+  context.restore();
+}
+
+function drawGridRulers(context, width, height, cellSize) {
+  context.save();
+  context.fillStyle = "#f4f6f4";
+  context.fillRect(GRID_RULER_SIZE, 0, width * cellSize, GRID_RULER_SIZE);
+  context.fillRect(0, GRID_RULER_SIZE, GRID_RULER_SIZE, height * cellSize);
+  context.fillStyle = "#5f6b69";
+  context.strokeStyle = "rgba(34, 36, 38, 0.24)";
+  context.lineWidth = 1;
+  context.font = "10px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+
+  for (let x = 10; x <= width; x += 10) {
+    const position = GRID_RULER_SIZE + x * cellSize;
+    context.beginPath();
+    context.moveTo(position + 0.5, GRID_RULER_SIZE - 7);
+    context.lineTo(position + 0.5, GRID_RULER_SIZE);
+    context.stroke();
+    context.fillText(String(x), position, Math.floor(GRID_RULER_SIZE / 2));
+  }
+
+  context.textAlign = "right";
+  for (let y = 10; y <= height; y += 10) {
+    const position = GRID_RULER_SIZE + y * cellSize;
+    context.beginPath();
+    context.moveTo(GRID_RULER_SIZE - 7, position + 0.5);
+    context.lineTo(GRID_RULER_SIZE, position + 0.5);
+    context.stroke();
+    context.fillText(String(y), GRID_RULER_SIZE - 9, position);
+  }
+
+  context.strokeStyle = "rgba(34, 36, 38, 0.32)";
+  context.beginPath();
+  context.moveTo(GRID_RULER_SIZE + 0.5, 0);
+  context.lineTo(GRID_RULER_SIZE + 0.5, GRID_RULER_SIZE + height * cellSize);
+  context.moveTo(0, GRID_RULER_SIZE + 0.5);
+  context.lineTo(GRID_RULER_SIZE + width * cellSize, GRID_RULER_SIZE + 0.5);
+  context.stroke();
   context.restore();
 }
 

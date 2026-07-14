@@ -53,6 +53,7 @@ const BACKTRACK_ISLAND_GAP_TOLERANCE = 1;
 const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
+const GRID_RULER_SIZE = 26;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -177,15 +178,17 @@ function renderPatternGrid() {
   const cellSize = gridCellSize(
     loadedPattern.grid.width,
     loadedPattern.grid.height,
-    availableGridWidth(patternCanvas)
+    availableGridWidth(patternCanvas) - GRID_RULER_SIZE
   );
   const selectedColor = colorByDmc.get(selectedDmc);
   selectedColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
-  patternCanvas.width = loadedPattern.grid.width * cellSize;
-  patternCanvas.height = loadedPattern.grid.height * cellSize;
+  patternCanvas.width = GRID_RULER_SIZE + loadedPattern.grid.width * cellSize;
+  patternCanvas.height = GRID_RULER_SIZE + loadedPattern.grid.height * cellSize;
   context.clearRect(0, 0, patternCanvas.width, patternCanvas.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
 
   loadedPattern.grid.cells.forEach((cell) => {
     const color = colorByDmc.get(cell.dmc);
@@ -197,13 +200,19 @@ function renderPatternGrid() {
       context.fillStyle = mutedHex(color?.hex || "#d9dddd");
     }
 
-    context.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
+    context.fillRect(
+      GRID_RULER_SIZE + cell.x * cellSize,
+      GRID_RULER_SIZE + cell.y * cellSize,
+      cellSize,
+      cellSize
+    );
   });
 
   if (cellSize >= 6) {
     drawGridLines(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   }
 
+  drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   drawSelectedPath(context, cellSize);
 
   renderPathColorLegend();
@@ -227,8 +236,8 @@ function drawSelectedPath(context, cellSize) {
   if (path.length > 1) {
     context.beginPath();
     path.forEach((point, index) => {
-      const centerX = (point.x + 0.5) * cellSize;
-      const centerY = (point.y + 0.5) * cellSize;
+      const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+      const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
       if (index === 0) {
         context.moveTo(centerX, centerY);
       } else {
@@ -239,8 +248,8 @@ function drawSelectedPath(context, cellSize) {
   }
 
   path.forEach((point, index) => {
-    const centerX = (point.x + 0.5) * cellSize;
-    const centerY = (point.y + 0.5) * cellSize;
+    const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+    const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
     const radius = Math.max(3, Math.floor(cellSize * 0.38));
     context.fillStyle = index === path.length - 1 ? "#ffffff" : "#222426";
     context.strokeStyle = "#222426";
@@ -366,8 +375,8 @@ function drawGridLines(context, width, height, cellSize) {
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
-    context.moveTo(x * cellSize + 0.5, 0);
-    context.lineTo(x * cellSize + 0.5, height * cellSize);
+    context.moveTo(GRID_RULER_SIZE + x * cellSize + 0.5, GRID_RULER_SIZE);
+    context.lineTo(GRID_RULER_SIZE + x * cellSize + 0.5, GRID_RULER_SIZE + height * cellSize);
     context.stroke();
   }
 
@@ -376,11 +385,52 @@ function drawGridLines(context, width, height, cellSize) {
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
-    context.moveTo(0, y * cellSize + 0.5);
-    context.lineTo(width * cellSize, y * cellSize + 0.5);
+    context.moveTo(GRID_RULER_SIZE, GRID_RULER_SIZE + y * cellSize + 0.5);
+    context.lineTo(GRID_RULER_SIZE + width * cellSize, GRID_RULER_SIZE + y * cellSize + 0.5);
     context.stroke();
   }
 
+  context.restore();
+}
+
+function drawGridRulers(context, width, height, cellSize) {
+  context.save();
+  context.fillStyle = "#f4f6f4";
+  context.fillRect(GRID_RULER_SIZE, 0, width * cellSize, GRID_RULER_SIZE);
+  context.fillRect(0, GRID_RULER_SIZE, GRID_RULER_SIZE, height * cellSize);
+  context.fillStyle = "#5f6b69";
+  context.strokeStyle = "rgba(34, 36, 38, 0.24)";
+  context.lineWidth = 1;
+  context.font = "10px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+
+  for (let x = 10; x <= width; x += 10) {
+    const position = GRID_RULER_SIZE + x * cellSize;
+    context.beginPath();
+    context.moveTo(position + 0.5, GRID_RULER_SIZE - 7);
+    context.lineTo(position + 0.5, GRID_RULER_SIZE);
+    context.stroke();
+    context.fillText(String(x), position, Math.floor(GRID_RULER_SIZE / 2));
+  }
+
+  context.textAlign = "right";
+  for (let y = 10; y <= height; y += 10) {
+    const position = GRID_RULER_SIZE + y * cellSize;
+    context.beginPath();
+    context.moveTo(GRID_RULER_SIZE - 7, position + 0.5);
+    context.lineTo(GRID_RULER_SIZE, position + 0.5);
+    context.stroke();
+    context.fillText(String(y), GRID_RULER_SIZE - 9, position);
+  }
+
+  context.strokeStyle = "rgba(34, 36, 38, 0.32)";
+  context.beginPath();
+  context.moveTo(GRID_RULER_SIZE + 0.5, 0);
+  context.lineTo(GRID_RULER_SIZE + 0.5, GRID_RULER_SIZE + height * cellSize);
+  context.moveTo(0, GRID_RULER_SIZE + 0.5);
+  context.lineTo(GRID_RULER_SIZE + width * cellSize, GRID_RULER_SIZE + 0.5);
+  context.stroke();
   context.restore();
 }
 
@@ -729,12 +779,14 @@ function cellFromCanvasEvent(event) {
     return null;
   }
 
-  const cellSize = patternCanvas.width / loadedPattern.grid.width;
+  const cellSize = (patternCanvas.width - GRID_RULER_SIZE) / loadedPattern.grid.width;
   const rect = patternCanvas.getBoundingClientRect();
   const scaleX = patternCanvas.width / rect.width;
   const scaleY = patternCanvas.height / rect.height;
-  const x = Math.floor(((event.clientX - rect.left) * scaleX) / cellSize);
-  const y = Math.floor(((event.clientY - rect.top) * scaleY) / cellSize);
+  const canvasX = (event.clientX - rect.left) * scaleX - GRID_RULER_SIZE;
+  const canvasY = (event.clientY - rect.top) * scaleY - GRID_RULER_SIZE;
+  const x = Math.floor(canvasX / cellSize);
+  const y = Math.floor(canvasY / cellSize);
   return findCellAt(x, y);
 }
 
