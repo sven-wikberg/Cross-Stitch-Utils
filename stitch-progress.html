@@ -51,6 +51,11 @@
             <input id="pathsJsonFile" type="file" accept="application/json,.json">
           </label>
 
+          <label for="progressSaveFile">
+            Sauvegarde de progression
+            <input id="progressSaveFile" type="file" accept="application/json,.json">
+          </label>
+
           <div id="progressLoadStatus" class="coverage-status invalid">Aucun fichier charge.</div>
 
           <div class="stats-row">
@@ -96,6 +101,7 @@
                   <button id="resetColorProgressButton" class="secondary-button" type="button">Remettre a zero</button>
                 </div>
                 <button id="nextStitchButton" class="primary-button" type="button">Point suivant</button>
+                <button id="downloadProgressSaveButton" class="secondary-button" type="button">Telecharger la sauvegarde</button>
                 <div class="completed-color-panel">
                   <p class="field-label">Couleurs terminees</p>
                   <div id="completedColorList" class="completed-color-list">

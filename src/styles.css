@@ -303,6 +303,12 @@ select:focus {
   background: #dae7e3;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .icon-button {
   display: grid;
   place-items: center;

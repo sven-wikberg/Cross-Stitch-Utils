@@ -1,6 +1,7 @@
 const STITCH_PROGRESS_STORAGE_KEY = "cross-stitch-progress-tool";
 
 const pathsJsonFileInput = document.querySelector("#pathsJsonFile");
+const progressSaveFileInput = document.querySelector("#progressSaveFile");
 const progressLoadStatus = document.querySelector("#progressLoadStatus");
 const progressProjectText = document.querySelector("#progressProjectText");
 const progressDimensionsText = document.querySelector("#progressDimensionsText");
@@ -17,6 +18,7 @@ const stitchColorStatus = document.querySelector("#stitchColorStatus");
 const undoStitchButton = document.querySelector("#undoStitchButton");
 const resetColorProgressButton = document.querySelector("#resetColorProgressButton");
 const nextStitchButton = document.querySelector("#nextStitchButton");
+const downloadProgressSaveButton = document.querySelector("#downloadProgressSaveButton");
 const completedColorList = document.querySelector("#completedColorList");
 const progressStepEyebrow = document.querySelector("#progressStepEyebrow");
 const progressStepTitle = document.querySelector("#progress-step-title");
@@ -58,10 +60,18 @@ function loadStoredProgressState() {
       return { pathsFile: parsed, stitchedByDmc: {}, selectedDmc: null };
     }
 
+    if (validateProgressSave(parsed).valid) {
+      return {
+        pathsFile: parsed.pathsFile,
+        stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
+        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
+      };
+    }
+
     if (validatePathsFile(parsed.pathsFile).valid) {
       return {
         pathsFile: parsed.pathsFile,
-        stitchedByDmc: parsed.stitchedByDmc && typeof parsed.stitchedByDmc === "object" ? parsed.stitchedByDmc : {},
+        stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
       };
     }
@@ -303,6 +313,7 @@ function renderStitchControls() {
     undoStitchButton.disabled = true;
     resetColorProgressButton.disabled = true;
     nextStitchButton.disabled = true;
+    downloadProgressSaveButton.disabled = true;
     return;
   }
 
@@ -316,6 +327,7 @@ function renderStitchControls() {
   undoStitchButton.disabled = stitched === 0;
   resetColorProgressButton.disabled = stitched === 0;
   nextStitchButton.disabled = complete;
+  downloadProgressSaveButton.disabled = false;
 }
 
 function isProgressStepComplete(step) {
@@ -352,6 +364,17 @@ async function readSelectedPaths(file) {
   const text = await file.text();
   const parsed = JSON.parse(text);
   const validation = validatePathsFile(parsed);
+  if (!validation.valid) {
+    throw new Error(validation.message);
+  }
+
+  return parsed;
+}
+
+async function readSelectedProgressSave(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const validation = validateProgressSave(parsed);
   if (!validation.valid) {
     throw new Error(validation.message);
   }
@@ -402,6 +425,31 @@ function validatePathsFile(data) {
   return { valid: true, message: "" };
 }
 
+function validateProgressSave(data) {
+  if (!data || data.kind !== "cross-stitch-progress-save" || data.schemaVersion !== 1) {
+    return { valid: false, message: "Ce fichier n'est pas une sauvegarde de progression." };
+  }
+
+  const pathsValidation = validatePathsFile(data.pathsFile);
+  if (!pathsValidation.valid) {
+    return pathsValidation;
+  }
+
+  if (!data.stitchedByDmc || typeof data.stitchedByDmc !== "object" || Array.isArray(data.stitchedByDmc)) {
+    return { valid: false, message: "Progression manquante dans la sauvegarde." };
+  }
+
+  const pathByDmc = new Map(data.pathsFile.paths.map((path) => [path.dmc, path]));
+  const everyCountValid = Object.entries(data.stitchedByDmc).every(([dmc, count]) => (
+    pathByDmc.has(dmc) && Number.isInteger(count) && count >= 0 && count <= pathByDmc.get(dmc).points.length
+  ));
+  if (!everyCountValid) {
+    return { valid: false, message: "La sauvegarde contient une progression invalide." };
+  }
+
+  return { valid: true, message: "" };
+}
+
 function validatePattern(pattern) {
   if (!pattern || pattern.kind !== "cross-stitch-pattern" || pattern.schemaVersion !== 1) {
     return { valid: false, message: "Le pattern integre n'est pas valide." };
@@ -425,6 +473,18 @@ function validatePattern(pattern) {
 
 function pathForDmc(dmc) {
   return loadedPaths?.paths.find((path) => path.dmc === dmc) || null;
+}
+
+function normalizeStitchedState(pathsFile, stitchedState) {
+  if (!pathsFile || !stitchedState || typeof stitchedState !== "object") {
+    return {};
+  }
+
+  return pathsFile.paths.reduce((normalized, path) => {
+    const value = stitchedState[path.dmc] || 0;
+    normalized[path.dmc] = Math.min(Math.max(Number.isInteger(value) ? value : 0, 0), path.points.length);
+    return normalized;
+  }, {});
 }
 
 function stitchedCountForDmc(dmc) {
@@ -511,6 +571,38 @@ function cellKey(point) {
   return `${point.x},${point.y}`;
 }
 
+function buildProgressSave() {
+  return {
+    kind: "cross-stitch-progress-save",
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    pathsFile: loadedPaths,
+    stitchedByDmc: normalizeStitchedState(loadedPaths, stitchedByDmc),
+    selectedDmc
+  };
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safeFilePart(value) {
+  return String(value || "cross-stitch")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "cross-stitch";
+}
+
 function showProgressSavedStatus() {
   progressSaveStatus.textContent = "Enregistre";
   window.setTimeout(() => {
@@ -528,8 +620,42 @@ pathsJsonFileInput.addEventListener("change", async () => {
     loadedPaths = await readSelectedPaths(file);
     stitchedByDmc = {};
     selectedDmc = loadedPaths.paths[0]?.dmc || null;
+    progressSaveFileInput.value = "";
     stitchProgress.load = true;
     stitchProgress.stitch = false;
+    progressLoadError.hidden = true;
+    saveProgressState();
+    goToProgressStep("stitch");
+    showProgressSavedStatus();
+  } catch (error) {
+    loadedPaths = null;
+    stitchedByDmc = {};
+    selectedDmc = null;
+    stitchProgress.load = false;
+    stitchProgress.stitch = false;
+    localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
+    progressLoadError.textContent = error.message;
+    progressLoadError.hidden = false;
+    renderProgressTool();
+  }
+});
+
+progressSaveFileInput.addEventListener("change", async () => {
+  const file = progressSaveFileInput.files[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const progressSave = await readSelectedProgressSave(file);
+    loadedPaths = progressSave.pathsFile;
+    stitchedByDmc = normalizeStitchedState(loadedPaths, progressSave.stitchedByDmc);
+    selectedDmc = pathForDmc(progressSave.selectedDmc)
+      ? progressSave.selectedDmc
+      : loadedPaths.paths[0]?.dmc || null;
+    pathsJsonFileInput.value = "";
+    stitchProgress.load = true;
+    stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
     progressLoadError.hidden = true;
     saveProgressState();
     goToProgressStep("stitch");
@@ -571,6 +697,16 @@ completedColorList.addEventListener("click", (event) => {
 
 nextStitchButton.addEventListener("click", () => {
   advanceSelectedColor();
+});
+
+downloadProgressSaveButton.addEventListener("click", () => {
+  if (!loadedPaths) {
+    return;
+  }
+
+  const filename = `${safeFilePart(loadedPaths.project.name)}-progress-save.json`;
+  downloadJson(buildProgressSave(), filename);
+  showProgressSavedStatus();
 });
 
 undoStitchButton.addEventListener("click", () => {
@@ -639,6 +775,7 @@ resetProgressToolButton.addEventListener("click", () => {
     stitch: false
   };
   pathsJsonFileInput.value = "";
+  progressSaveFileInput.value = "";
   progressLoadError.hidden = true;
   localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
   renderProgressTool();
