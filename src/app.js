@@ -9,6 +9,7 @@ const defaultPattern = {
   colors: [],
   partsExpected: 0,
   parts: [],
+  symbolGroups: [],
   grid: {
     width: 0,
     height: 0,
@@ -66,6 +67,15 @@ const analysisSignaturesText = document.querySelector("#analysisSignaturesText")
 const backToGridButton = document.querySelector("#backToGridButton");
 const sliceImagesButton = document.querySelector("#sliceImagesButton");
 const analysisError = document.querySelector("#analysisError");
+const groupsStatus = document.querySelector("#groupsStatus");
+const groupsCellsText = document.querySelector("#groupsCellsText");
+const groupsCountText = document.querySelector("#groupsCountText");
+const largestGroupText = document.querySelector("#largestGroupText");
+const groupsTableBody = document.querySelector("#groupsTableBody");
+const emptyGroupsMessage = document.querySelector("#emptyGroupsMessage");
+const backToAnalysisButton = document.querySelector("#backToAnalysisButton");
+const generateGroupsButton = document.querySelector("#generateGroupsButton");
+const groupsError = document.querySelector("#groupsError");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -105,10 +115,14 @@ const stepLabels = {
   analysis: {
     eyebrow: "Etape 6",
     title: "Decoupage"
+  },
+  groups: {
+    eyebrow: "Etape 7",
+    title: "Groupes"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis"];
+const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -131,6 +145,7 @@ function loadPattern() {
       },
       partsExpected: Number.isInteger(parsed.partsExpected) ? parsed.partsExpected : 0,
       parts: Array.isArray(parsed.parts) ? parsed.parts : [],
+      symbolGroups: Array.isArray(parsed.symbolGroups) ? parsed.symbolGroups : [],
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
   } catch {
@@ -149,6 +164,7 @@ function loadProgress(currentPattern) {
         parts: false,
         grid: false,
         analysis: false,
+        groups: false,
         ...JSON.parse(stored)
       };
     } catch {
@@ -162,7 +178,8 @@ function loadProgress(currentPattern) {
     dimensions: currentPattern.grid.width > 0 && currentPattern.grid.height > 0,
     parts: validatePartsCoverage(currentPattern).valid,
     grid: isGridGenerated(currentPattern),
-    analysis: isImageAnalysisComplete(currentPattern)
+    analysis: isImageAnalysisComplete(currentPattern),
+    groups: areSymbolGroupsGenerated(currentPattern)
   };
 }
 
@@ -214,6 +231,7 @@ function render() {
   renderParts();
   renderGrid();
   renderAnalysis();
+  renderGroups();
   renderDmcOptions();
 }
 
@@ -264,6 +282,10 @@ function isStepComplete(step) {
 
   if (step === "analysis") {
     return progress.analysis && isImageAnalysisComplete(pattern);
+  }
+
+  if (step === "groups") {
+    return progress.groups && areSymbolGroupsGenerated(pattern);
   }
 
   return false;
@@ -400,6 +422,52 @@ function renderAnalysis() {
   analysisStatus.textContent = complete
     ? `Decoupage termine: ${signedCells} signatures.`
     : `Decoupage incomplet: ${signedCells} / ${totalCells} signatures.`;
+}
+
+function renderGroups() {
+  const cells = pattern.grid.cells || [];
+  const groups = pattern.symbolGroups || [];
+  const generated = areSymbolGroupsGenerated(pattern);
+  const largestGroupSize = groups.reduce((largest, group) => Math.max(largest, group.cellCount), 0);
+
+  groupsCellsText.textContent = String(cells.length);
+  groupsCountText.textContent = String(groups.length);
+  largestGroupText.textContent = String(largestGroupSize);
+  groupsStatus.className = `coverage-status ${generated ? "valid" : "invalid"}`;
+  groupsStatus.textContent = generated
+    ? `Groupes generes: ${groups.length}.`
+    : "Groupes non generes.";
+
+  groupsTableBody.innerHTML = "";
+  emptyGroupsMessage.hidden = groups.length > 0;
+
+  groups.slice(0, 50).forEach((group) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td></td>
+      <td></td>
+      <td><code></code></td>
+      <td><span class="color-swatch"></span></td>
+    `;
+
+    row.children[0].textContent = group.id;
+    row.children[1].textContent = group.cellCount;
+    row.querySelector("code").textContent = group.signature;
+    const swatch = row.querySelector(".color-swatch");
+    swatch.style.background = group.sampleMean || "#ffffff";
+    swatch.title = group.sampleMean || "";
+    groupsTableBody.appendChild(row);
+  });
+}
+
+function areSymbolGroupsGenerated(patternToValidate) {
+  const groups = patternToValidate.symbolGroups || [];
+  if (!isImageAnalysisComplete(patternToValidate) || groups.length === 0) {
+    return false;
+  }
+
+  const groupedCellCount = groups.reduce((sum, group) => sum + group.cellCount, 0);
+  return groupedCellCount === patternToValidate.grid.cells.length;
 }
 
 function isImageAnalysisComplete(patternToValidate) {
@@ -605,6 +673,8 @@ projectNameInput.addEventListener("input", () => {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   saveProgress();
   projectError.hidden = true;
   render();
@@ -641,6 +711,8 @@ colorForm.addEventListener("submit", (event) => {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
 
   savePattern();
   saveProgress();
@@ -664,6 +736,8 @@ colorsTableBody.addEventListener("click", (event) => {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   savePattern();
   saveProgress();
   render();
@@ -687,6 +761,8 @@ validateColorsButton.addEventListener("click", () => {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   savePattern();
   saveProgress();
   goToStep("dimensions");
@@ -719,6 +795,8 @@ dimensionsForm.addEventListener("submit", (event) => {
     progress.parts = false;
     progress.grid = false;
     progress.analysis = false;
+    progress.groups = false;
+    pattern.symbolGroups = [];
   }
 
   progress.dimensions = true;
@@ -758,6 +836,8 @@ partCountForm.addEventListener("submit", (event) => {
     progress.parts = false;
     progress.grid = false;
     progress.analysis = false;
+    progress.groups = false;
+    pattern.symbolGroups = [];
   }
 
   partCountError.hidden = true;
@@ -839,6 +919,8 @@ async function addPartFromForm() {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   savePattern();
   saveProgress();
   partForm.reset();
@@ -887,6 +969,8 @@ partsTableBody.addEventListener("click", (event) => {
   progress.parts = false;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   savePattern();
   saveProgress();
   render();
@@ -910,7 +994,10 @@ validatePartsButton.addEventListener("click", () => {
   progress.parts = true;
   progress.grid = false;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   partsError.hidden = true;
+  savePattern();
   saveProgress();
   goToStep("grid");
   showSavedStatus();
@@ -931,6 +1018,8 @@ generateGridButton.addEventListener("click", () => {
   pattern.grid.cells = generateGridCells(pattern);
   progress.grid = true;
   progress.analysis = false;
+  progress.groups = false;
+  pattern.symbolGroups = [];
   gridError.hidden = true;
   savePattern();
   saveProgress();
@@ -959,6 +1048,8 @@ sliceImagesButton.addEventListener("click", async () => {
   try {
     await slicePartImagesIntoCells();
     progress.analysis = true;
+    progress.groups = false;
+    pattern.symbolGroups = [];
     analysisError.hidden = true;
     savePattern();
     saveProgress();
@@ -969,6 +1060,55 @@ sliceImagesButton.addEventListener("click", async () => {
     analysisError.hidden = false;
   }
 });
+
+backToAnalysisButton.addEventListener("click", () => {
+  goToStep("analysis");
+});
+
+generateGroupsButton.addEventListener("click", () => {
+  if (!progress.analysis || !isImageAnalysisComplete(pattern)) {
+    groupsError.textContent = "Le decoupage doit etre termine avant de generer les groupes.";
+    groupsError.hidden = false;
+    return;
+  }
+
+  pattern.symbolGroups = generateSymbolGroups(pattern);
+  progress.groups = true;
+  groupsError.hidden = true;
+  savePattern();
+  saveProgress();
+  render();
+  showSavedStatus();
+});
+
+function generateSymbolGroups(patternToGroup) {
+  const groupsBySignature = new Map();
+
+  patternToGroup.grid.cells.forEach((cell) => {
+    const signature = cell.sampleSignature;
+    if (!groupsBySignature.has(signature)) {
+      groupsBySignature.set(signature, {
+        signature,
+        sampleMean: cell.sampleMean || "",
+        cellKeys: []
+      });
+    }
+
+    groupsBySignature.get(signature).cellKeys.push(`${cell.x},${cell.y}`);
+  });
+
+  return [...groupsBySignature.values()]
+    .sort((a, b) => b.cellKeys.length - a.cellKeys.length || a.signature.localeCompare(b.signature))
+    .map((group, index) => ({
+      id: `group-${index + 1}`,
+      signature: group.signature,
+      sampleMean: group.sampleMean,
+      cellCount: group.cellKeys.length,
+      cellKeys: group.cellKeys,
+      symbol: null,
+      dmc: null
+    }));
+}
 
 async function slicePartImagesIntoCells() {
   const cellByKey = new Map(pattern.grid.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
@@ -1095,7 +1235,8 @@ resetButton.addEventListener("click", () => {
     dimensions: false,
     parts: false,
     grid: false,
-    analysis: false
+    analysis: false,
+    groups: false
   };
   render();
 });

@@ -13,6 +13,7 @@ Le premier outil produit progressivement un fichier JSON uniforme. Le PDF d'orig
   "colors": [],
   "partsExpected": 0,
   "parts": [],
+  "symbolGroups": [],
   "grid": {
     "width": 0,
     "height": 0,
@@ -37,6 +38,7 @@ Exemple :
   "colors": [],
   "partsExpected": 0,
   "parts": [],
+  "symbolGroups": [],
   "grid": {
     "width": 0,
     "height": 0,
@@ -53,6 +55,7 @@ Exemple :
 - Morceaux du pattern.
 - Grille vide.
 - Decoupage des cellules.
+- Groupes de symboles.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -169,3 +172,21 @@ Chaque cellule recoit ensuite une signature visuelle compacte qui servira plus t
 ```
 
 Cette signature n'est pas le symbole final. Elle est seulement une aide pour la prochaine etape de reconnaissance ou de regroupement manuel.
+
+## Etape 7 : groupes de symboles
+
+L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce premier regroupement est volontairement strict pour rester facile a verifier.
+
+```json
+{
+  "id": "group-1",
+  "signature": "ff00aa55ff00aa55",
+  "sampleMean": "#F4F4F4",
+  "cellCount": 142,
+  "cellKeys": ["0,0", "1,0"],
+  "symbol": null,
+  "dmc": null
+}
+```
+
+`symbol` et `dmc` seront remplis plus tard, quand l'utilisateur associera un groupe visuel a un symbole puis a une couleur DMC.

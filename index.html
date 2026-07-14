@@ -39,6 +39,10 @@
             <span class="step-number">6</span>
             <span>Decoupage</span>
           </button>
+          <button class="step-item locked" type="button" data-step="groups" disabled>
+            <span class="step-number">7</span>
+            <span>Groupes</span>
+          </button>
         </nav>
       </aside>
 
@@ -292,6 +296,53 @@
             <button id="sliceImagesButton" class="primary-button" type="button">Decouper les images</button>
           </div>
           <p id="analysisError" class="form-error" hidden>La grille doit etre generee avant le decoupage.</p>
+        </section>
+
+        <section id="groupsPanel" class="tool-panel hidden" data-panel="groups" aria-labelledby="groups-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="groups-title">Groupes de symboles</h3>
+              <p>Regroupe les cellules qui ont exactement la meme signature visuelle.</p>
+            </div>
+          </div>
+
+          <div id="groupsStatus" class="coverage-status"></div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Cellules</span>
+              <strong id="groupsCellsText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Groupes</span>
+              <strong id="groupsCountText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Plus grand groupe</span>
+              <strong id="largestGroupText">0</strong>
+            </div>
+          </div>
+
+          <div class="color-list-wrap">
+            <table class="color-table">
+              <thead>
+                <tr>
+                  <th>Groupe</th>
+                  <th>Cellules</th>
+                  <th>Signature</th>
+                  <th>Moyenne</th>
+                </tr>
+              </thead>
+              <tbody id="groupsTableBody"></tbody>
+            </table>
+            <p id="emptyGroupsMessage" class="empty-message">Aucun groupe genere.</p>
+          </div>
+
+          <div class="actions split-actions">
+            <button id="backToAnalysisButton" class="secondary-button" type="button">Retour</button>
+            <button id="generateGroupsButton" class="primary-button" type="button">Generer les groupes</button>
+          </div>
+          <p id="groupsError" class="form-error" hidden>Le decoupage doit etre termine avant de generer les groupes.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">
