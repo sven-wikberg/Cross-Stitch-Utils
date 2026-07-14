@@ -90,7 +90,6 @@ const assignmentChoices = document.querySelector("#assignmentChoices");
 const emptyAssignmentsMessage = document.querySelector("#emptyAssignmentsMessage");
 const backToGroupsButton = document.querySelector("#backToGroupsButton");
 const previousAssignmentButton = document.querySelector("#previousAssignmentButton");
-const assignEmptyButton = document.querySelector("#assignEmptyButton");
 const nextAssignmentButton = document.querySelector("#nextAssignmentButton");
 const applyAssignmentsButton = document.querySelector("#applyAssignmentsButton");
 const assignmentsError = document.querySelector("#assignmentsError");
@@ -542,7 +541,14 @@ function renderAssignments() {
     assignmentChoices.appendChild(button);
   });
 
-  assignEmptyButton.classList.toggle("selected", Boolean(group.isEmpty));
+  const emptyButton = document.createElement("button");
+  emptyButton.className = "assignment-choice-button empty-choice";
+  emptyButton.type = "button";
+  emptyButton.dataset.empty = "true";
+  emptyButton.classList.toggle("selected", Boolean(group.isEmpty));
+  emptyButton.textContent = "Vide";
+  assignmentChoices.appendChild(emptyButton);
+
   previousAssignmentButton.disabled = assignmentGroupIndex === 0;
   nextAssignmentButton.disabled = assignmentGroupIndex === groups.length - 1;
 
@@ -1263,16 +1269,17 @@ backToGroupsButton.addEventListener("click", () => {
 });
 
 assignmentChoices.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-dmc]");
+  const button = event.target.closest("[data-dmc], [data-empty]");
   if (!button) {
     return;
   }
 
-  classifyCurrentGroup({ dmc: button.dataset.dmc, isEmpty: false });
-});
+  if (button.dataset.empty === "true") {
+    classifyCurrentGroup({ dmc: null, isEmpty: true });
+    return;
+  }
 
-assignEmptyButton.addEventListener("click", () => {
-  classifyCurrentGroup({ dmc: null, isEmpty: true });
+  classifyCurrentGroup({ dmc: button.dataset.dmc, isEmpty: false });
 });
 
 previousAssignmentButton.addEventListener("click", () => {

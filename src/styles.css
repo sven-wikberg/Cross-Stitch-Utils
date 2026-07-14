@@ -427,6 +427,12 @@ select:focus {
   outline: 3px solid rgba(36, 120, 109, 0.16);
 }
 
+.assignment-choice-button.empty-choice {
+  justify-content: center;
+  color: #4e5559;
+  background: #eef2f0;
+}
+
 .assignment-nav {
   display: flex;
   justify-content: space-between;
