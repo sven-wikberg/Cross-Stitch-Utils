@@ -9,6 +9,9 @@ const loadError = document.querySelector("#loadError");
 const loadedJsonPreview = document.querySelector("#loadedJsonPreview");
 const pathSaveStatus = document.querySelector("#pathSaveStatus");
 const resetPathToolButton = document.querySelector("#resetPathToolButton");
+const pathGridStatus = document.querySelector("#pathGridStatus");
+const patternCanvas = document.querySelector("#patternCanvas");
+const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
 const pathStepButtons = document.querySelectorAll("[data-step]");
@@ -87,6 +90,7 @@ function renderPathTool() {
   });
 
   renderLoadedPattern();
+  renderPatternGrid();
 }
 
 function renderLoadedPattern() {
@@ -106,6 +110,88 @@ function renderLoadedPattern() {
   loadedDimensionsText.textContent = `${loadedPattern.grid.width} x ${loadedPattern.grid.height}`;
   loadedColorsText.textContent = String(loadedPattern.colors.length);
   loadedJsonPreview.textContent = JSON.stringify(loadedPattern, null, 2);
+}
+
+function renderPatternGrid() {
+  const context = patternCanvas.getContext("2d");
+
+  if (!loadedPattern) {
+    patternCanvas.width = 1;
+    patternCanvas.height = 1;
+    context.clearRect(0, 0, 1, 1);
+    pathColorLegend.innerHTML = "";
+    pathGridStatus.className = "coverage-status invalid";
+    pathGridStatus.textContent = "Charge un pattern pour afficher la grille.";
+    return;
+  }
+
+  const colorByDmc = new Map(loadedPattern.colors.map((color) => [color.dmc, color]));
+  const cellSize = gridCellSize(loadedPattern.grid.width, loadedPattern.grid.height);
+  patternCanvas.width = loadedPattern.grid.width * cellSize;
+  patternCanvas.height = loadedPattern.grid.height * cellSize;
+  context.clearRect(0, 0, patternCanvas.width, patternCanvas.height);
+
+  loadedPattern.grid.cells.forEach((cell) => {
+    const color = colorByDmc.get(cell.dmc);
+    context.fillStyle = cell.empty ? "#ffffff" : color?.hex || "#d9dddd";
+    context.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
+  });
+
+  if (cellSize >= 6) {
+    drawGridLines(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
+  }
+
+  renderPathColorLegend();
+  pathGridStatus.className = "coverage-status valid";
+  pathGridStatus.textContent = `Grille affichee: ${loadedPattern.grid.width} x ${loadedPattern.grid.height}.`;
+}
+
+function gridCellSize(width, height) {
+  const largestSide = Math.max(width, height);
+  if (largestSide <= 80) {
+    return 10;
+  }
+
+  if (largestSide <= 160) {
+    return 6;
+  }
+
+  return 4;
+}
+
+function drawGridLines(context, width, height, cellSize) {
+  context.strokeStyle = "rgba(34, 36, 38, 0.18)";
+  context.lineWidth = 1;
+
+  for (let x = 0; x <= width; x += 1) {
+    context.beginPath();
+    context.moveTo(x * cellSize + 0.5, 0);
+    context.lineTo(x * cellSize + 0.5, height * cellSize);
+    context.stroke();
+  }
+
+  for (let y = 0; y <= height; y += 1) {
+    context.beginPath();
+    context.moveTo(0, y * cellSize + 0.5);
+    context.lineTo(width * cellSize, y * cellSize + 0.5);
+    context.stroke();
+  }
+}
+
+function renderPathColorLegend() {
+  pathColorLegend.innerHTML = "";
+
+  loadedPattern.colors.forEach((color) => {
+    const item = document.createElement("div");
+    item.className = "path-color-item";
+    item.innerHTML = `
+      <span class="color-swatch"></span>
+      <span>DMC ${color.dmc}</span>
+      <span class="stat-label">${color.symbol || ""}</span>
+    `;
+    item.querySelector(".color-swatch").style.background = color.hex;
+    pathColorLegend.appendChild(item);
+  });
 }
 
 function isPathStepComplete(step) {
@@ -209,7 +295,7 @@ patternJsonFileInput.addEventListener("change", async () => {
     pathProgress.export = false;
     loadError.hidden = true;
     saveLoadedPattern();
-    renderPathTool();
+    goToPathStep("paths");
     showPathSavedStatus();
   } catch (error) {
     loadedPattern = null;

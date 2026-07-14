@@ -79,7 +79,19 @@
           <div class="panel-heading">
             <div>
               <h3 id="paths-title">Chemins par couleur</h3>
-              <p>Cette etape sera construite ensuite.</p>
+              <p>Visualise la grille chargee avec les couleurs du pattern.</p>
+            </div>
+          </div>
+
+          <div id="pathGridStatus" class="coverage-status invalid">Charge un pattern pour afficher la grille.</div>
+
+          <div class="pattern-viewer">
+            <div class="pattern-canvas-wrap">
+              <canvas id="patternCanvas" width="1" height="1" aria-label="Grille du pattern"></canvas>
+            </div>
+            <div>
+              <p class="field-label">Couleurs</p>
+              <div id="pathColorLegend" class="path-color-legend"></div>
             </div>
           </div>
         </section>
