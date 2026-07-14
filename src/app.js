@@ -489,6 +489,7 @@ function renderAssignments() {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td></td>
+      <td><span class="symbol-preview-empty">A regenerer</span></td>
       <td></td>
       <td><input class="assignment-symbol-input" type="text" autocomplete="off" maxlength="12"></td>
       <td><select class="assignment-dmc-select"></select></td>
@@ -496,7 +497,15 @@ function renderAssignments() {
     `;
 
     row.children[0].textContent = group.id;
-    row.children[1].textContent = group.cellCount;
+    row.children[2].textContent = group.cellCount;
+
+    if (group.previewDataUrl) {
+      const preview = document.createElement("img");
+      preview.className = "symbol-preview";
+      preview.src = group.previewDataUrl;
+      preview.alt = `Apercu ${group.id}`;
+      row.children[1].replaceChildren(preview);
+    }
 
     const symbolInput = row.querySelector(".assignment-symbol-input");
     symbolInput.dataset.groupId = group.id;
@@ -1299,8 +1308,13 @@ function generateSymbolGroups(patternToGroup) {
       groupsBySignature.set(signature, {
         signature,
         sampleMean: cell.sampleMean || "",
+        previewDataUrl: cell.samplePreviewDataUrl || "",
         cellKeys: []
       });
+    }
+
+    if (!groupsBySignature.get(signature).previewDataUrl && cell.samplePreviewDataUrl) {
+      groupsBySignature.get(signature).previewDataUrl = cell.samplePreviewDataUrl;
     }
 
     groupsBySignature.get(signature).cellKeys.push(`${cell.x},${cell.y}`);
@@ -1312,6 +1326,7 @@ function generateSymbolGroups(patternToGroup) {
       id: `group-${index + 1}`,
       signature: group.signature,
       sampleMean: group.sampleMean,
+      previewDataUrl: group.previewDataUrl,
       cellCount: group.cellKeys.length,
       cellKeys: group.cellKeys,
       symbol: null,
@@ -1350,6 +1365,7 @@ function applyGroupAssignmentsToCells() {
 
 async function slicePartImagesIntoCells() {
   const cellByKey = new Map(pattern.grid.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
+  const previewBySignature = new Map();
 
   for (const part of pattern.parts) {
     const image = await loadImage(part.imageDataUrl);
@@ -1380,6 +1396,13 @@ async function slicePartImagesIntoCells() {
         cell.sampleSignature = sample.signature;
         cell.sampleMean = sample.mean;
         cell.sampleSource = "image-slice";
+
+        if (!previewBySignature.has(sample.signature)) {
+          previewBySignature.set(sample.signature, sample.previewDataUrl);
+          cell.samplePreviewDataUrl = sample.previewDataUrl;
+        } else {
+          delete cell.samplePreviewDataUrl;
+        }
       }
     }
   }
@@ -1430,11 +1453,28 @@ function sampleCellImage(image, sx, sy, sw, sh) {
 
   const pixelCount = grays.length;
   const mean = `#${toHex(red / pixelCount)}${toHex(green / pixelCount)}${toHex(blue / pixelCount)}`;
-  return { signature, mean };
+  return {
+    signature,
+    mean,
+    previewDataUrl: createCellPreview(image, sx, sy, sw, sh)
+  };
 }
 
 function toHex(value) {
   return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
+}
+
+function createCellPreview(image, sx, sy, sw, sh) {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, size, size);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, size, size);
+  return canvas.toDataURL("image/png");
 }
 
 function generateGridCells(patternToGenerate) {

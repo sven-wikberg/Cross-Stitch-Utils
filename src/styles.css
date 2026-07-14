@@ -327,6 +327,24 @@ select:focus {
   width: 130px;
 }
 
+.symbol-preview {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  image-rendering: pixelated;
+}
+
+.symbol-preview-empty {
+  display: inline-block;
+  max-width: 90px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .checkbox-cell {
   text-align: center;
 }

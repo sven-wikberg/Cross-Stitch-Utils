@@ -183,6 +183,7 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
   "id": "group-1",
   "signature": "ff00aa55ff00aa55",
   "sampleMean": "#F4F4F4",
+  "previewDataUrl": "data:image/png;base64,...",
   "cellCount": 142,
   "cellKeys": ["0,0", "1,0"],
   "symbol": null,
@@ -197,11 +198,14 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
 
 L'utilisateur associe chaque groupe visuel a un symbole et a une couleur DMC deja ajoutee dans l'etape 2. Un groupe peut aussi etre marque comme vide si les cellules correspondantes ne doivent pas etre brodees.
 
+L'outil ne devine pas automatiquement la couleur d'un groupe. Il affiche un apercu du symbole extrait depuis la grille pour permettre de le comparer a la legende du PDF, puis l'utilisateur choisit la couleur DMC correspondante.
+
 ```json
 {
   "id": "group-1",
   "signature": "ff00aa55ff00aa55",
   "sampleMean": "#F4F4F4",
+  "previewDataUrl": "data:image/png;base64,...",
   "cellCount": 142,
   "cellKeys": ["0,0", "1,0"],
   "symbol": "x",
