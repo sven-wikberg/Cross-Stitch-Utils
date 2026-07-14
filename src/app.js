@@ -1611,6 +1611,10 @@ function signatureDistance(firstSignature, secondSignature) {
     return Number.POSITIVE_INFINITY;
   }
 
+  if (isHexColorSignature(firstSignature) && isHexColorSignature(secondSignature)) {
+    return colorSignatureDistance(firstSignature, secondSignature);
+  }
+
   let distance = 0;
   for (let index = 0; index < firstSignature.length; index += 1) {
     const firstNibble = parseInt(firstSignature[index], 16);
@@ -1619,6 +1623,26 @@ function signatureDistance(firstSignature, secondSignature) {
   }
 
   return distance;
+}
+
+function isHexColorSignature(signature) {
+  return /^#[0-9A-F]{6}$/i.test(signature);
+}
+
+function colorSignatureDistance(firstSignature, secondSignature) {
+  const first = parseHexSignature(firstSignature);
+  const second = parseHexSignature(secondSignature);
+  return Math.abs(first.red - second.red)
+    + Math.abs(first.green - second.green)
+    + Math.abs(first.blue - second.blue);
+}
+
+function parseHexSignature(signature) {
+  return {
+    red: parseInt(signature[1], 16),
+    green: parseInt(signature[3], 16),
+    blue: parseInt(signature[5], 16)
+  };
 }
 
 function countBits(value) {
@@ -1774,39 +1798,28 @@ function sampleCellImage(image, sx, sy, sw, sh) {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.drawImage(image, sampleArea.x, sampleArea.y, sampleArea.width, sampleArea.height, 0, 0, size, size);
   const data = context.getImageData(0, 0, size, size).data;
-  const grays = [];
-  let red = 0;
-  let green = 0;
-  let blue = 0;
+  const colorCounts = new Map();
 
   for (let index = 0; index < data.length; index += 4) {
-    const r = data[index];
-    const g = data[index + 1];
-    const b = data[index + 2];
-    red += r;
-    green += g;
-    blue += b;
-    grays.push(Math.round((r * 0.299) + (g * 0.587) + (b * 0.114)));
+    const signature = dominantColorBucket(data[index], data[index + 1], data[index + 2]);
+    colorCounts.set(signature, (colorCounts.get(signature) || 0) + 1);
   }
 
-  const averageGray = grays.reduce((sum, value) => sum + value, 0) / grays.length;
-  let bits = "";
-  grays.forEach((gray) => {
-    bits += gray >= averageGray ? "1" : "0";
-  });
+  const signature = [...colorCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "#FFFFFF";
 
-  let signature = "";
-  for (let index = 0; index < bits.length; index += 4) {
-    signature += parseInt(bits.slice(index, index + 4), 2).toString(16);
-  }
-
-  const pixelCount = grays.length;
-  const mean = `#${toHex(red / pixelCount)}${toHex(green / pixelCount)}${toHex(blue / pixelCount)}`;
   return {
     signature,
-    mean,
+    mean: signature,
     previewDataUrl: createCellPreview(image, sampleArea.x, sampleArea.y, sampleArea.width, sampleArea.height)
   };
+}
+
+function dominantColorBucket(red, green, blue) {
+  const redNibble = Math.round(red / 17);
+  const greenNibble = Math.round(green / 17);
+  const blueNibble = Math.round(blue / 17);
+  return `#${toHexNibble(redNibble)}${toHexNibble(redNibble)}${toHexNibble(greenNibble)}${toHexNibble(greenNibble)}${toHexNibble(blueNibble)}${toHexNibble(blueNibble)}`;
 }
 
 function insetSampleArea(x, y, width, height) {
@@ -1822,6 +1835,10 @@ function insetSampleArea(x, y, width, height) {
 
 function toHex(value) {
   return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
+}
+
+function toHexNibble(value) {
+  return Math.min(Math.max(value, 0), 15).toString(16).toUpperCase();
 }
 
 function createCellPreview(image, sx, sy, sw, sh) {
