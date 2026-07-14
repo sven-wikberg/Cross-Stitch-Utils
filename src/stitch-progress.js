@@ -17,6 +17,7 @@ const stitchColorStatus = document.querySelector("#stitchColorStatus");
 const undoStitchButton = document.querySelector("#undoStitchButton");
 const resetColorProgressButton = document.querySelector("#resetColorProgressButton");
 const nextStitchButton = document.querySelector("#nextStitchButton");
+const completedColorList = document.querySelector("#completedColorList");
 const progressStepEyebrow = document.querySelector("#progressStepEyebrow");
 const progressStepTitle = document.querySelector("#progress-step-title");
 const progressStepButtons = document.querySelectorAll("[data-step]");
@@ -140,6 +141,7 @@ function renderStitchView() {
     stitchCanvas.height = 1;
     context.clearRect(0, 0, 1, 1);
     stitchColorLegend.innerHTML = "";
+    completedColorList.innerHTML = '<p class="empty-message">Aucune couleur terminee.</p>';
     stitchColorLabel.textContent = "Aucune couleur selectionnee";
     stitchStatus.className = "coverage-status invalid";
     stitchStatus.textContent = "Charge un fichier pour commencer.";
@@ -182,6 +184,7 @@ function renderStitchView() {
 
   drawStitchProgress(context, cellSize);
   renderStitchColorLegend();
+  renderCompletedColorList();
   renderStitchControls();
   stitchStatus.className = "coverage-status valid";
   stitchStatus.textContent = `Appuie sur Espace pour avancer dans DMC ${selectedDmc}.`;
@@ -261,6 +264,31 @@ function renderStitchColorLegend() {
     `;
     item.querySelector(".color-swatch").style.background = color?.hex || "#d9dddd";
     stitchColorLegend.appendChild(item);
+  });
+}
+
+function renderCompletedColorList() {
+  const completedPaths = loadedPaths.paths.filter((path) => stitchedCountForDmc(path.dmc) === path.points.length);
+  completedColorList.innerHTML = "";
+
+  if (completedPaths.length === 0) {
+    completedColorList.innerHTML = '<p class="empty-message">Aucune couleur terminee.</p>';
+    return;
+  }
+
+  completedPaths.forEach((path) => {
+    const color = loadedPaths.pattern.colors.find((candidate) => candidate.dmc === path.dmc);
+    const item = document.createElement("button");
+    item.className = "completed-color-item";
+    item.type = "button";
+    item.dataset.dmc = path.dmc;
+    item.innerHTML = `
+      <span class="color-swatch"></span>
+      <span>DMC ${path.dmc}</span>
+      <span class="stat-label">${path.points.length}</span>
+    `;
+    item.querySelector(".color-swatch").style.background = color?.hex || "#d9dddd";
+    completedColorList.appendChild(item);
   });
 }
 
@@ -516,6 +544,17 @@ pathsJsonFileInput.addEventListener("change", async () => {
 });
 
 stitchColorLegend.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-dmc]");
+  if (!button) {
+    return;
+  }
+
+  selectedDmc = button.dataset.dmc;
+  saveProgressState();
+  renderProgressTool();
+});
+
+completedColorList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-dmc]");
   if (!button) {
     return;

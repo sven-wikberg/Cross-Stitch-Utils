@@ -580,6 +580,16 @@ select:focus {
   color: var(--accent-strong);
 }
 
+.path-color-item.complete {
+  color: #7f8783;
+  background: #eef1ef;
+  opacity: 0.68;
+}
+
+.path-color-item.complete .color-swatch {
+  filter: grayscale(1);
+}
+
 .path-builder-panel {
   display: grid;
   gap: 12px;
@@ -588,6 +598,46 @@ select:focus {
 
 .path-builder-panel .primary-button {
   width: 100%;
+}
+
+.completed-color-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.completed-color-list {
+  display: grid;
+  gap: 7px;
+}
+
+.completed-color-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #68706c;
+  background: #eef1ef;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.completed-color-item:hover {
+  border-color: var(--accent);
+  outline: 3px solid rgba(36, 120, 109, 0.12);
+}
+
+.completed-color-item .color-swatch {
+  width: 28px;
+  height: 20px;
+  filter: grayscale(1);
 }
 
 .assignment-nav {
