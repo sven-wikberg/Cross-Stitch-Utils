@@ -592,6 +592,19 @@ select:focus {
   width: 100%;
 }
 
+.embedded-save-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.embedded-save-panel .secondary-button {
+  width: fit-content;
+}
+
 .completed-color-panel {
   display: grid;
   gap: 8px;

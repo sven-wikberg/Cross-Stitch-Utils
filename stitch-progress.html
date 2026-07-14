@@ -56,6 +56,11 @@
             <input id="progressSaveFile" type="file" accept="application/json,.json">
           </label>
 
+          <div class="embedded-save-panel">
+            <button id="loadBuiltinProgressButton" class="secondary-button" type="button">Charger la sauvegarde integree</button>
+            <p id="builtinProgressStatus" class="empty-message">Aucune sauvegarde integree dans le repo.</p>
+          </div>
+
           <div id="progressLoadStatus" class="coverage-status invalid">Aucun fichier charge.</div>
 
           <div class="stats-row">
@@ -115,6 +120,7 @@
       </section>
     </main>
 
+    <script src="data/builtin-progress.js"></script>
     <script src="src/stitch-progress.js"></script>
   </body>
 </html>

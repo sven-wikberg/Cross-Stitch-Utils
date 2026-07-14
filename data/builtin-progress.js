@@ -1,0 +1,1 @@
+window.BUILTIN_STITCH_PROGRESS = null;
