@@ -176,7 +176,11 @@ Cette signature n'est pas le symbole final. Elle est seulement une aide pour la 
 
 ## Etape 7 : groupes de symboles
 
-L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce premier regroupement est volontairement strict pour rester facile a verifier.
+L'outil regroupe les cellules dont la `sampleSignature` est identique ou proche, selon une tolerance choisie par l'utilisateur.
+
+- `0` : strict, seules les signatures identiques sont regroupees ;
+- `4` : normal, accepte de petites variations de capture ou de compression ;
+- `8` : large, reduit davantage le nombre de groupes mais demande plus de verification.
 
 ```json
 {
@@ -184,6 +188,7 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
   "signature": "ff00aa55ff00aa55",
   "sampleMean": "#F4F4F4",
   "previewDataUrl": "data:image/png;base64,...",
+  "tolerance": 4,
   "cellCount": 142,
   "cellKeys": ["0,0", "1,0"],
   "symbol": null,

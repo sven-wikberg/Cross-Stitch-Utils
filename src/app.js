@@ -10,6 +10,7 @@ const defaultPattern = {
   partsExpected: 0,
   parts: [],
   symbolGroups: [],
+  groupingTolerance: 4,
   grid: {
     width: 0,
     height: 0,
@@ -71,6 +72,7 @@ const groupsStatus = document.querySelector("#groupsStatus");
 const groupsCellsText = document.querySelector("#groupsCellsText");
 const groupsCountText = document.querySelector("#groupsCountText");
 const largestGroupText = document.querySelector("#largestGroupText");
+const groupingToleranceSelect = document.querySelector("#groupingTolerance");
 const groupsTableBody = document.querySelector("#groupsTableBody");
 const emptyGroupsMessage = document.querySelector("#emptyGroupsMessage");
 const backToAnalysisButton = document.querySelector("#backToAnalysisButton");
@@ -168,6 +170,7 @@ function loadPattern() {
       partsExpected: Number.isInteger(parsed.partsExpected) ? parsed.partsExpected : 0,
       parts: Array.isArray(parsed.parts) ? parsed.parts : [],
       symbolGroups: Array.isArray(parsed.symbolGroups) ? parsed.symbolGroups : [],
+      groupingTolerance: Number.isInteger(parsed.groupingTolerance) ? parsed.groupingTolerance : defaultPattern.groupingTolerance,
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
   } catch {
@@ -260,6 +263,7 @@ function render() {
   gridWidthInput.value = pattern.grid.width || "";
   gridHeightInput.value = pattern.grid.height || "";
   partsExpectedInput.value = pattern.partsExpected || "";
+  groupingToleranceSelect.value = String(pattern.groupingTolerance);
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
@@ -469,14 +473,15 @@ function renderGroups() {
   const groups = pattern.symbolGroups || [];
   const generated = areSymbolGroupsGenerated(pattern);
   const largestGroupSize = groups.reduce((largest, group) => Math.max(largest, group.cellCount), 0);
+  const toleranceLabel = groupingToleranceSelect.selectedOptions[0]?.textContent || "Normal";
 
   groupsCellsText.textContent = String(cells.length);
   groupsCountText.textContent = String(groups.length);
   largestGroupText.textContent = String(largestGroupSize);
   groupsStatus.className = `coverage-status ${generated ? "valid" : "invalid"}`;
   groupsStatus.textContent = generated
-    ? `Groupes generes: ${groups.length}.`
-    : "Groupes non generes.";
+    ? `Groupes generes: ${groups.length}. Tolerance: ${toleranceLabel}.`
+    : `Groupes non generes. Tolerance: ${toleranceLabel}.`;
 
   groupsTableBody.innerHTML = "";
   emptyGroupsMessage.hidden = groups.length > 0;
@@ -1264,6 +1269,7 @@ generateGroupsButton.addEventListener("click", () => {
     return;
   }
 
+  pattern.groupingTolerance = Number(groupingToleranceSelect.value);
   pattern.symbolGroups = generateSymbolGroups(pattern);
   progress.groups = true;
   progress.assignments = false;
@@ -1272,6 +1278,19 @@ generateGroupsButton.addEventListener("click", () => {
   savePattern();
   saveProgress();
   goToStep("assignments");
+  showSavedStatus();
+});
+
+groupingToleranceSelect.addEventListener("change", () => {
+  pattern.groupingTolerance = Number(groupingToleranceSelect.value);
+  progress.groups = false;
+  progress.assignments = false;
+  pattern.symbolGroups = [];
+  assignmentGroupIndex = 0;
+  groupsError.hidden = true;
+  savePattern();
+  saveProgress();
+  render();
   showSavedStatus();
 });
 
@@ -1353,39 +1372,73 @@ function advanceToNextAssignment() {
 }
 
 function generateSymbolGroups(patternToGroup) {
-  const groupsBySignature = new Map();
+  const groupedCells = [];
+  const tolerance = Number.isInteger(patternToGroup.groupingTolerance) ? patternToGroup.groupingTolerance : 0;
 
   patternToGroup.grid.cells.forEach((cell) => {
     const signature = cell.sampleSignature;
-    if (!groupsBySignature.has(signature)) {
-      groupsBySignature.set(signature, {
+    const matchingGroup = groupedCells.find((group) => (
+      signatureDistance(group.signature, signature) <= tolerance
+    ));
+
+    if (!matchingGroup) {
+      groupedCells.push({
         signature,
         sampleMean: cell.sampleMean || "",
         previewDataUrl: cell.samplePreviewDataUrl || "",
+        tolerance,
         cellKeys: []
       });
+      groupedCells[groupedCells.length - 1].cellKeys.push(`${cell.x},${cell.y}`);
+      return;
     }
 
-    if (!groupsBySignature.get(signature).previewDataUrl && cell.samplePreviewDataUrl) {
-      groupsBySignature.get(signature).previewDataUrl = cell.samplePreviewDataUrl;
+    if (!matchingGroup.previewDataUrl && cell.samplePreviewDataUrl) {
+      matchingGroup.previewDataUrl = cell.samplePreviewDataUrl;
     }
 
-    groupsBySignature.get(signature).cellKeys.push(`${cell.x},${cell.y}`);
+    matchingGroup.cellKeys.push(`${cell.x},${cell.y}`);
   });
 
-  return [...groupsBySignature.values()]
+  return groupedCells
     .sort((a, b) => b.cellKeys.length - a.cellKeys.length || a.signature.localeCompare(b.signature))
     .map((group, index) => ({
       id: `group-${index + 1}`,
       signature: group.signature,
       sampleMean: group.sampleMean,
       previewDataUrl: group.previewDataUrl,
+      tolerance: group.tolerance,
       cellCount: group.cellKeys.length,
       cellKeys: group.cellKeys,
       symbol: null,
       dmc: null,
       isEmpty: false
     }));
+}
+
+function signatureDistance(firstSignature, secondSignature) {
+  if (!firstSignature || !secondSignature || firstSignature.length !== secondSignature.length) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let distance = 0;
+  for (let index = 0; index < firstSignature.length; index += 1) {
+    const firstNibble = parseInt(firstSignature[index], 16);
+    const secondNibble = parseInt(secondSignature[index], 16);
+    distance += countBits(firstNibble ^ secondNibble);
+  }
+
+  return distance;
+}
+
+function countBits(value) {
+  let count = 0;
+  let current = value;
+  while (current > 0) {
+    count += current & 1;
+    current >>= 1;
+  }
+  return count;
 }
 
 function findGroupById(groupId) {

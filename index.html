@@ -306,11 +306,20 @@
           <div class="panel-heading">
             <div>
               <h3 id="groups-title">Groupes de symboles</h3>
-              <p>Regroupe les cellules qui ont exactement la meme signature visuelle.</p>
+              <p>Regroupe les cellules qui ont une signature visuelle proche.</p>
             </div>
           </div>
 
           <div id="groupsStatus" class="coverage-status"></div>
+
+          <label class="field-label" for="groupingTolerance">
+            Tolerance de regroupement
+            <select id="groupingTolerance" name="groupingTolerance">
+              <option value="0">Strict</option>
+              <option value="4">Normal</option>
+              <option value="8">Large</option>
+            </select>
+          </label>
 
           <div class="stats-row">
             <div>
