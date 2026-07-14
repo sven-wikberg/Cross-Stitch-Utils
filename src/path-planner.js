@@ -10,6 +10,7 @@ const loadedJsonPreview = document.querySelector("#loadedJsonPreview");
 const pathSaveStatus = document.querySelector("#pathSaveStatus");
 const resetPathToolButton = document.querySelector("#resetPathToolButton");
 const pathGridStatus = document.querySelector("#pathGridStatus");
+const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
@@ -41,6 +42,7 @@ let pathProgress = {
   export: false
 };
 let activePathStep = "load";
+let selectedDmc = loadedPattern?.colors[0]?.dmc || null;
 
 function loadStoredPattern() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -120,20 +122,36 @@ function renderPatternGrid() {
     patternCanvas.height = 1;
     context.clearRect(0, 0, 1, 1);
     pathColorLegend.innerHTML = "";
+    selectedColorLabel.textContent = "Aucune couleur selectionnee";
     pathGridStatus.className = "coverage-status invalid";
     pathGridStatus.textContent = "Charge un pattern pour afficher la grille.";
     return;
   }
 
   const colorByDmc = new Map(loadedPattern.colors.map((color) => [color.dmc, color]));
+  if (!selectedDmc || !colorByDmc.has(selectedDmc)) {
+    selectedDmc = loadedPattern.colors[0]?.dmc || null;
+  }
+
   const cellSize = gridCellSize(loadedPattern.grid.width, loadedPattern.grid.height);
+  const selectedColor = colorByDmc.get(selectedDmc);
+  selectedColorLabel.textContent = selectedColor
+    ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
+    : "Aucune couleur selectionnee";
   patternCanvas.width = loadedPattern.grid.width * cellSize;
   patternCanvas.height = loadedPattern.grid.height * cellSize;
   context.clearRect(0, 0, patternCanvas.width, patternCanvas.height);
 
   loadedPattern.grid.cells.forEach((cell) => {
     const color = colorByDmc.get(cell.dmc);
-    context.fillStyle = cell.empty ? "#ffffff" : color?.hex || "#d9dddd";
+    if (cell.empty) {
+      context.fillStyle = "#ffffff";
+    } else if (cell.dmc === selectedDmc) {
+      context.fillStyle = color?.hex || "#d9dddd";
+    } else {
+      context.fillStyle = mutedHex(color?.hex || "#d9dddd");
+    }
+
     context.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
   });
 
@@ -143,7 +161,37 @@ function renderPatternGrid() {
 
   renderPathColorLegend();
   pathGridStatus.className = "coverage-status valid";
-  pathGridStatus.textContent = `Grille affichee: ${loadedPattern.grid.width} x ${loadedPattern.grid.height}.`;
+  pathGridStatus.textContent = `Couleur selectionnee: DMC ${selectedDmc}.`;
+}
+
+function mutedHex(hex) {
+  const parsed = parseHexColor(hex);
+  if (!parsed) {
+    return "#eeeeee";
+  }
+
+  const mix = 0.72;
+  const red = Math.round(parsed.red + (255 - parsed.red) * mix);
+  const green = Math.round(parsed.green + (255 - parsed.green) * mix);
+  const blue = Math.round(parsed.blue + (255 - parsed.blue) * mix);
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+}
+
+function parseHexColor(hex) {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    red: parseInt(match[1], 16),
+    green: parseInt(match[2], 16),
+    blue: parseInt(match[3], 16)
+  };
+}
+
+function toHex(value) {
+  return value.toString(16).padStart(2, "0").toUpperCase();
 }
 
 function gridCellSize(width, height) {
@@ -182,8 +230,11 @@ function renderPathColorLegend() {
   pathColorLegend.innerHTML = "";
 
   loadedPattern.colors.forEach((color) => {
-    const item = document.createElement("div");
+    const item = document.createElement("button");
     item.className = "path-color-item";
+    item.type = "button";
+    item.dataset.dmc = color.dmc;
+    item.classList.toggle("selected", color.dmc === selectedDmc);
     item.innerHTML = `
       <span class="color-swatch"></span>
       <span>DMC ${color.dmc}</span>
@@ -290,6 +341,7 @@ patternJsonFileInput.addEventListener("change", async () => {
 
   try {
     loadedPattern = await readSelectedPattern(file);
+    selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathProgress.load = true;
     pathProgress.paths = false;
     pathProgress.export = false;
@@ -299,6 +351,7 @@ patternJsonFileInput.addEventListener("change", async () => {
     showPathSavedStatus();
   } catch (error) {
     loadedPattern = null;
+    selectedDmc = null;
     pathProgress.load = false;
     pathProgress.paths = false;
     pathProgress.export = false;
@@ -309,6 +362,16 @@ patternJsonFileInput.addEventListener("change", async () => {
   }
 });
 
+pathColorLegend.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-dmc]");
+  if (!button) {
+    return;
+  }
+
+  selectedDmc = button.dataset.dmc;
+  renderPatternGrid();
+});
+
 pathStepButtons.forEach((button) => {
   button.addEventListener("click", () => {
     goToPathStep(button.dataset.step);
@@ -317,6 +380,7 @@ pathStepButtons.forEach((button) => {
 
 resetPathToolButton.addEventListener("click", () => {
   loadedPattern = null;
+  selectedDmc = null;
   pathProgress = {
     load: false,
     paths: false,

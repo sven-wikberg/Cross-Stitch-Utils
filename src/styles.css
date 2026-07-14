@@ -530,6 +530,20 @@ select:focus {
   background: #ffffff;
 }
 
+.selected-color-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: rgba(36, 120, 109, 0.12);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
 .pattern-canvas-wrap canvas {
   display: block;
   image-rendering: pixelated;
@@ -552,6 +566,14 @@ select:focus {
   border-radius: 8px;
   background: #ffffff;
   font-weight: 800;
+  cursor: pointer;
+  text-align: left;
+}
+
+.path-color-item:hover,
+.path-color-item.selected {
+  border-color: var(--accent);
+  outline: 3px solid rgba(36, 120, 109, 0.16);
 }
 
 .assignment-nav {
