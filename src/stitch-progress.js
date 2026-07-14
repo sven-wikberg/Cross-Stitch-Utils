@@ -30,14 +30,10 @@ const progressStepLabels = {
   stitch: {
     eyebrow: "Etape 2",
     title: "Broder"
-  },
-  export: {
-    eyebrow: "Etape 3",
-    title: "Sauvegarde"
   }
 };
 
-const progressStepOrder = ["load", "stitch", "export"];
+const progressStepOrder = ["load", "stitch"];
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -45,8 +41,7 @@ let stitchedByDmc = storedProgressState.stitchedByDmc;
 let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
 let stitchProgress = {
   load: Boolean(loadedPaths),
-  stitch: Boolean(loadedPaths) && areAllColorsStitched(loadedPaths, storedProgressState.stitchedByDmc),
-  export: false
+  stitch: Boolean(loadedPaths) && areAllColorsStitched(loadedPaths, storedProgressState.stitchedByDmc)
 };
 let activeProgressStep = "load";
 
@@ -503,7 +498,6 @@ pathsJsonFileInput.addEventListener("change", async () => {
     selectedDmc = loadedPaths.paths[0]?.dmc || null;
     stitchProgress.load = true;
     stitchProgress.stitch = false;
-    stitchProgress.export = false;
     progressLoadError.hidden = true;
     saveProgressState();
     goToProgressStep("stitch");
@@ -514,7 +508,6 @@ pathsJsonFileInput.addEventListener("change", async () => {
     selectedDmc = null;
     stitchProgress.load = false;
     stitchProgress.stitch = false;
-    stitchProgress.export = false;
     localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
     progressLoadError.textContent = error.message;
     progressLoadError.hidden = false;
@@ -544,7 +537,6 @@ undoStitchButton.addEventListener("click", () => {
 
   stitchedByDmc[selectedDmc] = Math.max(stitchedCountForDmc(selectedDmc) - 1, 0);
   stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
-  stitchProgress.export = false;
   saveProgressState();
   renderProgressTool();
 });
@@ -556,7 +548,6 @@ resetColorProgressButton.addEventListener("click", () => {
 
   stitchedByDmc[selectedDmc] = 0;
   stitchProgress.stitch = false;
-  stitchProgress.export = false;
   saveProgressState();
   renderProgressTool();
 });
@@ -585,7 +576,6 @@ function advanceSelectedColor() {
 
   stitchedByDmc[selectedDmc] = stitched + 1;
   stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
-  stitchProgress.export = false;
   saveProgressState();
   renderProgressTool();
   showProgressSavedStatus();
@@ -603,8 +593,7 @@ resetProgressToolButton.addEventListener("click", () => {
   stitchedByDmc = {};
   stitchProgress = {
     load: false,
-    stitch: false,
-    export: false
+    stitch: false
   };
   pathsJsonFileInput.value = "";
   progressLoadError.hidden = true;
