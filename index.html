@@ -43,6 +43,10 @@
             <span class="step-number">7</span>
             <span>Groupes</span>
           </button>
+          <button class="step-item locked" type="button" data-step="assignments" disabled>
+            <span class="step-number">8</span>
+            <span>Associations</span>
+          </button>
         </nav>
       </aside>
 
@@ -343,6 +347,54 @@
             <button id="generateGroupsButton" class="primary-button" type="button">Generer les groupes</button>
           </div>
           <p id="groupsError" class="form-error" hidden>Le decoupage doit etre termine avant de generer les groupes.</p>
+        </section>
+
+        <section id="assignmentsPanel" class="tool-panel hidden" data-panel="assignments" aria-labelledby="assignments-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="assignments-title">Associations symboles et couleurs</h3>
+              <p>Associe chaque groupe visuel a un symbole et a une couleur DMC, ou marque-le comme vide.</p>
+            </div>
+          </div>
+
+          <div id="assignmentsStatus" class="coverage-status"></div>
+
+          <div class="stats-row">
+            <div>
+              <span class="stat-label">Groupes</span>
+              <strong id="assignmentsGroupsText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Groupes prets</span>
+              <strong id="assignmentsReadyText">0</strong>
+            </div>
+            <div>
+              <span class="stat-label">Cases pretes</span>
+              <strong id="assignmentsCellsText">0</strong>
+            </div>
+          </div>
+
+          <div class="color-list-wrap">
+            <table class="color-table assignment-table">
+              <thead>
+                <tr>
+                  <th>Groupe</th>
+                  <th>Cellules</th>
+                  <th>Symbole</th>
+                  <th>DMC</th>
+                  <th>Vide</th>
+                </tr>
+              </thead>
+              <tbody id="assignmentsTableBody"></tbody>
+            </table>
+            <p id="emptyAssignmentsMessage" class="empty-message">Aucun groupe a associer.</p>
+          </div>
+
+          <div class="actions split-actions">
+            <button id="backToGroupsButton" class="secondary-button" type="button">Retour</button>
+            <button id="applyAssignmentsButton" class="primary-button" type="button">Appliquer a la grille</button>
+          </div>
+          <p id="assignmentsError" class="form-error" hidden>Chaque groupe doit avoir un symbole et une couleur DMC, ou etre marque comme vide.</p>
         </section>
 
         <section class="json-panel" aria-labelledby="json-title">

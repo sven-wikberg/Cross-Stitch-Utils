@@ -56,6 +56,7 @@ Exemple :
 - Grille vide.
 - Decoupage des cellules.
 - Groupes de symboles.
+- Associations symboles et couleurs.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -185,8 +186,44 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
   "cellCount": 142,
   "cellKeys": ["0,0", "1,0"],
   "symbol": null,
-  "dmc": null
+  "dmc": null,
+  "isEmpty": false
 }
 ```
 
 `symbol` et `dmc` seront remplis plus tard, quand l'utilisateur associera un groupe visuel a un symbole puis a une couleur DMC.
+
+## Etape 8 : associations symboles et couleurs
+
+L'utilisateur associe chaque groupe visuel a un symbole et a une couleur DMC deja ajoutee dans l'etape 2. Un groupe peut aussi etre marque comme vide si les cellules correspondantes ne doivent pas etre brodees.
+
+```json
+{
+  "id": "group-1",
+  "signature": "ff00aa55ff00aa55",
+  "sampleMean": "#F4F4F4",
+  "cellCount": 142,
+  "cellKeys": ["0,0", "1,0"],
+  "symbol": "x",
+  "dmc": "310",
+  "isEmpty": false
+}
+```
+
+Quand les associations sont appliquees, chaque cellule du groupe recoit aussi l'information finale.
+
+```json
+{
+  "x": 0,
+  "y": 0,
+  "partId": "part-1",
+  "symbol": "x",
+  "dmc": "310",
+  "empty": false,
+  "sampleSignature": "ff00aa55ff00aa55",
+  "sampleMean": "#F4F4F4",
+  "sampleSource": "image-slice"
+}
+```
+
+Pour un groupe vide, `symbol` et `dmc` restent a `null`, et les cellules recoivent `empty: true`.

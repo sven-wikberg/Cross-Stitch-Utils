@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -166,7 +167,8 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 46px;
   padding: 10px 12px;
@@ -176,7 +178,8 @@ input {
   background: #ffffff;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(36, 120, 109, 0.18);
 }
@@ -308,6 +311,32 @@ input:focus {
 
 .color-table tr:last-child td {
   border-bottom: 0;
+}
+
+.assignment-table input,
+.assignment-table select {
+  min-width: 100px;
+  min-height: 38px;
+}
+
+.assignment-table .assignment-symbol-input {
+  width: 100px;
+}
+
+.assignment-table .assignment-dmc-select {
+  width: 130px;
+}
+
+.checkbox-cell {
+  text-align: center;
+}
+
+.checkbox-cell input {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
 }
 
 .row-actions {

@@ -76,6 +76,15 @@ const emptyGroupsMessage = document.querySelector("#emptyGroupsMessage");
 const backToAnalysisButton = document.querySelector("#backToAnalysisButton");
 const generateGroupsButton = document.querySelector("#generateGroupsButton");
 const groupsError = document.querySelector("#groupsError");
+const assignmentsStatus = document.querySelector("#assignmentsStatus");
+const assignmentsGroupsText = document.querySelector("#assignmentsGroupsText");
+const assignmentsReadyText = document.querySelector("#assignmentsReadyText");
+const assignmentsCellsText = document.querySelector("#assignmentsCellsText");
+const assignmentsTableBody = document.querySelector("#assignmentsTableBody");
+const emptyAssignmentsMessage = document.querySelector("#emptyAssignmentsMessage");
+const backToGroupsButton = document.querySelector("#backToGroupsButton");
+const applyAssignmentsButton = document.querySelector("#applyAssignmentsButton");
+const assignmentsError = document.querySelector("#assignmentsError");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -119,10 +128,14 @@ const stepLabels = {
   groups: {
     eyebrow: "Etape 7",
     title: "Groupes"
+  },
+  assignments: {
+    eyebrow: "Etape 8",
+    title: "Associations"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups"];
+const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups", "assignments"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -165,6 +178,7 @@ function loadProgress(currentPattern) {
         grid: false,
         analysis: false,
         groups: false,
+        assignments: false,
         ...JSON.parse(stored)
       };
     } catch {
@@ -179,7 +193,8 @@ function loadProgress(currentPattern) {
     parts: validatePartsCoverage(currentPattern).valid,
     grid: isGridGenerated(currentPattern),
     analysis: isImageAnalysisComplete(currentPattern),
-    groups: areSymbolGroupsGenerated(currentPattern)
+    groups: areSymbolGroupsGenerated(currentPattern),
+    assignments: areAssignmentsApplied(currentPattern)
   };
 }
 
@@ -232,6 +247,7 @@ function render() {
   renderGrid();
   renderAnalysis();
   renderGroups();
+  renderAssignments();
   renderDmcOptions();
 }
 
@@ -286,6 +302,10 @@ function isStepComplete(step) {
 
   if (step === "groups") {
     return progress.groups && areSymbolGroupsGenerated(pattern);
+  }
+
+  if (step === "assignments") {
+    return progress.assignments && areAssignmentsApplied(pattern);
   }
 
   return false;
@@ -460,6 +480,68 @@ function renderGroups() {
   });
 }
 
+function renderAssignments() {
+  const groups = pattern.symbolGroups || [];
+  assignmentsTableBody.innerHTML = "";
+  emptyAssignmentsMessage.hidden = groups.length > 0;
+
+  groups.forEach((group) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td></td>
+      <td></td>
+      <td><input class="assignment-symbol-input" type="text" autocomplete="off" maxlength="12"></td>
+      <td><select class="assignment-dmc-select"></select></td>
+      <td class="checkbox-cell"><input class="assignment-empty-checkbox" type="checkbox"></td>
+    `;
+
+    row.children[0].textContent = group.id;
+    row.children[1].textContent = group.cellCount;
+
+    const symbolInput = row.querySelector(".assignment-symbol-input");
+    symbolInput.dataset.groupId = group.id;
+    symbolInput.value = group.symbol || "";
+    symbolInput.disabled = Boolean(group.isEmpty);
+
+    const dmcSelect = row.querySelector(".assignment-dmc-select");
+    dmcSelect.dataset.groupId = group.id;
+    dmcSelect.appendChild(new Option("Choisir", ""));
+    pattern.colors.forEach((color) => {
+      dmcSelect.appendChild(new Option(color.dmc, color.dmc));
+    });
+    dmcSelect.value = group.dmc || "";
+    dmcSelect.disabled = Boolean(group.isEmpty);
+
+    const emptyCheckbox = row.querySelector(".assignment-empty-checkbox");
+    emptyCheckbox.dataset.groupId = group.id;
+    emptyCheckbox.checked = Boolean(group.isEmpty);
+
+    assignmentsTableBody.appendChild(row);
+  });
+
+  renderAssignmentsStatus();
+}
+
+function renderAssignmentsStatus() {
+  const groups = pattern.symbolGroups || [];
+  const readyGroups = groups.filter(isGroupAssignmentReady);
+  const readyCells = readyGroups.reduce((sum, group) => sum + group.cellCount, 0);
+  const applied = areAssignmentsApplied(pattern);
+
+  assignmentsGroupsText.textContent = String(groups.length);
+  assignmentsReadyText.textContent = `${readyGroups.length} / ${groups.length}`;
+  assignmentsCellsText.textContent = `${readyCells} / ${pattern.grid.cells.length}`;
+  assignmentsStatus.className = `coverage-status ${applied ? "valid" : "invalid"}`;
+
+  if (applied) {
+    assignmentsStatus.textContent = "Associations appliquees a la grille.";
+  } else if (groups.length === 0) {
+    assignmentsStatus.textContent = "Genere d'abord les groupes de symboles.";
+  } else {
+    assignmentsStatus.textContent = `Associations a terminer: ${readyGroups.length} / ${groups.length} groupes prets.`;
+  }
+}
+
 function areSymbolGroupsGenerated(patternToValidate) {
   const groups = patternToValidate.symbolGroups || [];
   if (!isImageAnalysisComplete(patternToValidate) || groups.length === 0) {
@@ -468,6 +550,42 @@ function areSymbolGroupsGenerated(patternToValidate) {
 
   const groupedCellCount = groups.reduce((sum, group) => sum + group.cellCount, 0);
   return groupedCellCount === patternToValidate.grid.cells.length;
+}
+
+function isGroupAssignmentReady(group) {
+  if (group.isEmpty) {
+    return true;
+  }
+
+  return Boolean((group.symbol || "").trim()) && Boolean(group.dmc);
+}
+
+function areAssignmentsApplied(patternToValidate) {
+  const groups = patternToValidate.symbolGroups || [];
+  const cells = patternToValidate.grid.cells || [];
+  if (!areSymbolGroupsGenerated(patternToValidate) || groups.length === 0) {
+    return false;
+  }
+
+  if (!groups.every(isGroupAssignmentReady)) {
+    return false;
+  }
+
+  const cellsByKey = new Map(cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
+  return groups.every((group) => group.cellKeys.every((key) => {
+    const cell = cellsByKey.get(key);
+    if (!cell) {
+      return false;
+    }
+
+    if (group.isEmpty) {
+      return cell.empty === true && cell.symbol === null && cell.dmc === null;
+    }
+
+    return cell.empty !== true
+      && cell.symbol === group.symbol
+      && cell.dmc === group.dmc;
+  }));
 }
 
 function isImageAnalysisComplete(patternToValidate) {
@@ -674,6 +792,7 @@ projectNameInput.addEventListener("input", () => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   saveProgress();
   projectError.hidden = true;
@@ -712,6 +831,7 @@ colorForm.addEventListener("submit", (event) => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
 
   savePattern();
@@ -737,6 +857,7 @@ colorsTableBody.addEventListener("click", (event) => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   savePattern();
   saveProgress();
@@ -762,6 +883,7 @@ validateColorsButton.addEventListener("click", () => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   savePattern();
   saveProgress();
@@ -796,6 +918,7 @@ dimensionsForm.addEventListener("submit", (event) => {
     progress.grid = false;
     progress.analysis = false;
     progress.groups = false;
+    progress.assignments = false;
     pattern.symbolGroups = [];
   }
 
@@ -837,6 +960,7 @@ partCountForm.addEventListener("submit", (event) => {
     progress.grid = false;
     progress.analysis = false;
     progress.groups = false;
+    progress.assignments = false;
     pattern.symbolGroups = [];
   }
 
@@ -920,6 +1044,7 @@ async function addPartFromForm() {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   savePattern();
   saveProgress();
@@ -970,6 +1095,7 @@ partsTableBody.addEventListener("click", (event) => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   savePattern();
   saveProgress();
@@ -995,6 +1121,7 @@ validatePartsButton.addEventListener("click", () => {
   progress.grid = false;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   partsError.hidden = true;
   savePattern();
@@ -1019,6 +1146,7 @@ generateGridButton.addEventListener("click", () => {
   progress.grid = true;
   progress.analysis = false;
   progress.groups = false;
+  progress.assignments = false;
   pattern.symbolGroups = [];
   gridError.hidden = true;
   savePattern();
@@ -1049,6 +1177,7 @@ sliceImagesButton.addEventListener("click", async () => {
     await slicePartImagesIntoCells();
     progress.analysis = true;
     progress.groups = false;
+    progress.assignments = false;
     pattern.symbolGroups = [];
     analysisError.hidden = true;
     savePattern();
@@ -1074,7 +1203,87 @@ generateGroupsButton.addEventListener("click", () => {
 
   pattern.symbolGroups = generateSymbolGroups(pattern);
   progress.groups = true;
+  progress.assignments = false;
   groupsError.hidden = true;
+  savePattern();
+  saveProgress();
+  goToStep("assignments");
+  showSavedStatus();
+});
+
+backToGroupsButton.addEventListener("click", () => {
+  goToStep("groups");
+});
+
+assignmentsTableBody.addEventListener("input", (event) => {
+  if (!event.target.classList.contains("assignment-symbol-input")) {
+    return;
+  }
+
+  const group = findGroupById(event.target.dataset.groupId);
+  if (!group) {
+    return;
+  }
+
+  group.symbol = event.target.value.trim() || null;
+  progress.assignments = false;
+  assignmentsError.hidden = true;
+  savePattern();
+  saveProgress();
+  renderAssignmentsStatus();
+  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
+});
+
+assignmentsTableBody.addEventListener("change", (event) => {
+  const group = findGroupById(event.target.dataset.groupId);
+  if (!group) {
+    return;
+  }
+
+  if (event.target.classList.contains("assignment-dmc-select")) {
+    group.dmc = event.target.value || null;
+    progress.assignments = false;
+    assignmentsError.hidden = true;
+    savePattern();
+    saveProgress();
+    renderAssignmentsStatus();
+    jsonPreview.textContent = JSON.stringify(pattern, null, 2);
+    return;
+  }
+
+  if (event.target.classList.contains("assignment-empty-checkbox")) {
+    group.isEmpty = event.target.checked;
+    if (group.isEmpty) {
+      group.symbol = null;
+      group.dmc = null;
+    }
+
+    progress.assignments = false;
+    assignmentsError.hidden = true;
+    savePattern();
+    saveProgress();
+    renderAssignments();
+    jsonPreview.textContent = JSON.stringify(pattern, null, 2);
+  }
+});
+
+applyAssignmentsButton.addEventListener("click", () => {
+  if (!progress.groups || !areSymbolGroupsGenerated(pattern)) {
+    assignmentsError.textContent = "Genere d'abord les groupes de symboles.";
+    assignmentsError.hidden = false;
+    return;
+  }
+
+  const missingGroup = pattern.symbolGroups.find((group) => !isGroupAssignmentReady(group));
+  if (missingGroup) {
+    assignmentsError.textContent = `${missingGroup.id} doit avoir un symbole et une couleur DMC, ou etre marque comme vide.`;
+    assignmentsError.hidden = false;
+    return;
+  }
+
+  applyGroupAssignmentsToCells();
+  progress.assignments = true;
+  assignmentsError.hidden = true;
   savePattern();
   saveProgress();
   render();
@@ -1106,8 +1315,37 @@ function generateSymbolGroups(patternToGroup) {
       cellCount: group.cellKeys.length,
       cellKeys: group.cellKeys,
       symbol: null,
-      dmc: null
+      dmc: null,
+      isEmpty: false
     }));
+}
+
+function findGroupById(groupId) {
+  return (pattern.symbolGroups || []).find((group) => group.id === groupId);
+}
+
+function applyGroupAssignmentsToCells() {
+  const cellsByKey = new Map(pattern.grid.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
+
+  pattern.symbolGroups.forEach((group) => {
+    group.cellKeys.forEach((key) => {
+      const cell = cellsByKey.get(key);
+      if (!cell) {
+        return;
+      }
+
+      if (group.isEmpty) {
+        cell.symbol = null;
+        cell.dmc = null;
+        cell.empty = true;
+        return;
+      }
+
+      cell.symbol = group.symbol;
+      cell.dmc = group.dmc;
+      cell.empty = false;
+    });
+  });
 }
 
 async function slicePartImagesIntoCells() {
@@ -1236,7 +1474,8 @@ resetButton.addEventListener("click", () => {
     parts: false,
     grid: false,
     analysis: false,
-    groups: false
+    groups: false,
+    assignments: false
   };
   render();
 });
