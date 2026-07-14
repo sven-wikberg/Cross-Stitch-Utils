@@ -95,6 +95,13 @@ const previousAssignmentButton = document.querySelector("#previousAssignmentButt
 const nextAssignmentButton = document.querySelector("#nextAssignmentButton");
 const applyAssignmentsButton = document.querySelector("#applyAssignmentsButton");
 const assignmentsError = document.querySelector("#assignmentsError");
+const exportStatus = document.querySelector("#exportStatus");
+const exportDimensionsText = document.querySelector("#exportDimensionsText");
+const exportColorsText = document.querySelector("#exportColorsText");
+const exportCellsText = document.querySelector("#exportCellsText");
+const backToAssignmentsButton = document.querySelector("#backToAssignmentsButton");
+const downloadFinalJsonButton = document.querySelector("#downloadFinalJsonButton");
+const finalJsonPreview = document.querySelector("#finalJsonPreview");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -143,10 +150,14 @@ const stepLabels = {
   assignments: {
     eyebrow: "Etape 8",
     title: "Associations"
+  },
+  export: {
+    eyebrow: "Etape 9",
+    title: "Export"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups", "assignments"];
+const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups", "assignments", "export"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -272,6 +283,7 @@ function render() {
   renderAnalysis();
   renderGroups();
   renderAssignments();
+  renderExport();
   renderDmcOptions();
 }
 
@@ -329,6 +341,10 @@ function isStepComplete(step) {
   }
 
   if (step === "assignments") {
+    return progress.assignments && areAssignmentsApplied(pattern);
+  }
+
+  if (step === "export") {
     return progress.assignments && areAssignmentsApplied(pattern);
   }
 
@@ -608,6 +624,21 @@ function renderAssignmentsStatus() {
   } else {
     assignmentsStatus.textContent = `Associations a terminer: ${readyGroups.length} / ${groups.length} groupes prets.`;
   }
+}
+
+function renderExport() {
+  const finalPattern = buildFinalPattern();
+  const ready = progress.assignments && areAssignmentsApplied(pattern);
+
+  exportDimensionsText.textContent = `${finalPattern.grid.width} x ${finalPattern.grid.height}`;
+  exportColorsText.textContent = String(finalPattern.colors.length);
+  exportCellsText.textContent = String(finalPattern.grid.cells.length);
+  exportStatus.className = `coverage-status ${ready ? "valid" : "invalid"}`;
+  exportStatus.textContent = ready
+    ? "Fichier final pret."
+    : "Applique les associations a la grille avant l'export.";
+  downloadFinalJsonButton.disabled = !ready;
+  finalJsonPreview.textContent = JSON.stringify(finalPattern, null, 2);
 }
 
 function areSymbolGroupsGenerated(patternToValidate) {
@@ -1342,8 +1373,30 @@ applyAssignmentsButton.addEventListener("click", () => {
   assignmentsError.hidden = true;
   savePattern();
   saveProgress();
-  render();
+  goToStep("export");
   showSavedStatus();
+});
+
+backToAssignmentsButton.addEventListener("click", () => {
+  goToStep("assignments");
+});
+
+downloadFinalJsonButton.addEventListener("click", () => {
+  if (!progress.assignments || !areAssignmentsApplied(pattern)) {
+    return;
+  }
+
+  const finalPattern = buildFinalPattern();
+  const json = JSON.stringify(finalPattern, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(pattern.project.name)}.cross-stitch.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 });
 
 function classifyCurrentGroup({ dmc, isEmpty }) {
@@ -1468,6 +1521,40 @@ function applyGroupAssignmentsToCells() {
       cell.empty = false;
     });
   });
+}
+
+function buildFinalPattern() {
+  return {
+    schemaVersion: 1,
+    kind: "cross-stitch-pattern",
+    project: {
+      name: pattern.project.name
+    },
+    grid: {
+      width: pattern.grid.width,
+      height: pattern.grid.height,
+      cells: pattern.grid.cells.map((cell) => ({
+        x: cell.x,
+        y: cell.y,
+        dmc: cell.empty ? null : cell.dmc,
+        empty: Boolean(cell.empty)
+      }))
+    },
+    colors: pattern.colors.map((color) => ({
+      brand: color.brand,
+      series: color.series,
+      dmc: color.dmc,
+      hex: color.hex
+    }))
+  };
+}
+
+function slugify(value) {
+  return (value || "cross-stitch-pattern")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "cross-stitch-pattern";
 }
 
 async function slicePartImagesIntoCells() {

@@ -57,9 +57,7 @@ Exemple :
 - Decoupage des cellules.
 - Groupes de symboles.
 - Associations des couleurs.
-- Informations sur le PDF source.
-- Saisie ou correction de la grille.
-- Validation et export JSON.
+- Export JSON final.
 
 ## Etape 2 : couleurs DMC
 
@@ -236,3 +234,43 @@ Quand les associations sont appliquees, chaque cellule du groupe recoit aussi l'
 ```
 
 Pour un groupe vide, `symbol` et `dmc` restent a `null`, et les cellules recoivent `empty: true`.
+
+## Etape 9 : export JSON final
+
+L'export final retire toutes les informations temporaires utilisees pendant l'import : images, apercus, signatures, groupes et donnees de decoupage. Il garde seulement les informations necessaires pour reutiliser le pattern.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "cross-stitch-pattern",
+  "project": {
+    "name": "Winter Cottage"
+  },
+  "grid": {
+    "width": 120,
+    "height": 180,
+    "cells": [
+      {
+        "x": 0,
+        "y": 0,
+        "dmc": "310",
+        "empty": false
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "dmc": null,
+        "empty": true
+      }
+    ]
+  },
+  "colors": [
+    {
+      "brand": "DMC",
+      "series": "MoulinÃ© SpÃ©cial",
+      "dmc": "310",
+      "hex": "#000000"
+    }
+  ]
+}
+```
