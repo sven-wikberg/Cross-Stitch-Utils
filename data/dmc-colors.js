@@ -411,7 +411,7 @@ window.DMC_COLORS = [
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "310",
-    "hex": "#6A6B6D"
+    "hex": "#000000"
   },
   {
     "brand": "DMC",
