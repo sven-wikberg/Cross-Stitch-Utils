@@ -313,14 +313,45 @@ select:focus {
   border-bottom: 0;
 }
 
-.assignment-table input,
-.assignment-table select {
-  min-width: 100px;
-  min-height: 38px;
+.assignment-review {
+  display: grid;
+  gap: 18px;
 }
 
-.assignment-table .assignment-dmc-select {
-  width: 130px;
+.assignment-review.empty .assignment-card,
+.assignment-review.empty .assignment-nav,
+.assignment-review.empty .field-label,
+.assignment-review.empty .assignment-choices {
+  display: none;
+}
+
+.assignment-card {
+  display: grid;
+  grid-template-columns: minmax(170px, 240px) minmax(120px, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.assignment-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.assignment-meta strong {
+  font-size: 1.45rem;
+}
+
+.assignment-preview-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 156px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .symbol-preview {
@@ -333,6 +364,11 @@ select:focus {
   image-rendering: pixelated;
 }
 
+.symbol-preview.large {
+  width: 128px;
+  height: 128px;
+}
+
 .symbol-preview-empty {
   display: inline-block;
   max-width: 90px;
@@ -341,16 +377,37 @@ select:focus {
   font-weight: 700;
 }
 
-.checkbox-cell {
-  text-align: center;
+.assignment-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
 }
 
-.checkbox-cell input {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  min-height: 22px;
-  padding: 0;
+.assignment-choice-button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.assignment-choice-button:hover,
+.assignment-choice-button.selected,
+.assignment-nav .selected {
+  border-color: var(--accent);
+  outline: 3px solid rgba(36, 120, 109, 0.16);
+}
+
+.assignment-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .row-actions {

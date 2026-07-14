@@ -196,9 +196,9 @@ L'outil regroupe les cellules qui ont exactement la meme `sampleSignature`. Ce p
 
 ## Etape 8 : associations des couleurs
 
-L'utilisateur associe chaque groupe visuel a une couleur DMC deja ajoutee dans l'etape 2. Un groupe peut aussi etre marque comme vide si les cellules correspondantes ne doivent pas etre brodees.
+L'utilisateur classe les groupes visuels un par un. Pour chaque groupe, l'outil affiche l'apercu extrait de la grille, puis propose un bouton par couleur DMC ajoutee dans l'etape 2 et un bouton `Vide`.
 
-L'outil ne devine pas automatiquement la couleur d'un groupe. Il affiche un apercu du symbole extrait depuis la grille pour permettre de le comparer a la legende du PDF, puis l'utilisateur choisit la couleur DMC correspondante.
+L'outil ne devine pas automatiquement la couleur d'un groupe. L'utilisateur compare l'apercu a la legende du PDF, clique sur la couleur DMC correspondante, puis l'outil passe au groupe suivant.
 
 ```json
 {

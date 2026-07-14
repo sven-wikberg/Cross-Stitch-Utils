@@ -80,9 +80,17 @@ const assignmentsStatus = document.querySelector("#assignmentsStatus");
 const assignmentsGroupsText = document.querySelector("#assignmentsGroupsText");
 const assignmentsReadyText = document.querySelector("#assignmentsReadyText");
 const assignmentsCellsText = document.querySelector("#assignmentsCellsText");
-const assignmentsTableBody = document.querySelector("#assignmentsTableBody");
+const assignmentReview = document.querySelector("#assignmentReview");
+const assignmentPositionText = document.querySelector("#assignmentPositionText");
+const assignmentGroupName = document.querySelector("#assignmentGroupName");
+const assignmentCellCountText = document.querySelector("#assignmentCellCountText");
+const assignmentPreviewWrap = document.querySelector("#assignmentPreviewWrap");
+const assignmentChoices = document.querySelector("#assignmentChoices");
 const emptyAssignmentsMessage = document.querySelector("#emptyAssignmentsMessage");
 const backToGroupsButton = document.querySelector("#backToGroupsButton");
+const previousAssignmentButton = document.querySelector("#previousAssignmentButton");
+const assignEmptyButton = document.querySelector("#assignEmptyButton");
+const nextAssignmentButton = document.querySelector("#nextAssignmentButton");
 const applyAssignmentsButton = document.querySelector("#applyAssignmentsButton");
 const assignmentsError = document.querySelector("#assignmentsError");
 const stepButtons = document.querySelectorAll("[data-step]");
@@ -99,6 +107,7 @@ let pattern = loadPattern();
 let progress = loadProgress(pattern);
 let activeStep = "project";
 let pastedPartImage = null;
+let assignmentGroupIndex = 0;
 
 const stepLabels = {
   project: {
@@ -482,45 +491,57 @@ function renderGroups() {
 
 function renderAssignments() {
   const groups = pattern.symbolGroups || [];
-  assignmentsTableBody.innerHTML = "";
-  emptyAssignmentsMessage.hidden = groups.length > 0;
+  const hasGroups = groups.length > 0;
+  emptyAssignmentsMessage.hidden = hasGroups;
+  assignmentReview.classList.toggle("empty", !hasGroups);
+  applyAssignmentsButton.disabled = !hasGroups;
 
-  groups.forEach((group) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td></td>
-      <td><span class="symbol-preview-empty">A regenerer</span></td>
-      <td></td>
-      <td><select class="assignment-dmc-select"></select></td>
-      <td class="checkbox-cell"><input class="assignment-empty-checkbox" type="checkbox"></td>
+  if (!hasGroups) {
+    assignmentChoices.innerHTML = "";
+    assignmentPreviewWrap.innerHTML = '<span class="symbol-preview-empty">A regenerer</span>';
+    assignmentPositionText.textContent = "Groupe 0 / 0";
+    assignmentGroupName.textContent = "Groupe";
+    assignmentCellCountText.textContent = "0 cellule";
+    renderAssignmentsStatus();
+    return;
+  }
+
+  assignmentGroupIndex = Math.min(Math.max(assignmentGroupIndex, 0), groups.length - 1);
+  const group = groups[assignmentGroupIndex];
+
+  assignmentPositionText.textContent = `Groupe ${assignmentGroupIndex + 1} / ${groups.length}`;
+  assignmentGroupName.textContent = group.id;
+  assignmentCellCountText.textContent = `${group.cellCount} ${group.cellCount > 1 ? "cellules" : "cellule"}`;
+  assignmentPreviewWrap.innerHTML = "";
+
+  if (group.previewDataUrl) {
+    const preview = document.createElement("img");
+    preview.className = "symbol-preview large";
+    preview.src = group.previewDataUrl;
+    preview.alt = `Apercu ${group.id}`;
+    assignmentPreviewWrap.appendChild(preview);
+  } else {
+    assignmentPreviewWrap.innerHTML = '<span class="symbol-preview-empty">A regenerer</span>';
+  }
+
+  assignmentChoices.innerHTML = "";
+  pattern.colors.forEach((color) => {
+    const button = document.createElement("button");
+    button.className = "assignment-choice-button";
+    button.type = "button";
+    button.dataset.dmc = color.dmc;
+    button.classList.toggle("selected", !group.isEmpty && group.dmc === color.dmc);
+    button.innerHTML = `
+      <span class="color-swatch"></span>
+      <span>DMC ${color.dmc}</span>
     `;
-
-    row.children[0].textContent = group.id;
-    row.children[2].textContent = group.cellCount;
-
-    if (group.previewDataUrl) {
-      const preview = document.createElement("img");
-      preview.className = "symbol-preview";
-      preview.src = group.previewDataUrl;
-      preview.alt = `Apercu ${group.id}`;
-      row.children[1].replaceChildren(preview);
-    }
-
-    const dmcSelect = row.querySelector(".assignment-dmc-select");
-    dmcSelect.dataset.groupId = group.id;
-    dmcSelect.appendChild(new Option("Choisir", ""));
-    pattern.colors.forEach((color) => {
-      dmcSelect.appendChild(new Option(color.dmc, color.dmc));
-    });
-    dmcSelect.value = group.dmc || "";
-    dmcSelect.disabled = Boolean(group.isEmpty);
-
-    const emptyCheckbox = row.querySelector(".assignment-empty-checkbox");
-    emptyCheckbox.dataset.groupId = group.id;
-    emptyCheckbox.checked = Boolean(group.isEmpty);
-
-    assignmentsTableBody.appendChild(row);
+    button.querySelector(".color-swatch").style.background = color.hex;
+    assignmentChoices.appendChild(button);
   });
+
+  assignEmptyButton.classList.toggle("selected", Boolean(group.isEmpty));
+  previousAssignmentButton.disabled = assignmentGroupIndex === 0;
+  nextAssignmentButton.disabled = assignmentGroupIndex === groups.length - 1;
 
   renderAssignmentsStatus();
 }
@@ -1207,6 +1228,7 @@ generateGroupsButton.addEventListener("click", () => {
   pattern.symbolGroups = generateSymbolGroups(pattern);
   progress.groups = true;
   progress.assignments = false;
+  assignmentGroupIndex = 0;
   groupsError.hidden = true;
   savePattern();
   saveProgress();
@@ -1218,37 +1240,28 @@ backToGroupsButton.addEventListener("click", () => {
   goToStep("groups");
 });
 
-assignmentsTableBody.addEventListener("change", (event) => {
-  const group = findGroupById(event.target.dataset.groupId);
-  if (!group) {
+assignmentChoices.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-dmc]");
+  if (!button) {
     return;
   }
 
-  if (event.target.classList.contains("assignment-dmc-select")) {
-    group.dmc = event.target.value || null;
-    progress.assignments = false;
-    assignmentsError.hidden = true;
-    savePattern();
-    saveProgress();
-    renderAssignmentsStatus();
-    jsonPreview.textContent = JSON.stringify(pattern, null, 2);
-    return;
-  }
+  classifyCurrentGroup({ dmc: button.dataset.dmc, isEmpty: false });
+});
 
-  if (event.target.classList.contains("assignment-empty-checkbox")) {
-    group.isEmpty = event.target.checked;
-    if (group.isEmpty) {
-      group.symbol = null;
-      group.dmc = null;
-    }
+assignEmptyButton.addEventListener("click", () => {
+  classifyCurrentGroup({ dmc: null, isEmpty: true });
+});
 
-    progress.assignments = false;
-    assignmentsError.hidden = true;
-    savePattern();
-    saveProgress();
-    renderAssignments();
-    jsonPreview.textContent = JSON.stringify(pattern, null, 2);
-  }
+previousAssignmentButton.addEventListener("click", () => {
+  assignmentGroupIndex = Math.max(assignmentGroupIndex - 1, 0);
+  renderAssignments();
+});
+
+nextAssignmentButton.addEventListener("click", () => {
+  const groups = pattern.symbolGroups || [];
+  assignmentGroupIndex = Math.min(assignmentGroupIndex + 1, groups.length - 1);
+  renderAssignments();
 });
 
 applyAssignmentsButton.addEventListener("click", () => {
@@ -1273,6 +1286,40 @@ applyAssignmentsButton.addEventListener("click", () => {
   render();
   showSavedStatus();
 });
+
+function classifyCurrentGroup({ dmc, isEmpty }) {
+  const groups = pattern.symbolGroups || [];
+  const group = groups[assignmentGroupIndex];
+  if (!group) {
+    return;
+  }
+
+  group.dmc = dmc;
+  group.isEmpty = isEmpty;
+  group.symbol = null;
+  progress.assignments = false;
+  assignmentsError.hidden = true;
+  savePattern();
+  saveProgress();
+  advanceToNextAssignment();
+  renderAssignments();
+  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
+  showSavedStatus();
+}
+
+function advanceToNextAssignment() {
+  const groups = pattern.symbolGroups || [];
+  const nextUnreadyIndex = groups.findIndex((group, index) => (
+    index > assignmentGroupIndex && !isGroupAssignmentReady(group)
+  ));
+
+  if (nextUnreadyIndex >= 0) {
+    assignmentGroupIndex = nextUnreadyIndex;
+    return;
+  }
+
+  assignmentGroupIndex = Math.min(assignmentGroupIndex + 1, groups.length - 1);
+}
 
 function generateSymbolGroups(patternToGroup) {
   const groupsBySignature = new Map();
@@ -1493,6 +1540,7 @@ resetButton.addEventListener("click", () => {
     groups: false,
     assignments: false
   };
+  assignmentGroupIndex = 0;
   render();
 });
 

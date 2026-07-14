@@ -374,19 +374,29 @@
             </div>
           </div>
 
-          <div class="color-list-wrap">
-            <table class="color-table assignment-table">
-              <thead>
-                <tr>
-                  <th>Groupe</th>
-                  <th>Apercu</th>
-                  <th>Cellules</th>
-                  <th>DMC</th>
-                  <th>Vide</th>
-                </tr>
-              </thead>
-              <tbody id="assignmentsTableBody"></tbody>
-            </table>
+          <div id="assignmentReview" class="assignment-review">
+            <div class="assignment-card">
+              <div class="assignment-meta">
+                <span id="assignmentPositionText" class="status-pill">Groupe 0 / 0</span>
+                <strong id="assignmentGroupName">Groupe</strong>
+                <span id="assignmentCellCountText" class="stat-label">0 cellule</span>
+              </div>
+              <div id="assignmentPreviewWrap" class="assignment-preview-wrap">
+                <span class="symbol-preview-empty">A regenerer</span>
+              </div>
+            </div>
+
+            <div>
+              <p class="field-label">Choisir la couleur</p>
+              <div id="assignmentChoices" class="assignment-choices"></div>
+            </div>
+
+            <div class="assignment-nav">
+              <button id="previousAssignmentButton" class="secondary-button" type="button">Precedent</button>
+              <button id="assignEmptyButton" class="secondary-button" type="button">Vide</button>
+              <button id="nextAssignmentButton" class="secondary-button" type="button">Suivant</button>
+            </div>
+
             <p id="emptyAssignmentsMessage" class="empty-message">Aucun groupe a associer.</p>
           </div>
 
