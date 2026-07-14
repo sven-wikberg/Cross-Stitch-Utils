@@ -7,7 +7,6 @@ const progressProjectText = document.querySelector("#progressProjectText");
 const progressDimensionsText = document.querySelector("#progressDimensionsText");
 const progressPointsText = document.querySelector("#progressPointsText");
 const progressLoadError = document.querySelector("#progressLoadError");
-const progressJsonPreview = document.querySelector("#progressJsonPreview");
 const progressSaveStatus = document.querySelector("#progressSaveStatus");
 const resetProgressToolButton = document.querySelector("#resetProgressToolButton");
 const stitchStatus = document.querySelector("#stitchStatus");
@@ -130,7 +129,6 @@ function renderLoadedPaths() {
     progressProjectText.textContent = "-";
     progressDimensionsText.textContent = "0 x 0";
     progressPointsText.textContent = "0";
-    progressJsonPreview.textContent = "";
     return;
   }
 
@@ -140,7 +138,6 @@ function renderLoadedPaths() {
   progressProjectText.textContent = loadedPaths.project.name;
   progressDimensionsText.textContent = `${loadedPaths.pattern.grid.width} x ${loadedPaths.pattern.grid.height}`;
   progressPointsText.textContent = String(pointCount);
-  progressJsonPreview.textContent = JSON.stringify(loadedPaths, null, 2);
 }
 
 function renderStitchView() {
@@ -604,6 +601,10 @@ function safeFilePart(value) {
 }
 
 function showProgressSavedStatus() {
+  if (!progressSaveStatus) {
+    return;
+  }
+
   progressSaveStatus.textContent = "Enregistre";
   window.setTimeout(() => {
     progressSaveStatus.textContent = "Brouillon";
