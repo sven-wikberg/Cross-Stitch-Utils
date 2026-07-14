@@ -208,7 +208,8 @@ h3 {
   display: grid;
   align-content: start;
   gap: 22px;
-  width: min(960px, 100%);
+  width: 100%;
+  min-width: 0;
   padding: 34px;
 }
 
@@ -521,12 +522,13 @@ select:focus {
 
 .pattern-viewer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  grid-template-columns: minmax(0, 1fr) 260px;
   gap: 18px;
   align-items: start;
 }
 
 .pattern-canvas-wrap {
+  width: 100%;
   max-width: 100%;
   max-height: 70vh;
   overflow: auto;
