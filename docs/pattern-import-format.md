@@ -11,6 +11,7 @@ Le premier outil produit progressivement un fichier JSON uniforme. Le PDF d'orig
     "name": ""
   },
   "colors": [],
+  "parts": [],
   "grid": {
     "width": 0,
     "height": 0,
@@ -33,6 +34,7 @@ Exemple :
     "name": "Winter Cottage"
   },
   "colors": [],
+  "parts": [],
   "grid": {
     "width": 0,
     "height": 0,
@@ -46,6 +48,7 @@ Exemple :
 - Nom du projet.
 - Liste des couleurs DMC.
 - Dimensions de la grille.
+- Morceaux du pattern.
 - Informations sur le PDF source.
 - Saisie ou correction de la grille.
 - Validation et export JSON.
@@ -83,3 +86,28 @@ L'utilisateur saisit les dimensions totales du pattern en points. Ces dimensions
 ```
 
 Si les dimensions changent plus tard, les cases deja importees devront etre verifiees ou reconstruites.
+
+## Etape 4 : morceaux du pattern
+
+L'utilisateur ajoute chaque sous-partie du pattern. Chaque morceau indique son image source, sa position dans la grille globale, et sa taille en points.
+
+```json
+{
+  "id": "part-1",
+  "name": "Page 1",
+  "imageName": "page-1.png",
+  "startX": 0,
+  "startY": 0,
+  "width": 60,
+  "height": 80
+}
+```
+
+La validation verifie que les morceaux couvrent exactement les dimensions globales :
+
+- aucun morceau ne doit depasser de la grille ;
+- les morceaux ne doivent pas se chevaucher ;
+- la somme des surfaces doit etre egale a `grid.width * grid.height` ;
+- la couverture reelle doit remplir toute la grille.
+
+L'analyse automatique des images sera ajoutee plus tard, une fois ce decoupage fiable.

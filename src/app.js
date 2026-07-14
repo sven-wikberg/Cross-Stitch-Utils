@@ -7,6 +7,7 @@ const defaultPattern = {
     name: ""
   },
   colors: [],
+  parts: [],
   grid: {
     width: 0,
     height: 0,
@@ -30,6 +31,20 @@ const gridWidthInput = document.querySelector("#gridWidth");
 const gridHeightInput = document.querySelector("#gridHeight");
 const dimensionsError = document.querySelector("#dimensionsError");
 const backToColorsButton = document.querySelector("#backToColorsButton");
+const partForm = document.querySelector("#partForm");
+const partNameInput = document.querySelector("#partName");
+const partImageInput = document.querySelector("#partImage");
+const partStartXInput = document.querySelector("#partStartX");
+const partStartYInput = document.querySelector("#partStartY");
+const partWidthInput = document.querySelector("#partWidth");
+const partHeightInput = document.querySelector("#partHeight");
+const partError = document.querySelector("#partError");
+const partsTableBody = document.querySelector("#partsTableBody");
+const emptyPartsMessage = document.querySelector("#emptyPartsMessage");
+const partsCoverageStatus = document.querySelector("#partsCoverageStatus");
+const backToDimensionsButton = document.querySelector("#backToDimensionsButton");
+const validatePartsButton = document.querySelector("#validatePartsButton");
+const partsError = document.querySelector("#partsError");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
@@ -56,10 +71,14 @@ const stepLabels = {
   dimensions: {
     eyebrow: "Etape 3",
     title: "Dimensions"
+  },
+  parts: {
+    eyebrow: "Etape 4",
+    title: "Morceaux"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions"];
+const stepOrder = ["project", "colors", "dimensions", "parts"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -80,6 +99,7 @@ function loadPattern() {
         ...structuredClone(defaultPattern.grid),
         ...parsed.grid
       },
+      parts: Array.isArray(parsed.parts) ? parsed.parts : [],
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
   } catch {
@@ -95,6 +115,7 @@ function loadProgress(currentPattern) {
         project: false,
         colors: false,
         dimensions: false,
+        parts: false,
         ...JSON.parse(stored)
       };
     } catch {
@@ -105,7 +126,8 @@ function loadProgress(currentPattern) {
   return {
     project: currentPattern.project.name.trim().length > 0,
     colors: currentPattern.colors.length > 0,
-    dimensions: currentPattern.grid.width > 0 && currentPattern.grid.height > 0
+    dimensions: currentPattern.grid.width > 0 && currentPattern.grid.height > 0,
+    parts: validatePartsCoverage(currentPattern).valid
   };
 }
 
@@ -153,6 +175,7 @@ function render() {
   jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
+  renderParts();
   renderDmcOptions();
 }
 
@@ -191,6 +214,10 @@ function isStepComplete(step) {
       && Number.isInteger(pattern.grid.height)
       && pattern.grid.width > 0
       && pattern.grid.height > 0;
+  }
+
+  if (step === "parts") {
+    return progress.parts && validatePartsCoverage(pattern).valid;
   }
 
   return false;
@@ -258,6 +285,115 @@ function renderDmcOptions() {
   dmcCodeOptions.appendChild(fragment);
 }
 
+function renderParts() {
+  partsTableBody.innerHTML = "";
+  emptyPartsMessage.hidden = pattern.parts.length > 0;
+
+  pattern.parts.forEach((part, index) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td class="row-actions">
+        <button class="danger-button" type="button" data-remove-part="${index}" title="Supprimer">
+          X
+        </button>
+      </td>
+    `;
+
+    row.children[0].textContent = part.name;
+    row.children[1].textContent = part.imageName;
+    row.children[2].textContent = `${part.startX}, ${part.startY}`;
+    row.children[3].textContent = `${part.width} x ${part.height}`;
+    partsTableBody.appendChild(row);
+  });
+
+  renderPartsCoverage();
+}
+
+function renderPartsCoverage() {
+  const coverage = validatePartsCoverage(pattern);
+  partsCoverageStatus.className = `coverage-status ${coverage.valid ? "valid" : "invalid"}`;
+  partsCoverageStatus.textContent = coverage.message;
+}
+
+function validatePartsCoverage(patternToValidate) {
+  const gridWidth = patternToValidate.grid.width;
+  const gridHeight = patternToValidate.grid.height;
+  const parts = patternToValidate.parts || [];
+
+  if (!Number.isInteger(gridWidth) || !Number.isInteger(gridHeight) || gridWidth <= 0 || gridHeight <= 0) {
+    return {
+      valid: false,
+      message: "Les dimensions globales doivent etre validees avant les morceaux."
+    };
+  }
+
+  if (parts.length === 0) {
+    return {
+      valid: false,
+      message: `Couverture: 0 / ${gridWidth * gridHeight} points.`
+    };
+  }
+
+  const occupiedCells = new Set();
+  let declaredArea = 0;
+
+  for (const part of parts) {
+    const values = [part.startX, part.startY, part.width, part.height];
+    if (!values.every(Number.isInteger) || part.startX < 0 || part.startY < 0 || part.width <= 0 || part.height <= 0) {
+      return {
+        valid: false,
+        message: "Un morceau contient des dimensions invalides."
+      };
+    }
+
+    if (part.startX + part.width > gridWidth || part.startY + part.height > gridHeight) {
+      return {
+        valid: false,
+        message: `Le morceau "${part.name}" depasse les dimensions globales.`
+      };
+    }
+
+    declaredArea += part.width * part.height;
+
+    for (let y = part.startY; y < part.startY + part.height; y += 1) {
+      for (let x = part.startX; x < part.startX + part.width; x += 1) {
+        const key = `${x},${y}`;
+        if (occupiedCells.has(key)) {
+          return {
+            valid: false,
+            message: `Le morceau "${part.name}" chevauche un autre morceau.`
+          };
+        }
+        occupiedCells.add(key);
+      }
+    }
+  }
+
+  const expectedArea = gridWidth * gridHeight;
+  if (declaredArea !== expectedArea) {
+    return {
+      valid: false,
+      message: `Somme des morceaux: ${declaredArea} / ${expectedArea} points.`
+    };
+  }
+
+  if (occupiedCells.size !== expectedArea) {
+    return {
+      valid: false,
+      message: `Couverture reelle: ${occupiedCells.size} / ${expectedArea} points.`
+    };
+  }
+
+  return {
+    valid: true,
+    message: `Couverture complete: ${expectedArea} / ${expectedArea} points.`
+  };
+}
+
 function showSavedStatus() {
   saveStatus.textContent = "Enregistre";
   window.setTimeout(() => {
@@ -289,6 +425,7 @@ projectNameInput.addEventListener("input", () => {
   progress.project = false;
   progress.colors = false;
   progress.dimensions = false;
+  progress.parts = false;
   saveProgress();
   projectError.hidden = true;
   render();
@@ -322,6 +459,7 @@ colorForm.addEventListener("submit", (event) => {
   pattern.colors.push(colorFromReference(referenceColor));
   progress.colors = false;
   progress.dimensions = false;
+  progress.parts = false;
 
   savePattern();
   saveProgress();
@@ -342,6 +480,7 @@ colorsTableBody.addEventListener("click", (event) => {
   pattern.colors.splice(index, 1);
   progress.colors = false;
   progress.dimensions = false;
+  progress.parts = false;
   savePattern();
   saveProgress();
   render();
@@ -362,6 +501,7 @@ validateColorsButton.addEventListener("click", () => {
   colorsError.hidden = true;
   progress.colors = true;
   progress.dimensions = false;
+  progress.parts = false;
   savePattern();
   saveProgress();
   goToStep("dimensions");
@@ -389,13 +529,15 @@ dimensionsForm.addEventListener("submit", (event) => {
 
   if (dimensionsChanged) {
     pattern.grid.cells = [];
+    pattern.parts = [];
+    progress.parts = false;
   }
 
   progress.dimensions = true;
   dimensionsError.hidden = true;
   savePattern();
   saveProgress();
-  render();
+  goToStep("parts");
   showSavedStatus();
 });
 
@@ -405,6 +547,91 @@ gridWidthInput.addEventListener("input", () => {
 
 gridHeightInput.addEventListener("input", () => {
   dimensionsError.hidden = true;
+});
+
+backToDimensionsButton.addEventListener("click", () => {
+  goToStep("dimensions");
+});
+
+partForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const name = partNameInput.value.trim();
+  const imageName = partImageInput.files[0]?.name || "";
+  const startX = Number(partStartXInput.value);
+  const startY = Number(partStartYInput.value);
+  const width = Number(partWidthInput.value);
+  const height = Number(partHeightInput.value);
+
+  if (
+    !name
+    || !imageName
+    || ![startX, startY, width, height].every(Number.isInteger)
+    || startX < 0
+    || startY < 0
+    || width <= 0
+    || height <= 0
+  ) {
+    partError.textContent = "Verifie les valeurs du morceau.";
+    partError.hidden = false;
+    return;
+  }
+
+  if (startX + width > pattern.grid.width || startY + height > pattern.grid.height) {
+    partError.textContent = "Ce morceau depasse les dimensions globales.";
+    partError.hidden = false;
+    return;
+  }
+
+  pattern.parts.push({
+    id: `part-${Date.now()}`,
+    name,
+    imageName,
+    startX,
+    startY,
+    width,
+    height
+  });
+
+  progress.parts = false;
+  savePattern();
+  saveProgress();
+  partForm.reset();
+  partNameInput.focus();
+  partError.hidden = true;
+  partsError.hidden = true;
+  render();
+  showSavedStatus();
+});
+
+partsTableBody.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-part]");
+  if (!removeButton) {
+    return;
+  }
+
+  const index = Number(removeButton.dataset.removePart);
+  pattern.parts.splice(index, 1);
+  progress.parts = false;
+  savePattern();
+  saveProgress();
+  render();
+});
+
+validatePartsButton.addEventListener("click", () => {
+  const coverage = validatePartsCoverage(pattern);
+  if (!coverage.valid) {
+    partsError.textContent = coverage.message;
+    partsError.hidden = false;
+    renderPartsCoverage();
+    return;
+  }
+
+  progress.parts = true;
+  partsError.hidden = true;
+  saveProgress();
+  render();
+  showSavedStatus();
 });
 
 stepButtons.forEach((button) => {
@@ -420,7 +647,8 @@ resetButton.addEventListener("click", () => {
   progress = {
     project: false,
     colors: false,
-    dimensions: false
+    dimensions: false,
+    parts: false
   };
   render();
 });

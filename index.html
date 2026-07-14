@@ -27,6 +27,10 @@
             <span class="step-number">3</span>
             <span>Dimensions</span>
           </button>
+          <button class="step-item locked" type="button" data-step="parts" disabled>
+            <span class="step-number">4</span>
+            <span>Morceaux</span>
+          </button>
         </nav>
       </aside>
 
@@ -122,6 +126,79 @@
             <button class="primary-button" type="submit">Valider les dimensions</button>
           </div>
         </form>
+
+        <section id="partsPanel" class="tool-panel hidden" data-panel="parts" aria-labelledby="parts-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="parts-title">Morceaux du pattern</h3>
+              <p>Ajoute chaque sous-partie de la grille avec sa position dans le pattern complet.</p>
+            </div>
+          </div>
+
+          <form id="partForm" class="part-form">
+            <div class="form-grid parts-grid">
+              <label for="partName">
+                Nom
+                <input id="partName" name="partName" type="text" autocomplete="off" required>
+              </label>
+
+              <label for="partImage">
+                Image
+                <input id="partImage" name="partImage" type="file" accept="image/*" required>
+              </label>
+
+              <label for="partStartX">
+                Depart X
+                <input id="partStartX" name="partStartX" type="number" inputmode="numeric" min="0" step="1" required>
+              </label>
+
+              <label for="partStartY">
+                Depart Y
+                <input id="partStartY" name="partStartY" type="number" inputmode="numeric" min="0" step="1" required>
+              </label>
+
+              <label for="partWidth">
+                Largeur
+                <input id="partWidth" name="partWidth" type="number" inputmode="numeric" min="1" step="1" required>
+              </label>
+
+              <label for="partHeight">
+                Hauteur
+                <input id="partHeight" name="partHeight" type="number" inputmode="numeric" min="1" step="1" required>
+              </label>
+            </div>
+
+            <p id="partError" class="form-error" hidden>Verifie les valeurs du morceau.</p>
+
+            <div class="actions">
+              <button class="primary-button" type="submit">Ajouter le morceau</button>
+            </div>
+          </form>
+
+          <div class="color-list-wrap">
+            <table class="color-table">
+              <thead>
+                <tr>
+                  <th>Nom</th>
+                  <th>Image</th>
+                  <th>Position</th>
+                  <th>Taille</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="partsTableBody"></tbody>
+            </table>
+            <p id="emptyPartsMessage" class="empty-message">Aucun morceau ajoute.</p>
+          </div>
+
+          <div id="partsCoverageStatus" class="coverage-status"></div>
+
+          <div class="actions split-actions">
+            <button id="backToDimensionsButton" class="secondary-button" type="button">Retour</button>
+            <button id="validatePartsButton" class="primary-button" type="button">Valider les morceaux</button>
+          </div>
+          <p id="partsError" class="form-error" hidden>Les morceaux doivent couvrir toute la grille sans trou ni chevauchement.</p>
+        </section>
 
         <section class="json-panel" aria-labelledby="json-title">
           <div class="panel-title-row">
