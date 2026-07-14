@@ -3,7 +3,6 @@ const PROGRESS_STORAGE_KEY = "cross-stitch-import-progress";
 const IMAGE_DB_NAME = "cross-stitch-utils";
 const IMAGE_DB_VERSION = 1;
 const IMAGE_STORE_NAME = "pattern-part-images";
-const EMPTY_REFERENCE_KEY = "__empty";
 
 const defaultPattern = {
   schemaVersion: 1,
@@ -583,31 +582,18 @@ function renderGroups() {
 function renderReferenceRows() {
   referenceRows.innerHTML = "";
 
-  const referenceItems = [
-    ...pattern.colors.map((color) => ({
-      key: color.dmc,
-      label: `DMC ${color.dmc}`,
-      swatch: color.hex || "#ffffff"
-    })),
-    {
-      key: EMPTY_REFERENCE_KEY,
-      label: "Vide",
-      swatch: "#ffffff"
-    }
-  ];
-
-  referenceItems.forEach((item) => {
-    const reference = pattern.symbolReferences[item.key] || {};
+  pattern.colors.forEach((color) => {
+    const reference = pattern.symbolReferences[color.dmc] || {};
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><span class="color-swatch"></span></td>
       <td></td>
-      <td><input class="compact-input" type="number" min="0" step="1" data-reference-key="${item.key}" data-axis="x"></td>
-      <td><input class="compact-input" type="number" min="0" step="1" data-reference-key="${item.key}" data-axis="y"></td>
+      <td><input class="compact-input" type="number" min="0" step="1" data-reference-dmc="${color.dmc}" data-axis="x"></td>
+      <td><input class="compact-input" type="number" min="0" step="1" data-reference-dmc="${color.dmc}" data-axis="y"></td>
     `;
 
-    row.querySelector(".color-swatch").style.background = item.swatch;
-    row.children[1].textContent = item.label;
+    row.querySelector(".color-swatch").style.background = color.hex || "#ffffff";
+    row.children[1].textContent = color.dmc;
     row.querySelector('[data-axis="x"]').value = Number.isInteger(reference.x) ? reference.x : "";
     row.querySelector('[data-axis="y"]').value = Number.isInteger(reference.y) ? reference.y : "";
     referenceRows.appendChild(row);
@@ -1497,16 +1483,16 @@ generateGroupsButton.addEventListener("click", () => {
 });
 
 referenceRows.addEventListener("input", (event) => {
-  const input = event.target.closest("[data-reference-key]");
+  const input = event.target.closest("[data-reference-dmc]");
   if (!input) {
     return;
   }
 
-  const referenceKey = input.dataset.referenceKey;
+  const dmc = input.dataset.referenceDmc;
   const axis = input.dataset.axis;
   const value = input.value === "" ? null : Number(input.value);
-  pattern.symbolReferences[referenceKey] = {
-    ...(pattern.symbolReferences[referenceKey] || {}),
+  pattern.symbolReferences[dmc] = {
+    ...(pattern.symbolReferences[dmc] || {}),
     [axis]: Number.isInteger(value) ? value : null
   };
   progress.groups = false;
@@ -1704,7 +1690,7 @@ function generateSymbolGroups(patternToGroup) {
 function generateReferenceSymbolGroups(patternToGroup) {
   const references = buildSymbolReferences(patternToGroup);
   const grouped = references.map((reference) => ({
-    id: reference.isEmpty ? "ref-empty" : `ref-${reference.dmc}`,
+    id: `ref-${reference.dmc}`,
     signature: reference.cell.sampleSignature,
     sampleMean: reference.cell.sampleMean,
     previewDataUrl: reference.cell.samplePreviewDataUrl || "",
@@ -1712,8 +1698,8 @@ function generateReferenceSymbolGroups(patternToGroup) {
     cellCount: 0,
     cellKeys: [],
     symbol: null,
-    dmc: reference.isEmpty ? null : reference.dmc,
-    isEmpty: reference.isEmpty,
+    dmc: reference.dmc,
+    isEmpty: false,
     matchingMode: "reference"
   }));
 
@@ -1734,7 +1720,7 @@ function generateReferenceSymbolGroups(patternToGroup) {
 }
 
 function buildSymbolReferences(patternToGroup) {
-  const colorReferences = patternToGroup.colors.map((color) => {
+  return patternToGroup.colors.map((color) => {
     const reference = patternToGroup.symbolReferences[color.dmc];
     const cell = findSampleCell(patternToGroup, reference?.x, reference?.y);
     if (!cell || !cell.sampleSignature) {
@@ -1746,21 +1732,6 @@ function buildSymbolReferences(patternToGroup) {
       cell
     };
   });
-
-  const emptyReference = patternToGroup.symbolReferences[EMPTY_REFERENCE_KEY];
-  const emptyCell = findSampleCell(patternToGroup, emptyReference?.x, emptyReference?.y);
-  if (!emptyCell || !emptyCell.sampleSignature) {
-    throw new Error("Reference invalide pour les cases vides.");
-  }
-
-  return [
-    ...colorReferences,
-    {
-      dmc: null,
-      isEmpty: true,
-      cell: emptyCell
-    }
-  ];
 }
 
 function findSampleCell(patternToSearch, x, y) {
