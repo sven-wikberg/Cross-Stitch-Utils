@@ -15,6 +15,7 @@ const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
+const islandPathButton = document.querySelector("#islandPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -46,6 +47,7 @@ const pathStepLabels = {
 };
 
 const pathStepOrder = ["load", "paths", "export"];
+const ISLAND_GAP_TOLERANCE = 3;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -245,6 +247,7 @@ function renderPathBuilder() {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     autoPathButton.disabled = true;
+    islandPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -259,6 +262,7 @@ function renderPathBuilder() {
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
   autoPathButton.disabled = expected === 0;
+  islandPathButton.disabled = expected === 0;
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
   savePathAndNextButton.disabled = !complete;
@@ -391,8 +395,12 @@ function cellsForColor(dmc) {
 }
 
 function automaticPathForColor(dmc) {
+  return snakePathForCells(cellsForColor(dmc));
+}
+
+function snakePathForCells(cells) {
   const rows = new Map();
-  cellsForColor(dmc).forEach((cell) => {
+  cells.forEach((cell) => {
     if (!rows.has(cell.y)) {
       rows.set(cell.y, []);
     }
@@ -409,6 +417,98 @@ function automaticPathForColor(dmc) {
       return y % 2 === 0 ? sorted : sorted.reverse();
     })
     .map((cell) => ({ x: cell.x, y: cell.y }));
+}
+
+function islandSnakePathForColor(dmc) {
+  const islands = islandsForCells(cellsForColor(dmc));
+  const islandPaths = islands.map((island) => snakePathForCells(island));
+  return orderIslandPaths(islandPaths).flat();
+}
+
+function islandsForCells(cells) {
+  const remaining = new Map(cells.map((cell) => [cellKey(cell), cell]));
+  const islands = [];
+
+  while (remaining.size > 0) {
+    const start = remaining.values().next().value;
+    const island = [];
+    const queue = [start];
+    remaining.delete(cellKey(start));
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      island.push(current);
+
+      Array.from(remaining.values()).forEach((candidate) => {
+        if (belongsToSameIsland(current, candidate)) {
+          remaining.delete(cellKey(candidate));
+          queue.push(candidate);
+        }
+      });
+    }
+
+    islands.push(island);
+  }
+
+  return islands.sort((a, b) => islandSortValue(a).y - islandSortValue(b).y || islandSortValue(a).x - islandSortValue(b).x);
+}
+
+function belongsToSameIsland(a, b) {
+  const horizontalGap = Math.max(Math.abs(a.x - b.x) - 1, 0);
+  const verticalGap = Math.max(Math.abs(a.y - b.y) - 1, 0);
+  return Math.max(horizontalGap, verticalGap) <= ISLAND_GAP_TOLERANCE;
+}
+
+function islandSortValue(island) {
+  return island.reduce((topLeft, cell) => {
+    if (cell.y < topLeft.y || (cell.y === topLeft.y && cell.x < topLeft.x)) {
+      return cell;
+    }
+
+    return topLeft;
+  }, island[0]);
+}
+
+function orderIslandPaths(paths) {
+  const remaining = paths.filter((path) => path.length > 0);
+  const ordered = [];
+  let lastPoint = null;
+
+  while (remaining.length > 0) {
+    const next = nearestIslandPath(remaining, lastPoint);
+    remaining.splice(next.index, 1);
+    ordered.push(next.path);
+    lastPoint = next.path[next.path.length - 1];
+  }
+
+  return ordered;
+}
+
+function nearestIslandPath(paths, lastPoint) {
+  if (!lastPoint) {
+    return { index: 0, path: paths[0] };
+  }
+
+  return paths.reduce((best, path, index) => {
+    const normalDistance = pointDistance(lastPoint, path[0]);
+    const reversedDistance = pointDistance(lastPoint, path[path.length - 1]);
+    const shouldReverse = reversedDistance < normalDistance;
+    const distance = shouldReverse ? reversedDistance : normalDistance;
+
+    if (!best || distance < best.distance) {
+      return {
+        index,
+        distance,
+        path: shouldReverse ? path.slice().reverse() : path
+      };
+    }
+
+    return best;
+  }, null);
+}
+
+function pointDistance(a, b) {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 function cellKey(point) {
@@ -664,6 +764,19 @@ autoPathButton.addEventListener("click", () => {
   }
 
   pathsByDmc[selectedDmc] = automaticPathForColor(selectedDmc);
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
+});
+
+islandPathButton.addEventListener("click", () => {
+  if (!loadedPattern || !selectedDmc) {
+    return;
+  }
+
+  pathsByDmc[selectedDmc] = islandSnakePathForColor(selectedDmc);
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
   savePathPlannerState();
