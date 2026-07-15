@@ -43,6 +43,9 @@ const progressStepOrder = ["load", "stitch"];
 const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const BUILTIN_PROGRESS_DIRECTORY_DB = "cross-stitch-utils-directory";
+const BUILTIN_PROGRESS_DIRECTORY_STORE = "handles";
+const BUILTIN_PROGRESS_DIRECTORY_KEY = "project-root";
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -738,23 +741,127 @@ function downloadText(content, filename, type) {
 }
 
 async function writeBuiltinProgressFile(content) {
-  if (!window.showSaveFilePicker) {
-    downloadText(content, "builtin-progress.js", "text/javascript");
-    writeBuiltinProgressStatus.textContent = "Fichier telecharge. Remplace data/builtin-progress.js puis commit le fichier.";
+  if (window.showDirectoryPicker && window.indexedDB) {
+    const wroteToProject = await writeBuiltinProgressToProjectDirectory(content);
+    if (wroteToProject) {
+      writeBuiltinProgressStatus.textContent = "data/builtin-progress.js mis a jour. Il reste a commit le fichier.";
+      return;
+    }
+  }
+
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: "builtin-progress.js",
+      types: [{
+        description: "JavaScript",
+        accept: { "text/javascript": [".js"] }
+      }]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    writeBuiltinProgressStatus.textContent = "Fichier sauvegarde. Il reste a commit data/builtin-progress.js.";
     return;
   }
 
-  const handle = await window.showSaveFilePicker({
-    suggestedName: "builtin-progress.js",
-    types: [{
-      description: "JavaScript",
-      accept: { "text/javascript": [".js"] }
-    }]
+  downloadText(content, "builtin-progress.js", "text/javascript");
+  writeBuiltinProgressStatus.textContent = "Fichier telecharge. Remplace data/builtin-progress.js puis commit le fichier.";
+}
+
+async function writeBuiltinProgressToProjectDirectory(content) {
+  const rootHandle = await getProjectDirectoryHandle();
+  if (!rootHandle) {
+    return false;
+  }
+
+  try {
+    const dataHandle = await rootHandle.getDirectoryHandle("data");
+    const fileHandle = await dataHandle.getFileHandle("builtin-progress.js", { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    return true;
+  } catch {
+    await clearProjectDirectoryHandle();
+    writeBuiltinProgressStatus.textContent = "Dossier invalide. Selectionne le dossier racine Cross Stitch Utils.";
+    return false;
+  }
+}
+
+async function getProjectDirectoryHandle() {
+  const storedHandle = await readProjectDirectoryHandle();
+  if (storedHandle && await requestDirectoryPermission(storedHandle)) {
+    return storedHandle;
+  }
+
+  const selectedHandle = await window.showDirectoryPicker({
+    id: "cross-stitch-utils-root",
+    mode: "readwrite"
   });
-  const writable = await handle.createWritable();
-  await writable.write(content);
-  await writable.close();
-  writeBuiltinProgressStatus.textContent = "Fichier sauvegarde. Il reste a commit data/builtin-progress.js.";
+
+  if (!await requestDirectoryPermission(selectedHandle)) {
+    return null;
+  }
+
+  await saveProjectDirectoryHandle(selectedHandle);
+  return selectedHandle;
+}
+
+async function requestDirectoryPermission(handle) {
+  const options = { mode: "readwrite" };
+  if (await handle.queryPermission(options) === "granted") {
+    return true;
+  }
+
+  return await handle.requestPermission(options) === "granted";
+}
+
+function openProjectDirectoryDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(BUILTIN_PROGRESS_DIRECTORY_DB, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(BUILTIN_PROGRESS_DIRECTORY_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readProjectDirectoryHandle() {
+  try {
+    const db = await openProjectDirectoryDb();
+    return await directoryDbRequest(db, "readonly", (store) => store.get(BUILTIN_PROGRESS_DIRECTORY_KEY));
+  } catch {
+    return null;
+  }
+}
+
+async function saveProjectDirectoryHandle(handle) {
+  const db = await openProjectDirectoryDb();
+  await directoryDbRequest(db, "readwrite", (store) => store.put(handle, BUILTIN_PROGRESS_DIRECTORY_KEY));
+}
+
+async function clearProjectDirectoryHandle() {
+  try {
+    const db = await openProjectDirectoryDb();
+    await directoryDbRequest(db, "readwrite", (store) => store.delete(BUILTIN_PROGRESS_DIRECTORY_KEY));
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+function directoryDbRequest(db, mode, operation) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(BUILTIN_PROGRESS_DIRECTORY_STORE, mode);
+    const request = operation(transaction.objectStore(BUILTIN_PROGRESS_DIRECTORY_STORE));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
 }
 
 function safeFilePart(value) {
