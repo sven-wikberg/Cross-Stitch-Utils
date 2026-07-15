@@ -17,6 +17,7 @@ const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
 const progressiveIslandPathButton = document.querySelector("#progressiveIslandPathButton");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
+const uncrossPathButton = document.querySelector("#uncrossPathButton");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
 const pathAlgorithmProgress = document.querySelector("#pathAlgorithmProgress");
 const pathAlgorithmDistance = document.querySelector("#pathAlgorithmDistance");
@@ -64,6 +65,7 @@ const BACKTRACK_MAX_VISITS = 45000;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
+const PATH_UNCROSS_TIME_LIMIT = 30000;
 const REALISTIC_JUMP_THRESHOLD = 15;
 const REALISTIC_CUT_PENALTY = REALISTIC_JUMP_THRESHOLD * 3;
 
@@ -278,7 +280,7 @@ function drawSelectedPath(context, cellSize) {
 function drawPathSegment(context, fromPoint, toPoint, cellSize) {
   const from = pointCenter(fromPoint, cellSize);
   const to = pointCenter(toPoint, cellSize);
-  const isCut = chebyshevDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
+  const isCut = isCutJump(fromPoint, toPoint);
 
   context.strokeStyle = isCut ? "#b44b57" : "#222426";
   context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
@@ -304,6 +306,7 @@ function renderPathBuilder() {
     autoPathButton.disabled = true;
     progressiveIslandPathButton.disabled = true;
     optimizedPathButton.disabled = true;
+    uncrossPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -320,6 +323,7 @@ function renderPathBuilder() {
   autoPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   progressiveIslandPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
+  uncrossPathButton.disabled = !complete || path.length < 4 || pathAlgorithmRunning;
   undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
@@ -703,6 +707,95 @@ async function optimizedPathForColor(dmc, reportProgress) {
   return bestPath;
 }
 
+async function uncrossPathForColor(dmc, reportProgress) {
+  let bestPath = (pathsByDmc[dmc] || []).map((point) => ({ x: point.x, y: point.y }));
+  if (bestPath.length < 4) {
+    return bestPath;
+  }
+
+  const startedAt = performance.now();
+  const seenPathKeys = new Set([pathSignature(bestPath)]);
+  let improvements = 0;
+  await reportProgress({
+    phase: "Decroisement",
+    path: bestPath,
+    distance: pathRealisticScore(bestPath),
+    progress: 5
+  });
+
+  let changed = true;
+  while (changed && performance.now() - startedAt < PATH_UNCROSS_TIME_LIMIT) {
+    changed = false;
+
+    for (let firstSegment = 0; firstSegment < bestPath.length - 3; firstSegment += 1) {
+      for (let secondSegment = firstSegment + 2; secondSegment < bestPath.length - 1; secondSegment += 1) {
+        if (isCutJump(bestPath[firstSegment], bestPath[firstSegment + 1])
+          || isCutJump(bestPath[secondSegment], bestPath[secondSegment + 1])
+          || !segmentsProperlyCross(
+            bestPath[firstSegment],
+            bestPath[firstSegment + 1],
+            bestPath[secondSegment],
+            bestPath[secondSegment + 1]
+          )) {
+          continue;
+        }
+
+        const candidatePath = reversePathSegment(bestPath, firstSegment + 1, secondSegment);
+        const candidateKey = pathSignature(candidatePath);
+        if (!seenPathKeys.has(candidateKey) && comparePathPerformance(candidatePath, bestPath) <= 0) {
+          bestPath = candidatePath;
+          seenPathKeys.add(candidateKey);
+          changed = true;
+          improvements += 1;
+
+          const elapsed = performance.now() - startedAt;
+          await reportProgress({
+            phase: `Decroisement ${improvements}`,
+            path: bestPath,
+            distance: pathRealisticScore(bestPath),
+            progress: Math.min(98, 5 + (elapsed / PATH_UNCROSS_TIME_LIMIT) * 93)
+          });
+
+          if (elapsed >= PATH_UNCROSS_TIME_LIMIT) {
+            return bestPath;
+          }
+        }
+      }
+    }
+
+    if (!changed) {
+      const elapsed = performance.now() - startedAt;
+      await reportProgress({
+        phase: "Aucun croisement ameliorable",
+        path: bestPath,
+        distance: pathRealisticScore(bestPath),
+        progress: Math.min(98, 5 + (elapsed / PATH_UNCROSS_TIME_LIMIT) * 93)
+      });
+    }
+  }
+
+  await reportProgress({
+    phase: "Decroisement termine",
+    path: bestPath,
+    distance: pathRealisticScore(bestPath),
+    progress: 100
+  });
+  return bestPath;
+}
+
+function segmentsProperlyCross(a, b, c, d) {
+  return direction(a, b, c) * direction(a, b, d) < 0
+    && direction(c, d, a) * direction(c, d, b) < 0;
+}
+
+function direction(a, b, c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function pathSignature(path) {
+  return path.map((point) => cellKey(point)).join("|");
+}
+
 function pathOptimizationStartPoints(cells) {
   const sorted = cells
     .slice()
@@ -766,6 +859,10 @@ function comparePathPerformance(a, b) {
 function realisticStepCost(fromPoint, toPoint) {
   const jump = chebyshevDistance(fromPoint, toPoint);
   return jump > REALISTIC_JUMP_THRESHOLD ? REALISTIC_CUT_PENALTY : jump;
+}
+
+function isCutJump(fromPoint, toPoint) {
+  return chebyshevDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
 }
 
 function rememberBestPath(dmc, candidatePath) {
@@ -1594,7 +1691,7 @@ function applyPathAlgorithm(buildPath, label) {
   showPathSavedStatus();
 }
 
-async function applyAsyncPathAlgorithm(buildPath) {
+async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
     return;
   }
@@ -1624,7 +1721,7 @@ async function applyAsyncPathAlgorithm(buildPath) {
     savePathPlannerState();
     renderPathTool();
     showAlgorithmFeedback(
-      result.improved ? "Recherche 2-opt: nouveau meilleur" : "Recherche 2-opt: meilleur conserve",
+      result.improved ? `${label}: nouveau meilleur` : `${label}: meilleur conserve`,
       100,
       result.bestDistance,
       result.candidateDistance,
@@ -1668,7 +1765,11 @@ progressiveIslandPathButton.addEventListener("click", () => {
 });
 
 optimizedPathButton.addEventListener("click", () => {
-  applyAsyncPathAlgorithm(optimizedPathForColor);
+  applyAsyncPathAlgorithm(optimizedPathForColor, "Recherche 2-opt");
+});
+
+uncrossPathButton.addEventListener("click", () => {
+  applyAsyncPathAlgorithm(uncrossPathForColor, "Decroiser");
 });
 
 undoPathPointButton.addEventListener("click", () => {
