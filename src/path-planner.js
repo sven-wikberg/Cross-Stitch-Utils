@@ -383,10 +383,10 @@ function pathPerformanceMetrics(path) {
       return;
     }
 
-    const jump = chebyshevDistance(path[index - 1], point);
+    const jump = threadDistance(path[index - 1], point);
     distance += jump;
 
-    if (jump > REALISTIC_JUMP_THRESHOLD) {
+    if (isCutDistance(jump)) {
       cuts += 1;
       realisticScore += REALISTIC_CUT_PENALTY;
     } else {
@@ -838,7 +838,7 @@ function pathDistance(path) {
       return distance;
     }
 
-    return distance + chebyshevDistance(path[index - 1], point);
+    return distance + threadDistance(path[index - 1], point);
   }, 0);
 }
 
@@ -857,12 +857,16 @@ function comparePathPerformance(a, b) {
 }
 
 function realisticStepCost(fromPoint, toPoint) {
-  const jump = chebyshevDistance(fromPoint, toPoint);
-  return jump > REALISTIC_JUMP_THRESHOLD ? REALISTIC_CUT_PENALTY : jump;
+  const jump = threadDistance(fromPoint, toPoint);
+  return isCutDistance(jump) ? REALISTIC_CUT_PENALTY : jump;
 }
 
 function isCutJump(fromPoint, toPoint) {
-  return chebyshevDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
+  return isCutDistance(threadDistance(fromPoint, toPoint));
+}
+
+function isCutDistance(distance) {
+  return distance > REALISTIC_JUMP_THRESHOLD;
 }
 
 function rememberBestPath(dmc, candidatePath) {
@@ -1290,6 +1294,10 @@ function pointDistance(a, b) {
 
 function chebyshevDistance(a, b) {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+function threadDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function progressivePathScore(path) {
@@ -1742,9 +1750,9 @@ function showAlgorithmFeedback(phase, progress, distance, candidateDistance = nu
     return;
   }
 
-  const bestText = `score ${Math.round(distance)}`;
-  const candidateText = candidateDistance !== null && candidateDistance !== undefined && Math.round(candidateDistance) !== Math.round(distance)
-    ? ` - test ${Math.round(candidateDistance)}`
+  const bestText = `score ${formatMetric(distance)}`;
+  const candidateText = candidateDistance !== null && candidateDistance !== undefined && formatMetric(candidateDistance) !== formatMetric(distance)
+    ? ` - test ${formatMetric(candidateDistance)}`
     : "";
   const realisticText = metrics
     ? ` - distance ${formatMetric(metrics.distance)} - coupes ${metrics.cuts}`
