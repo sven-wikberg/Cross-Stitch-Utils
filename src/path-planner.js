@@ -15,8 +15,6 @@ const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
-const islandPathButton = document.querySelector("#islandPathButton");
-const backtrackIslandPathButton = document.querySelector("#backtrackIslandPathButton");
 const progressiveIslandPathButton = document.querySelector("#progressiveIslandPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
@@ -269,8 +267,6 @@ function renderPathBuilder() {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     autoPathButton.disabled = true;
-    islandPathButton.disabled = true;
-    backtrackIslandPathButton.disabled = true;
     progressiveIslandPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
@@ -286,8 +282,6 @@ function renderPathBuilder() {
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
   autoPathButton.disabled = expected === 0;
-  islandPathButton.disabled = expected === 0;
-  backtrackIslandPathButton.disabled = expected === 0;
   progressiveIslandPathButton.disabled = expected === 0;
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
@@ -1312,14 +1306,6 @@ function applyPathAlgorithm(buildPath) {
 
 autoPathButton.addEventListener("click", () => {
   applyPathAlgorithm(automaticPathForColor);
-});
-
-islandPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(islandSnakePathForColor);
-});
-
-backtrackIslandPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(backtrackIslandPathForColor);
 });
 
 progressiveIslandPathButton.addEventListener("click", () => {
