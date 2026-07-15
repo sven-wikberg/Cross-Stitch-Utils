@@ -35,7 +35,6 @@ const metricPoints = document.querySelector("#metricPoints");
 const metricDistance = document.querySelector("#metricDistance");
 const metricRealisticScore = document.querySelector("#metricRealisticScore");
 const metricCuts = document.querySelector("#metricCuts");
-const metricLongestJump = document.querySelector("#metricLongestJump");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
 const pathStepButtons = document.querySelectorAll("[data-step]");
@@ -338,7 +337,6 @@ function renderPathMetrics() {
     metricDistance.textContent = "-";
     metricRealisticScore.textContent = "-";
     metricCuts.textContent = "-";
-    metricLongestJump.textContent = "-";
     return;
   }
 
@@ -351,14 +349,12 @@ function renderPathMetrics() {
   metricDistance.textContent = path.length > 1 ? formatMetric(metrics.distance) : "-";
   metricRealisticScore.textContent = path.length > 1 ? formatMetric(metrics.realisticScore) : "-";
   metricCuts.textContent = path.length > 1 ? String(metrics.cuts) : "-";
-  metricLongestJump.textContent = path.length > 1 ? formatMetric(metrics.longestJump) : "-";
 }
 
 function pathPerformanceMetrics(path) {
   let distance = 0;
   let realisticScore = 0;
   let cuts = 0;
-  let longestJump = 0;
 
   path.forEach((point, index) => {
     if (index === 0) {
@@ -367,7 +363,6 @@ function pathPerformanceMetrics(path) {
 
     const jump = chebyshevDistance(path[index - 1], point);
     distance += jump;
-    longestJump = Math.max(longestJump, jump);
 
     if (jump > REALISTIC_JUMP_THRESHOLD) {
       cuts += 1;
@@ -377,7 +372,7 @@ function pathPerformanceMetrics(path) {
     }
   });
 
-  return { distance, realisticScore, cuts, longestJump };
+  return { distance, realisticScore, cuts };
 }
 
 function formatMetric(value) {
