@@ -16,6 +16,7 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
 const progressiveIslandPathButton = document.querySelector("#progressiveIslandPathButton");
+const progressiveIslandPlusPathButton = document.querySelector("#progressiveIslandPlusPathButton");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -268,6 +269,7 @@ function renderPathBuilder() {
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     autoPathButton.disabled = true;
     progressiveIslandPathButton.disabled = true;
+    progressiveIslandPlusPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -283,6 +285,7 @@ function renderPathBuilder() {
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
   autoPathButton.disabled = expected === 0;
   progressiveIslandPathButton.disabled = expected === 0;
+  progressiveIslandPlusPathButton.disabled = expected === 0;
   undoPathPointButton.disabled = path.length === 0;
   clearPathButton.disabled = path.length === 0;
   savePathAndNextButton.disabled = !complete;
@@ -521,6 +524,10 @@ function progressiveIslandPathForColor(dmc) {
   return mergeClustersByGrowingDistance(islands).flatMap((cluster) => cluster.path);
 }
 
+function progressiveIslandPlusPathForColor(dmc) {
+  return optimizePathWithSegmentReversals(progressiveIslandPathForColor(dmc));
+}
+
 function strictIslandsForCells(cells) {
   const remaining = new Map(cells.map((cell) => [cellKey(cell), cell]));
   const islands = [];
@@ -666,6 +673,46 @@ function mergeClusters(first, second, reverseFirst, reverseSecond) {
   const firstPath = reverseFirst ? first.path.slice().reverse() : first.path.slice();
   const secondPath = reverseSecond ? second.path.slice().reverse() : second.path.slice();
   return pathCluster(firstPath.concat(secondPath));
+}
+
+function optimizePathWithSegmentReversals(path) {
+  let optimized = path.slice();
+  let improved = true;
+  let passCount = 0;
+
+  while (improved && passCount < 4) {
+    improved = false;
+    passCount += 1;
+
+    for (let start = 1; start < optimized.length - 2; start += 1) {
+      for (let end = start + 1; end < optimized.length - 1; end += 1) {
+        const currentBridge = segmentBridgeScore(optimized[start - 1], optimized[start], optimized[end], optimized[end + 1]);
+        const reversedBridge = segmentBridgeScore(optimized[start - 1], optimized[end], optimized[start], optimized[end + 1]);
+        if (isBetterProgressiveScore(reversedBridge, currentBridge)) {
+          optimized = reversePathSegment(optimized, start, end);
+          improved = true;
+        }
+      }
+    }
+  }
+
+  return optimized;
+}
+
+function reversePathSegment(path, start, end) {
+  return path
+    .slice(0, start)
+    .concat(path.slice(start, end + 1).reverse())
+    .concat(path.slice(end + 1));
+}
+
+function segmentBridgeScore(before, first, last, after) {
+  const firstDistance = chebyshevDistance(before, first);
+  const secondDistance = chebyshevDistance(last, after);
+  return {
+    maxDistance: Math.max(firstDistance, secondDistance),
+    totalDistance: firstDistance + secondDistance
+  };
 }
 
 function backtrackedPathForIsland(island) {
@@ -1310,6 +1357,10 @@ autoPathButton.addEventListener("click", () => {
 
 progressiveIslandPathButton.addEventListener("click", () => {
   applyPathAlgorithm(progressiveIslandPathForColor);
+});
+
+progressiveIslandPlusPathButton.addEventListener("click", () => {
+  applyPathAlgorithm(progressiveIslandPlusPathForColor);
 });
 
 undoPathPointButton.addEventListener("click", () => {
