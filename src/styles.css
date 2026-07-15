@@ -647,6 +647,14 @@ select:focus {
   border-top: 1px solid var(--line);
 }
 
+.sidebar-panel .path-algorithm-panel {
+  border-top-color: rgba(255, 255, 255, 0.18);
+}
+
+.sidebar-panel .field-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .path-algorithm-panel .secondary-button {
   width: 100%;
 }
@@ -660,6 +668,11 @@ select:focus {
   background: #fbfcfb;
 }
 
+.sidebar-panel .algorithm-feedback {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .algorithm-feedback progress {
   width: 100%;
   height: 10px;
@@ -670,6 +683,10 @@ select:focus {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.sidebar-panel .algorithm-feedback p {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .embedded-save-panel {
