@@ -258,7 +258,8 @@ function drawStitchProgress(context, cellSize) {
         return;
       }
 
-      drawPathSegment(context, path.points[index - 1], point, cellSize);
+      const segmentAlpha = index > stitchedCount ? 0.32 : 1;
+      drawPathSegment(context, path.points[index - 1], point, cellSize, segmentAlpha);
     });
   }
 
@@ -279,11 +280,13 @@ function drawStitchProgress(context, cellSize) {
   context.restore();
 }
 
-function drawPathSegment(context, fromPoint, toPoint, cellSize) {
+function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1) {
   const from = pointCenter(fromPoint, cellSize);
   const to = pointCenter(toPoint, cellSize);
   const isCut = isCutJump(fromPoint, toPoint);
 
+  context.save();
+  context.globalAlpha = alpha;
   context.strokeStyle = isCut ? "#b44b57" : "#222426";
   context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
   context.setLineDash(isCut ? [Math.max(3, cellSize * 0.55), Math.max(3, cellSize * 0.45)] : []);
@@ -292,6 +295,7 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize) {
   context.lineTo(to.x, to.y);
   context.stroke();
   context.setLineDash([]);
+  context.restore();
 }
 
 function pointCenter(point, cellSize) {
