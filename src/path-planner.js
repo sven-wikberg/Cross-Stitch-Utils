@@ -62,6 +62,7 @@ const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
 let pathsByDmc = storedState.pathsByDmc;
+let bestPathsByDmc = storedState.bestPathsByDmc;
 let pathProgress = {
   load: Boolean(loadedPattern),
   paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, storedState.pathsByDmc),
@@ -77,26 +78,27 @@ let pathAlgorithmRunning = false;
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
   if (!stored) {
-    return { pattern: null, pathsByDmc: {} };
+    return { pattern: null, pathsByDmc: {}, bestPathsByDmc: {} };
   }
 
   try {
     const parsed = JSON.parse(stored);
     if (validateFinalPattern(parsed).valid) {
-      return { pattern: parsed, pathsByDmc: {} };
+      return { pattern: parsed, pathsByDmc: {}, bestPathsByDmc: {} };
     }
 
     if (validateFinalPattern(parsed.pattern).valid) {
       return {
         pattern: parsed.pattern,
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
+        bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
       };
     }
 
-    return { pattern: null, pathsByDmc: {} };
+    return { pattern: null, pathsByDmc: {}, bestPathsByDmc: {} };
   } catch {
-    return { pattern: null, pathsByDmc: {} };
+    return { pattern: null, pathsByDmc: {}, bestPathsByDmc: {} };
   }
 }
 
@@ -109,6 +111,7 @@ function savePathPlannerState() {
   localStorage.setItem(PATH_PLANNER_STORAGE_KEY, JSON.stringify({
     pattern: loadedPattern,
     pathsByDmc,
+    bestPathsByDmc,
     selectedDmc
   }));
 }
@@ -294,6 +297,22 @@ function renderPathBuilder() {
   undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
+
+  if (!pathAlgorithmRunning) {
+    renderPathDistanceFeedback();
+  }
+}
+
+function renderPathDistanceFeedback() {
+  const path = currentPath();
+  if (path.length === 0) {
+    return;
+  }
+
+  const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
+  const currentDistance = pathDistance(path);
+  const bestDistance = bestPath ? pathDistance(bestPath) : currentDistance;
+  showAlgorithmFeedback("Chemin actuel", 100, bestDistance, currentDistance);
 }
 
 function renderPathExport() {
@@ -646,6 +665,38 @@ function pathDistance(path) {
 
     return distance + chebyshevDistance(path[index - 1], point);
   }, 0);
+}
+
+function rememberBestPath(dmc, candidatePath) {
+  if (!Array.isArray(candidatePath) || candidatePath.length === 0) {
+    return {
+      path: candidatePath || [],
+      candidateDistance: 0,
+      bestDistance: 0,
+      improved: false
+    };
+  }
+
+  const candidateDistance = pathDistance(candidatePath);
+  const currentBest = Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : null;
+  const bestDistance = currentBest ? pathDistance(currentBest) : Number.POSITIVE_INFINITY;
+  const improved = candidateDistance < bestDistance;
+
+  if (improved) {
+    bestPathsByDmc[dmc] = candidatePath.map(copyPoint);
+  }
+
+  const bestPath = improved ? bestPathsByDmc[dmc] : currentBest || candidatePath;
+  return {
+    path: bestPath.map(copyPoint),
+    candidateDistance,
+    bestDistance: improved ? candidateDistance : bestDistance,
+    improved
+  };
+}
+
+function copyPoint(point) {
+  return { x: point.x, y: point.y };
 }
 
 function strictIslandsForCells(cells) {
@@ -1342,6 +1393,7 @@ patternJsonFileInput.addEventListener("change", async () => {
   try {
     loadedPattern = await readSelectedPattern(file);
     pathsByDmc = {};
+    bestPathsByDmc = {};
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathProgress.load = true;
     pathProgress.paths = false;
@@ -1354,6 +1406,7 @@ patternJsonFileInput.addEventListener("change", async () => {
     loadedPattern = null;
     selectedDmc = null;
     pathsByDmc = {};
+    bestPathsByDmc = {};
     pathProgress.load = false;
     pathProgress.paths = false;
     pathProgress.export = false;
@@ -1418,16 +1471,24 @@ pathColorLegend.addEventListener("click", (event) => {
   renderPathTool();
 });
 
-function applyPathAlgorithm(buildPath) {
+function applyPathAlgorithm(buildPath, label) {
   if (!loadedPattern || !selectedDmc) {
     return;
   }
 
-  pathsByDmc[selectedDmc] = buildPath(selectedDmc);
+  const candidatePath = buildPath(selectedDmc);
+  const result = rememberBestPath(selectedDmc, candidatePath);
+  pathsByDmc[selectedDmc] = result.path;
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
   savePathPlannerState();
   renderPathTool();
+  showAlgorithmFeedback(
+    result.improved ? `${label}: nouveau meilleur` : `${label}: meilleur conserve`,
+    100,
+    result.bestDistance,
+    result.candidateDistance
+  );
   showPathSavedStatus();
 }
 
@@ -1454,12 +1515,18 @@ async function applyAsyncPathAlgorithm(buildPath) {
       await nextFrame();
     });
 
-    pathsByDmc[dmc] = path;
+    const result = rememberBestPath(dmc, path);
+    pathsByDmc[dmc] = result.path;
     pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
     pathProgress.export = false;
     savePathPlannerState();
     renderPathTool();
-    showAlgorithmFeedback("Termine", 100, pathDistance(path));
+    showAlgorithmFeedback(
+      result.improved ? "Recherche 2-opt: nouveau meilleur" : "Recherche 2-opt: meilleur conserve",
+      100,
+      result.bestDistance,
+      result.candidateDistance
+    );
     showPathSavedStatus();
   } finally {
     pathAlgorithmRunning = false;
@@ -1467,12 +1534,19 @@ async function applyAsyncPathAlgorithm(buildPath) {
   }
 }
 
-function showAlgorithmFeedback(phase, progress, distance) {
+function showAlgorithmFeedback(phase, progress, distance, candidateDistance = null) {
   pathAlgorithmFeedback.classList.remove("hidden");
   pathAlgorithmProgress.value = Math.max(0, Math.min(100, Math.round(progress || 0)));
-  pathAlgorithmDistance.textContent = distance === null || distance === undefined
-    ? phase
-    : `${phase} - distance ${Math.round(distance)} - ${pathAlgorithmProgress.value}%`;
+  if (distance === null || distance === undefined) {
+    pathAlgorithmDistance.textContent = phase;
+    return;
+  }
+
+  const bestText = `meilleur ${Math.round(distance)}`;
+  const candidateText = candidateDistance !== null && candidateDistance !== undefined && Math.round(candidateDistance) !== Math.round(distance)
+    ? ` - test ${Math.round(candidateDistance)}`
+    : "";
+  pathAlgorithmDistance.textContent = `${phase} - ${bestText}${candidateText} - ${pathAlgorithmProgress.value}%`;
 }
 
 function nextFrame() {
@@ -1480,11 +1554,11 @@ function nextFrame() {
 }
 
 autoPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(automaticPathForColor);
+  applyPathAlgorithm(automaticPathForColor, "Serpent");
 });
 
 progressiveIslandPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(progressiveIslandPathForColor);
+  applyPathAlgorithm(progressiveIslandPathForColor, "Ilots progressifs");
 });
 
 optimizedPathButton.addEventListener("click", () => {
@@ -1501,6 +1575,7 @@ undoPathPointButton.addEventListener("click", () => {
 
 clearPathButton.addEventListener("click", () => {
   pathsByDmc[selectedDmc] = [];
+  delete bestPathsByDmc[selectedDmc];
   pathProgress.paths = false;
   pathProgress.export = false;
   savePathPlannerState();
@@ -1567,6 +1642,7 @@ resetPathToolButton.addEventListener("click", () => {
   loadedPattern = null;
   selectedDmc = null;
   pathsByDmc = {};
+  bestPathsByDmc = {};
   pathProgress = {
     load: false,
     paths: false,
