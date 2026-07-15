@@ -525,7 +525,10 @@ function progressiveIslandPathForColor(dmc) {
 }
 
 function progressiveIslandPlusPathForColor(dmc) {
-  return optimizePathWithSegmentReversals(progressiveIslandPathForColor(dmc));
+  const cycles = strictIslandsForCells(cellsForColor(dmc))
+    .map((island) => cycleCluster(internalIslandCycle(island)));
+  const merged = mergeCyclesByGrowingDistance(cycles);
+  return openCycleAtLongestEdge(merged[0]?.cycle || []);
 }
 
 function strictIslandsForCells(cells) {
@@ -576,6 +579,30 @@ function internalIslandPath(island) {
   return bestPath || snakePathForCells(island);
 }
 
+function internalIslandCycle(island) {
+  if (island.length <= 2) {
+    return internalIslandPath(island);
+  }
+
+  const cellsByKey = new Map(island.map((cell) => [cellKey(cell), cell]));
+  const starts = island
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  let bestCycle = null;
+  let bestScore = null;
+
+  starts.forEach((start) => {
+    const cycle = nearestNeighborPath(start, cellsByKey);
+    const score = progressiveCycleScore(cycle);
+    if (!bestScore || isBetterProgressiveScore(score, bestScore)) {
+      bestCycle = cycle;
+      bestScore = score;
+    }
+  });
+
+  return bestCycle || internalIslandPath(island);
+}
+
 function nearestNeighborPath(start, cellsByKey) {
   const remaining = new Map(cellsByKey);
   const path = [];
@@ -607,6 +634,12 @@ function pathCluster(path) {
   return {
     path,
     cells: path.map((point) => ({ x: point.x, y: point.y }))
+  };
+}
+
+function cycleCluster(cycle) {
+  return {
+    cycle: cycle.map((point) => ({ x: point.x, y: point.y }))
   };
 }
 
@@ -675,44 +708,116 @@ function mergeClusters(first, second, reverseFirst, reverseSecond) {
   return pathCluster(firstPath.concat(secondPath));
 }
 
-function optimizePathWithSegmentReversals(path) {
-  let optimized = path.slice();
-  let improved = true;
-  let passCount = 0;
+function mergeCyclesByGrowingDistance(clusters) {
+  const remaining = clusters.filter((cluster) => cluster.cycle.length > 0);
+  if (remaining.length <= 1) {
+    return remaining;
+  }
 
-  while (improved && passCount < 4) {
-    improved = false;
-    passCount += 1;
+  let distance = 2;
+  while (remaining.length > 1) {
+    const merge = closestCycleMerge(remaining, distance);
+    if (!merge) {
+      distance += 1;
+      continue;
+    }
 
-    for (let start = 1; start < optimized.length - 2; start += 1) {
-      for (let end = start + 1; end < optimized.length - 1; end += 1) {
-        const currentBridge = segmentBridgeScore(optimized[start - 1], optimized[start], optimized[end], optimized[end + 1]);
-        const reversedBridge = segmentBridgeScore(optimized[start - 1], optimized[end], optimized[start], optimized[end + 1]);
-        if (isBetterProgressiveScore(reversedBridge, currentBridge)) {
-          optimized = reversePathSegment(optimized, start, end);
-          improved = true;
-        }
+    const first = remaining[merge.firstIndex];
+    const second = remaining[merge.secondIndex];
+    const merged = cycleCluster(mergeCycles(first.cycle, second.cycle, merge));
+    remaining.splice(merge.secondIndex, 1);
+    remaining.splice(merge.firstIndex, 1, merged);
+    distance = 2;
+  }
+
+  return remaining;
+}
+
+function closestCycleMerge(clusters, maxDistance) {
+  let best = null;
+
+  for (let firstIndex = 0; firstIndex < clusters.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < clusters.length; secondIndex += 1) {
+      const candidate = bestCycleConnection(clusters[firstIndex].cycle, clusters[secondIndex].cycle);
+      if (candidate.connectionDistance > maxDistance) {
+        continue;
+      }
+
+      if (!best || isBetterProgressiveScore(candidate.score, best.score)) {
+        best = { firstIndex, secondIndex, ...candidate };
       }
     }
   }
 
-  return optimized;
+  return best;
 }
 
-function reversePathSegment(path, start, end) {
-  return path
-    .slice(0, start)
-    .concat(path.slice(start, end + 1).reverse())
-    .concat(path.slice(end + 1));
+function bestCycleConnection(firstCycle, secondCycle) {
+  let best = null;
+
+  for (let firstIndex = 0; firstIndex < firstCycle.length; firstIndex += 1) {
+    for (let secondIndex = 0; secondIndex < secondCycle.length; secondIndex += 1) {
+      [-1, 1].forEach((firstDirection) => {
+        [-1, 1].forEach((secondDirection) => {
+          const firstPath = rotateCycle(firstCycle, firstIndex, firstDirection);
+          const secondPath = rotateCycle(secondCycle, secondIndex, secondDirection);
+          const firstBridge = chebyshevDistance(firstPath[firstPath.length - 1], secondPath[0]);
+          const secondBridge = chebyshevDistance(secondPath[secondPath.length - 1], firstPath[0]);
+          const candidate = {
+            firstIndex,
+            secondIndex,
+            firstDirection,
+            secondDirection,
+            connectionDistance: Math.min(firstBridge, secondBridge),
+            score: {
+              maxDistance: Math.max(firstBridge, secondBridge),
+              totalDistance: firstBridge + secondBridge
+            }
+          };
+
+          if (!best || candidate.connectionDistance < best.connectionDistance || (
+            candidate.connectionDistance === best.connectionDistance && isBetterProgressiveScore(candidate.score, best.score)
+          )) {
+            best = candidate;
+          }
+        });
+      });
+    }
+  }
+
+  return best;
 }
 
-function segmentBridgeScore(before, first, last, after) {
-  const firstDistance = chebyshevDistance(before, first);
-  const secondDistance = chebyshevDistance(last, after);
-  return {
-    maxDistance: Math.max(firstDistance, secondDistance),
-    totalDistance: firstDistance + secondDistance
-  };
+function mergeCycles(firstCycle, secondCycle, merge) {
+  return rotateCycle(firstCycle, merge.firstIndex, merge.firstDirection)
+    .concat(rotateCycle(secondCycle, merge.secondIndex, merge.secondDirection));
+}
+
+function rotateCycle(cycle, startIndex, direction = 1) {
+  return cycle.map((_, offset) => {
+    const index = (startIndex + offset * direction + cycle.length * cycle.length) % cycle.length;
+    const point = cycle[index];
+    return { x: point.x, y: point.y };
+  });
+}
+
+function openCycleAtLongestEdge(cycle) {
+  if (cycle.length <= 1) {
+    return cycle;
+  }
+
+  let breakIndex = 0;
+  let longestDistance = -1;
+  cycle.forEach((point, index) => {
+    const next = cycle[(index + 1) % cycle.length];
+    const distance = chebyshevDistance(point, next);
+    if (distance > longestDistance) {
+      longestDistance = distance;
+      breakIndex = index;
+    }
+  });
+
+  return rotateCycle(cycle, (breakIndex + 1) % cycle.length, 1);
 }
 
 function backtrackedPathForIsland(island) {
@@ -978,6 +1083,19 @@ function progressivePathScore(path) {
   });
 
   return { maxDistance, totalDistance };
+}
+
+function progressiveCycleScore(cycle) {
+  const score = progressivePathScore(cycle);
+  if (cycle.length <= 1) {
+    return score;
+  }
+
+  const closingDistance = chebyshevDistance(cycle[cycle.length - 1], cycle[0]);
+  return {
+    maxDistance: Math.max(score.maxDistance, closingDistance),
+    totalDistance: score.totalDistance + closingDistance
+  };
 }
 
 function isBetterProgressiveScore(candidate, current) {
