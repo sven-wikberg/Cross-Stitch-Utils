@@ -16,6 +16,10 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const autoPathButton = document.querySelector("#autoPathButton");
 const progressiveIslandPathButton = document.querySelector("#progressiveIslandPathButton");
+const optimizedPathButton = document.querySelector("#optimizedPathButton");
+const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
+const pathAlgorithmProgress = document.querySelector("#pathAlgorithmProgress");
+const pathAlgorithmDistance = document.querySelector("#pathAlgorithmDistance");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -53,6 +57,7 @@ const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -67,6 +72,7 @@ let selectedDmc = storedState.selectedDmc || loadedPattern?.colors[0]?.dmc || nu
 let isDrawingPath = false;
 let lastDrawnCellKey = null;
 let lastPointerCell = null;
+let pathAlgorithmRunning = false;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -268,6 +274,7 @@ function renderPathBuilder() {
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     autoPathButton.disabled = true;
     progressiveIslandPathButton.disabled = true;
+    optimizedPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -281,11 +288,12 @@ function renderPathBuilder() {
   pathBuildStatus.textContent = complete
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
-  autoPathButton.disabled = expected === 0;
-  progressiveIslandPathButton.disabled = expected === 0;
-  undoPathPointButton.disabled = path.length === 0;
-  clearPathButton.disabled = path.length === 0;
-  savePathAndNextButton.disabled = !complete;
+  autoPathButton.disabled = expected === 0 || pathAlgorithmRunning;
+  progressiveIslandPathButton.disabled = expected === 0 || pathAlgorithmRunning;
+  optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
+  undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
+  clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
+  savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
 }
 
 function renderPathExport() {
@@ -519,6 +527,125 @@ function progressiveIslandPathForColor(dmc) {
   const islands = strictIslandsForCells(cellsForColor(dmc))
     .map((island) => pathCluster(internalIslandPath(island)));
   return mergeClustersByGrowingDistance(islands).flatMap((cluster) => cluster.path);
+}
+
+async function optimizedPathForColor(dmc, reportProgress) {
+  const cells = cellsForColor(dmc);
+  if (cells.length <= 2) {
+    return cells.map((cell) => ({ x: cell.x, y: cell.y }));
+  }
+
+  const candidates = [
+    progressiveIslandPathForColor(dmc),
+    snakePathForCells(cells)
+  ];
+  const cellsByKey = new Map(cells.map((cell) => [cellKey(cell), cell]));
+  pathOptimizationStartPoints(cells).forEach((start) => {
+    candidates.push(nearestNeighborPath(start, cellsByKey));
+  });
+
+  let bestPath = candidates
+    .filter((path) => path.length === cells.length)
+    .sort((a, b) => pathDistance(a) - pathDistance(b))[0] || progressiveIslandPathForColor(dmc);
+  let bestDistance = pathDistance(bestPath);
+  const startedAt = performance.now();
+
+  await reportProgress({
+    phase: "Point de depart",
+    path: bestPath,
+    distance: bestDistance,
+    progress: 5
+  });
+
+  let improved = true;
+  let pass = 0;
+  while (improved && performance.now() - startedAt < PATH_OPTIMIZATION_TIME_LIMIT) {
+    improved = false;
+    pass += 1;
+
+    for (let start = 1; start < bestPath.length - 2; start += 1) {
+      for (let end = start + 1; end < bestPath.length - 1; end += 1) {
+        const currentBridge = chebyshevDistance(bestPath[start - 1], bestPath[start])
+          + chebyshevDistance(bestPath[end], bestPath[end + 1]);
+        const candidateBridge = chebyshevDistance(bestPath[start - 1], bestPath[end])
+          + chebyshevDistance(bestPath[start], bestPath[end + 1]);
+
+        if (candidateBridge < currentBridge) {
+          bestPath = reversePathSegment(bestPath, start, end);
+          bestDistance += candidateBridge - currentBridge;
+          improved = true;
+        }
+
+        if ((start + end) % 250 === 0) {
+          const elapsed = performance.now() - startedAt;
+          await reportProgress({
+            phase: `Passe ${pass}`,
+            path: bestPath,
+            distance: bestDistance,
+            progress: Math.min(98, 5 + (elapsed / PATH_OPTIMIZATION_TIME_LIMIT) * 93)
+          });
+
+          if (elapsed >= PATH_OPTIMIZATION_TIME_LIMIT) {
+            return bestPath;
+          }
+        }
+      }
+    }
+  }
+
+  await reportProgress({
+    phase: "Termine",
+    path: bestPath,
+    distance: bestDistance,
+    progress: 100
+  });
+  return bestPath;
+}
+
+function pathOptimizationStartPoints(cells) {
+  const sorted = cells
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const candidates = [
+    sorted[0],
+    sorted[Math.floor(sorted.length / 2)],
+    sorted[sorted.length - 1],
+    sorted.reduce((best, cell) => (cell.x < best.x || (cell.x === best.x && cell.y < best.y) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.x > best.x || (cell.x === best.x && cell.y < best.y) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.y > best.y || (cell.y === best.y && cell.x < best.x) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.y > best.y || (cell.y === best.y && cell.x > best.x) ? cell : best), sorted[0])
+  ];
+
+  return uniquePathPoints(candidates.concat(sorted.filter((_, index) => index % Math.max(1, Math.floor(sorted.length / 8)) === 0)));
+}
+
+function uniquePathPoints(points) {
+  const seen = new Set();
+  return points.filter((point) => {
+    if (!point || seen.has(cellKey(point))) {
+      return false;
+    }
+
+    seen.add(cellKey(point));
+    return true;
+  }).slice(0, 14);
+}
+
+function reversePathSegment(path, start, end) {
+  return path
+    .slice(0, start)
+    .concat(path.slice(start, end + 1).reverse())
+    .concat(path.slice(end + 1));
+}
+
+function pathDistance(path) {
+  return path.reduce((distance, point, index) => {
+    if (index === 0) {
+      return distance;
+    }
+
+    return distance + chebyshevDistance(path[index - 1], point);
+  }, 0);
 }
 
 function strictIslandsForCells(cells) {
@@ -1304,12 +1431,64 @@ function applyPathAlgorithm(buildPath) {
   showPathSavedStatus();
 }
 
+async function applyAsyncPathAlgorithm(buildPath) {
+  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
+    return;
+  }
+
+  pathAlgorithmRunning = true;
+  showAlgorithmFeedback("Preparation", 0, null);
+  renderPathTool();
+
+  try {
+    const dmc = selectedDmc;
+    const path = await buildPath(dmc, async ({ phase, path: candidatePath, distance, progress }) => {
+      if (candidatePath?.length) {
+        pathsByDmc[dmc] = candidatePath;
+        pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+        pathProgress.export = false;
+        renderPathTool();
+      }
+
+      showAlgorithmFeedback(phase, progress, distance);
+      await nextFrame();
+    });
+
+    pathsByDmc[dmc] = path;
+    pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+    pathProgress.export = false;
+    savePathPlannerState();
+    renderPathTool();
+    showAlgorithmFeedback("Termine", 100, pathDistance(path));
+    showPathSavedStatus();
+  } finally {
+    pathAlgorithmRunning = false;
+    renderPathTool();
+  }
+}
+
+function showAlgorithmFeedback(phase, progress, distance) {
+  pathAlgorithmFeedback.classList.remove("hidden");
+  pathAlgorithmProgress.value = Math.max(0, Math.min(100, Math.round(progress || 0)));
+  pathAlgorithmDistance.textContent = distance === null || distance === undefined
+    ? phase
+    : `${phase} - distance ${Math.round(distance)} - ${pathAlgorithmProgress.value}%`;
+}
+
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
 autoPathButton.addEventListener("click", () => {
   applyPathAlgorithm(automaticPathForColor);
 });
 
 progressiveIslandPathButton.addEventListener("click", () => {
   applyPathAlgorithm(progressiveIslandPathForColor);
+});
+
+optimizedPathButton.addEventListener("click", () => {
+  applyAsyncPathAlgorithm(optimizedPathForColor);
 });
 
 undoPathPointButton.addEventListener("click", () => {
