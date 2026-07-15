@@ -203,11 +203,12 @@ function renderStitchView() {
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
 
+  const stitchedCellKeys = stitchedCellKeysForProgress();
   pattern.grid.cells.forEach((cell) => {
     const color = colorByDmc.get(cell.dmc);
     if (cell.empty) {
       context.fillStyle = "#ffffff";
-    } else if (cell.dmc === selectedDmc) {
+    } else if (cell.dmc === selectedDmc || stitchedCellKeys.has(cellKey(cell))) {
       context.fillStyle = color?.hex || "#d9dddd";
     } else {
       context.fillStyle = mutedHex(color?.hex || "#d9dddd");
@@ -249,8 +250,6 @@ function drawStitchProgress(context, cellSize) {
   context.lineWidth = Math.max(2, Math.floor(cellSize / 3));
   context.lineJoin = "round";
   context.lineCap = "round";
-
-  drawOtherStitchedPoints(context, cellSize);
 
   if (path.points.length > 1) {
     path.points.forEach((point, index) => {
@@ -313,17 +312,14 @@ function threadDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function drawOtherStitchedPoints(context, cellSize) {
+function stitchedCellKeysForProgress() {
+  const keys = new Set();
   loadedPaths.paths.forEach((path) => {
-    if (path.dmc === selectedDmc) {
-      return;
-    }
-
-    const stitchedPoints = path.points.slice(0, stitchedCountForDmc(path.dmc));
-    stitchedPoints.forEach((point) => {
-      drawCircle(context, point, cellSize, "#222426", "#222426");
+    path.points.slice(0, stitchedCountForDmc(path.dmc)).forEach((point) => {
+      keys.add(cellKey(point));
     });
   });
+  return keys;
 }
 
 function drawCircle(context, point, cellSize, fill, stroke, alpha = 1) {
