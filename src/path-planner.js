@@ -14,8 +14,6 @@ const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
-const autoPathButton = document.querySelector("#autoPathButton");
-const progressiveIslandPathButton = document.querySelector("#progressiveIslandPathButton");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const uncrossPathButton = document.querySelector("#uncrossPathButton");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
@@ -303,8 +301,6 @@ function renderPathBuilder() {
   if (!loadedPattern || !selectedDmc) {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
-    autoPathButton.disabled = true;
-    progressiveIslandPathButton.disabled = true;
     optimizedPathButton.disabled = true;
     uncrossPathButton.disabled = true;
     undoPathPointButton.disabled = true;
@@ -320,8 +316,6 @@ function renderPathBuilder() {
   pathBuildStatus.textContent = complete
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
-  autoPathButton.disabled = expected === 0 || pathAlgorithmRunning;
-  progressiveIslandPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   uncrossPathButton.disabled = !complete || path.length < 4 || pathAlgorithmRunning;
   undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
@@ -589,10 +583,6 @@ function cellsForColor(dmc) {
   }
 
   return loadedPattern.grid.cells.filter((cell) => !cell.empty && cell.dmc === dmc);
-}
-
-function automaticPathForColor(dmc) {
-  return snakePathForCells(cellsForColor(dmc));
 }
 
 function snakePathForCells(cells) {
@@ -1677,28 +1667,6 @@ pathColorLegend.addEventListener("click", (event) => {
   renderPathTool();
 });
 
-function applyPathAlgorithm(buildPath, label) {
-  if (!loadedPattern || !selectedDmc) {
-    return;
-  }
-
-  const candidatePath = buildPath(selectedDmc);
-  const result = rememberBestPath(selectedDmc, candidatePath);
-  pathsByDmc[selectedDmc] = result.path;
-  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
-  pathProgress.export = false;
-  savePathPlannerState();
-  renderPathTool();
-  showAlgorithmFeedback(
-    result.improved ? `${label}: nouveau meilleur` : `${label}: meilleur conserve`,
-    100,
-    result.bestDistance,
-    result.candidateDistance,
-    pathPerformanceMetrics(result.path)
-  );
-  showPathSavedStatus();
-}
-
 async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
     return;
@@ -1763,14 +1731,6 @@ function showAlgorithmFeedback(phase, progress, distance, candidateDistance = nu
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
-
-autoPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(automaticPathForColor, "Serpent");
-});
-
-progressiveIslandPathButton.addEventListener("click", () => {
-  applyPathAlgorithm(progressiveIslandPathForColor, "Ilots progressifs");
-});
 
 optimizedPathButton.addEventListener("click", () => {
   applyAsyncPathAlgorithm(optimizedPathForColor, "Recherche 2-opt");
