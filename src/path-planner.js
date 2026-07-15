@@ -30,6 +30,12 @@ const pathExportPointsText = document.querySelector("#pathExportPointsText");
 const backToPathsButton = document.querySelector("#backToPathsButton");
 const downloadPathJsonButton = document.querySelector("#downloadPathJsonButton");
 const pathExportPreview = document.querySelector("#pathExportPreview");
+const metricColor = document.querySelector("#metricColor");
+const metricPoints = document.querySelector("#metricPoints");
+const metricDistance = document.querySelector("#metricDistance");
+const metricRealisticScore = document.querySelector("#metricRealisticScore");
+const metricCuts = document.querySelector("#metricCuts");
+const metricLongestJump = document.querySelector("#metricLongestJump");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
 const pathStepButtons = document.querySelectorAll("[data-step]");
@@ -58,6 +64,8 @@ const BACKTRACK_MAX_VISITS = 45000;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
+const REALISTIC_JUMP_THRESHOLD = 6;
+const REALISTIC_CUT_PENALTY = 18;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -143,6 +151,7 @@ function renderPathTool() {
   renderLoadedPattern();
   renderPatternGrid();
   renderPathExport();
+  renderPathMetrics();
 }
 
 function renderLoadedPattern() {
@@ -319,7 +328,60 @@ function renderPathDistanceFeedback() {
   const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
   const currentDistance = pathDistance(path);
   const bestDistance = bestPath ? pathDistance(bestPath) : currentDistance;
-  showAlgorithmFeedback("Chemin actuel", 100, bestDistance, currentDistance);
+  showAlgorithmFeedback("Chemin actuel", 100, bestDistance, currentDistance, pathPerformanceMetrics(path));
+}
+
+function renderPathMetrics() {
+  if (!loadedPattern || !selectedDmc) {
+    metricColor.textContent = "-";
+    metricPoints.textContent = "0 / 0";
+    metricDistance.textContent = "-";
+    metricRealisticScore.textContent = "-";
+    metricCuts.textContent = "-";
+    metricLongestJump.textContent = "-";
+    return;
+  }
+
+  const path = currentPath();
+  const expected = cellsForSelectedColor().length;
+  const metrics = pathPerformanceMetrics(path);
+
+  metricColor.textContent = `DMC ${selectedDmc}`;
+  metricPoints.textContent = `${path.length} / ${expected}`;
+  metricDistance.textContent = path.length > 1 ? formatMetric(metrics.distance) : "-";
+  metricRealisticScore.textContent = path.length > 1 ? formatMetric(metrics.realisticScore) : "-";
+  metricCuts.textContent = path.length > 1 ? String(metrics.cuts) : "-";
+  metricLongestJump.textContent = path.length > 1 ? formatMetric(metrics.longestJump) : "-";
+}
+
+function pathPerformanceMetrics(path) {
+  let distance = 0;
+  let realisticScore = 0;
+  let cuts = 0;
+  let longestJump = 0;
+
+  path.forEach((point, index) => {
+    if (index === 0) {
+      return;
+    }
+
+    const jump = chebyshevDistance(path[index - 1], point);
+    distance += jump;
+    longestJump = Math.max(longestJump, jump);
+
+    if (jump > REALISTIC_JUMP_THRESHOLD) {
+      cuts += 1;
+      realisticScore += REALISTIC_CUT_PENALTY;
+    } else {
+      realisticScore += jump;
+    }
+  });
+
+  return { distance, realisticScore, cuts, longestJump };
+}
+
+function formatMetric(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function renderPathExport() {
@@ -1494,7 +1556,8 @@ function applyPathAlgorithm(buildPath, label) {
     result.improved ? `${label}: nouveau meilleur` : `${label}: meilleur conserve`,
     100,
     result.bestDistance,
-    result.candidateDistance
+    result.candidateDistance,
+    pathPerformanceMetrics(result.path)
   );
   showPathSavedStatus();
 }
@@ -1532,7 +1595,8 @@ async function applyAsyncPathAlgorithm(buildPath) {
       result.improved ? "Recherche 2-opt: nouveau meilleur" : "Recherche 2-opt: meilleur conserve",
       100,
       result.bestDistance,
-      result.candidateDistance
+      result.candidateDistance,
+      pathPerformanceMetrics(result.path)
     );
     showPathSavedStatus();
   } finally {
@@ -1541,7 +1605,7 @@ async function applyAsyncPathAlgorithm(buildPath) {
   }
 }
 
-function showAlgorithmFeedback(phase, progress, distance, candidateDistance = null) {
+function showAlgorithmFeedback(phase, progress, distance, candidateDistance = null, metrics = null) {
   pathAlgorithmFeedback.classList.remove("hidden");
   pathAlgorithmProgress.value = Math.max(0, Math.min(100, Math.round(progress || 0)));
   if (distance === null || distance === undefined) {
@@ -1553,7 +1617,10 @@ function showAlgorithmFeedback(phase, progress, distance, candidateDistance = nu
   const candidateText = candidateDistance !== null && candidateDistance !== undefined && Math.round(candidateDistance) !== Math.round(distance)
     ? ` - test ${Math.round(candidateDistance)}`
     : "";
-  pathAlgorithmDistance.textContent = `${phase} - ${bestText}${candidateText} - ${pathAlgorithmProgress.value}%`;
+  const realisticText = metrics
+    ? ` - score reel ${formatMetric(metrics.realisticScore)} - coupes ${metrics.cuts}`
+    : "";
+  pathAlgorithmDistance.textContent = `${phase} - ${bestText}${candidateText}${realisticText} - ${pathAlgorithmProgress.value}%`;
 }
 
 function nextFrame() {
