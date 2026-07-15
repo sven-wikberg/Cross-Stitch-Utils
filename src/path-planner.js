@@ -34,6 +34,8 @@ const metricColor = document.querySelector("#metricColor");
 const metricPoints = document.querySelector("#metricPoints");
 const metricDistance = document.querySelector("#metricDistance");
 const metricRealisticScore = document.querySelector("#metricRealisticScore");
+const metricInitialScore = document.querySelector("#metricInitialScore");
+const metricScoreGain = document.querySelector("#metricScoreGain");
 const metricCuts = document.querySelector("#metricCuts");
 const pathStepEyebrow = document.querySelector("#pathStepEyebrow");
 const pathStepTitle = document.querySelector("#path-step-title");
@@ -82,6 +84,7 @@ let isDrawingPath = false;
 let lastDrawnCellKey = null;
 let lastPointerCell = null;
 let pathAlgorithmRunning = false;
+let pathOptimizationBaseline = null;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -352,6 +355,8 @@ function renderPathMetrics() {
     metricPoints.textContent = "0 / 0";
     metricDistance.textContent = "-";
     metricRealisticScore.textContent = "-";
+    metricInitialScore.textContent = "-";
+    metricScoreGain.textContent = "-";
     metricCuts.textContent = "-";
     return;
   }
@@ -364,6 +369,13 @@ function renderPathMetrics() {
   metricPoints.textContent = `${path.length} / ${expected}`;
   metricDistance.textContent = path.length > 1 ? formatMetric(metrics.distance) : "-";
   metricRealisticScore.textContent = path.length > 1 ? formatMetric(metrics.realisticScore) : "-";
+  if (path.length > 1 && pathOptimizationBaseline?.dmc === selectedDmc) {
+    metricInitialScore.textContent = formatMetric(pathOptimizationBaseline.realisticScore);
+    metricScoreGain.textContent = formatSignedMetric(pathOptimizationBaseline.realisticScore - metrics.realisticScore);
+  } else {
+    metricInitialScore.textContent = "-";
+    metricScoreGain.textContent = "-";
+  }
   metricCuts.textContent = path.length > 1 ? String(metrics.cuts) : "-";
 }
 
@@ -393,6 +405,14 @@ function pathPerformanceMetrics(path) {
 
 function formatMetric(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatSignedMetric(value) {
+  if (value === 0) {
+    return "0";
+  }
+
+  return `${value > 0 ? "+" : ""}${formatMetric(value)}`;
 }
 
 function renderPathExport() {
@@ -1672,6 +1692,10 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
     return;
   }
 
+  const baselinePath = currentPath();
+  pathOptimizationBaseline = baselinePath.length > 1
+    ? { dmc: selectedDmc, realisticScore: pathRealisticScore(baselinePath) }
+    : null;
   pathAlgorithmRunning = true;
   showAlgorithmFeedback("Preparation", 0, null);
   renderPathTool();
