@@ -343,9 +343,9 @@ function renderPathDistanceFeedback() {
   }
 
   const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
-  const currentDistance = pathDistance(path);
-  const bestDistance = bestPath ? pathDistance(bestPath) : currentDistance;
-  showAlgorithmFeedback("Chemin actuel", 100, bestDistance, currentDistance, pathPerformanceMetrics(path));
+  const currentScore = pathRealisticScore(path);
+  const bestScore = bestPath ? pathRealisticScore(bestPath) : currentScore;
+  showAlgorithmFeedback("Chemin actuel", 100, bestScore, currentScore, pathPerformanceMetrics(path));
 }
 
 function renderPathMetrics() {
@@ -647,14 +647,14 @@ async function optimizedPathForColor(dmc, reportProgress) {
 
   let bestPath = candidates
     .filter((path) => path.length === cells.length)
-    .sort((a, b) => pathDistance(a) - pathDistance(b))[0] || progressiveIslandPathForColor(dmc);
-  let bestDistance = pathDistance(bestPath);
+    .sort((a, b) => comparePathPerformance(a, b))[0] || progressiveIslandPathForColor(dmc);
+  let bestScore = pathPerformanceMetrics(bestPath).realisticScore;
   const startedAt = performance.now();
 
   await reportProgress({
     phase: "Point de depart",
     path: bestPath,
-    distance: bestDistance,
+    distance: bestScore,
     progress: 5
   });
 
@@ -666,14 +666,14 @@ async function optimizedPathForColor(dmc, reportProgress) {
 
     for (let start = 1; start < bestPath.length - 2; start += 1) {
       for (let end = start + 1; end < bestPath.length - 1; end += 1) {
-        const currentBridge = chebyshevDistance(bestPath[start - 1], bestPath[start])
-          + chebyshevDistance(bestPath[end], bestPath[end + 1]);
-        const candidateBridge = chebyshevDistance(bestPath[start - 1], bestPath[end])
-          + chebyshevDistance(bestPath[start], bestPath[end + 1]);
+        const currentBridge = realisticStepCost(bestPath[start - 1], bestPath[start])
+          + realisticStepCost(bestPath[end], bestPath[end + 1]);
+        const candidateBridge = realisticStepCost(bestPath[start - 1], bestPath[end])
+          + realisticStepCost(bestPath[start], bestPath[end + 1]);
 
         if (candidateBridge < currentBridge) {
           bestPath = reversePathSegment(bestPath, start, end);
-          bestDistance += candidateBridge - currentBridge;
+          bestScore += candidateBridge - currentBridge;
           improved = true;
         }
 
@@ -682,7 +682,7 @@ async function optimizedPathForColor(dmc, reportProgress) {
           await reportProgress({
             phase: `Passe ${pass}`,
             path: bestPath,
-            distance: bestDistance,
+            distance: bestScore,
             progress: Math.min(98, 5 + (elapsed / PATH_OPTIMIZATION_TIME_LIMIT) * 93)
           });
 
@@ -697,7 +697,7 @@ async function optimizedPathForColor(dmc, reportProgress) {
   await reportProgress({
     phase: "Termine",
     path: bestPath,
-    distance: bestDistance,
+    distance: bestScore,
     progress: 100
   });
   return bestPath;
@@ -749,6 +749,25 @@ function pathDistance(path) {
   }, 0);
 }
 
+function pathRealisticScore(path) {
+  return pathPerformanceMetrics(path).realisticScore;
+}
+
+function comparePathPerformance(a, b) {
+  const aMetrics = pathPerformanceMetrics(a);
+  const bMetrics = pathPerformanceMetrics(b);
+  if (aMetrics.realisticScore !== bMetrics.realisticScore) {
+    return aMetrics.realisticScore - bMetrics.realisticScore;
+  }
+
+  return aMetrics.distance - bMetrics.distance;
+}
+
+function realisticStepCost(fromPoint, toPoint) {
+  const jump = chebyshevDistance(fromPoint, toPoint);
+  return jump > REALISTIC_JUMP_THRESHOLD ? REALISTIC_CUT_PENALTY : jump;
+}
+
 function rememberBestPath(dmc, candidatePath) {
   if (!Array.isArray(candidatePath) || candidatePath.length === 0) {
     return {
@@ -759,10 +778,10 @@ function rememberBestPath(dmc, candidatePath) {
     };
   }
 
-  const candidateDistance = pathDistance(candidatePath);
+  const candidateDistance = pathRealisticScore(candidatePath);
   const currentBest = Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : null;
-  const bestDistance = currentBest ? pathDistance(currentBest) : Number.POSITIVE_INFINITY;
-  const improved = candidateDistance < bestDistance;
+  const bestDistance = currentBest ? pathRealisticScore(currentBest) : Number.POSITIVE_INFINITY;
+  const improved = !currentBest || comparePathPerformance(candidatePath, currentBest) < 0;
 
   if (improved) {
     bestPathsByDmc[dmc] = candidatePath.map(copyPoint);
@@ -1626,12 +1645,12 @@ function showAlgorithmFeedback(phase, progress, distance, candidateDistance = nu
     return;
   }
 
-  const bestText = `meilleur ${Math.round(distance)}`;
+  const bestText = `score ${Math.round(distance)}`;
   const candidateText = candidateDistance !== null && candidateDistance !== undefined && Math.round(candidateDistance) !== Math.round(distance)
     ? ` - test ${Math.round(candidateDistance)}`
     : "";
   const realisticText = metrics
-    ? ` - score reel ${formatMetric(metrics.realisticScore)} - coupes ${metrics.cuts}`
+    ? ` - distance ${formatMetric(metrics.distance)} - coupes ${metrics.cuts}`
     : "";
   pathAlgorithmDistance.textContent = `${phase} - ${bestText}${candidateText}${realisticText} - ${pathAlgorithmProgress.value}%`;
 }
