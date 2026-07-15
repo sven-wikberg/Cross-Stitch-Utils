@@ -54,13 +54,18 @@
             </div>
           </dl>
           <div class="path-algorithm-panel">
-            <p class="field-label">Algorithmes de chemin</p>
-            <button id="autoPathButton" class="secondary-button" type="button">Serpent</button>
-            <button id="progressiveIslandPathButton" class="secondary-button" type="button">Ilots progressifs</button>
-            <button id="optimizedPathButton" class="secondary-button" type="button">Recherche 2-opt</button>
-            <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
-              <progress id="pathAlgorithmProgress" value="0" max="100"></progress>
-              <p id="pathAlgorithmDistance">Pret.</p>
+            <div class="algorithm-group">
+              <p class="field-label">Algorithmes simples</p>
+              <button id="autoPathButton" class="secondary-button" type="button">Serpent</button>
+              <button id="progressiveIslandPathButton" class="secondary-button" type="button">Ilots progressifs</button>
+            </div>
+            <div class="algorithm-group">
+              <p class="field-label">Optimisation</p>
+              <button id="optimizedPathButton" class="secondary-button" type="button">Recherche 2-opt</button>
+              <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
+                <progress id="pathAlgorithmProgress" value="0" max="100"></progress>
+                <p id="pathAlgorithmDistance">Pret.</p>
+              </div>
             </div>
           </div>
         </section>
