@@ -84,7 +84,7 @@ let isDrawingPath = false;
 let lastDrawnCellKey = null;
 let lastPointerCell = null;
 let pathAlgorithmRunning = false;
-let pathOptimizationBaseline = null;
+let pathOptimizationBaselinesByDmc = {};
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -369,9 +369,10 @@ function renderPathMetrics() {
   metricPoints.textContent = `${path.length} / ${expected}`;
   metricDistance.textContent = path.length > 1 ? formatMetric(metrics.distance) : "-";
   metricRealisticScore.textContent = path.length > 1 ? formatMetric(metrics.realisticScore) : "-";
-  if (path.length > 1 && pathOptimizationBaseline?.dmc === selectedDmc) {
-    metricInitialScore.textContent = formatMetric(pathOptimizationBaseline.realisticScore);
-    metricScoreGain.textContent = formatSignedMetric(pathOptimizationBaseline.realisticScore - metrics.realisticScore);
+  const baselineScore = pathOptimizationBaselinesByDmc[selectedDmc];
+  if (path.length > 1 && baselineScore !== undefined) {
+    metricInitialScore.textContent = formatMetric(baselineScore);
+    metricScoreGain.textContent = formatSignedMetric(baselineScore - metrics.realisticScore);
   } else {
     metricInitialScore.textContent = "-";
     metricScoreGain.textContent = "-";
@@ -1693,9 +1694,9 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
   }
 
   const baselinePath = currentPath();
-  pathOptimizationBaseline = baselinePath.length > 1
-    ? { dmc: selectedDmc, realisticScore: pathRealisticScore(baselinePath) }
-    : null;
+  if (pathOptimizationBaselinesByDmc[selectedDmc] === undefined && baselinePath.length > 1) {
+    pathOptimizationBaselinesByDmc[selectedDmc] = pathRealisticScore(baselinePath);
+  }
   pathAlgorithmRunning = true;
   showAlgorithmFeedback("Preparation", 0, null);
   renderPathTool();
@@ -1704,11 +1705,8 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
     const dmc = selectedDmc;
     const path = await buildPath(dmc, async ({ phase, path: candidatePath, distance, progress }) => {
       if (candidatePath?.length) {
-        if (!pathOptimizationBaseline && candidatePath.length > 1) {
-          pathOptimizationBaseline = {
-            dmc,
-            realisticScore: pathRealisticScore(candidatePath)
-          };
+        if (pathOptimizationBaselinesByDmc[dmc] === undefined && candidatePath.length > 1) {
+          pathOptimizationBaselinesByDmc[dmc] = pathRealisticScore(candidatePath);
         }
 
         pathsByDmc[dmc] = candidatePath;
