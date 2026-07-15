@@ -246,23 +246,17 @@ function drawSelectedPath(context, cellSize) {
   }
 
   context.save();
-  context.strokeStyle = "#222426";
-  context.lineWidth = Math.max(2, Math.floor(cellSize / 3));
   context.lineJoin = "round";
   context.lineCap = "round";
 
   if (path.length > 1) {
-    context.beginPath();
     path.forEach((point, index) => {
-      const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
-      const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
       if (index === 0) {
-        context.moveTo(centerX, centerY);
-      } else {
-        context.lineTo(centerX, centerY);
+        return;
       }
+
+      drawPathSegment(context, path[index - 1], point, cellSize);
     });
-    context.stroke();
   }
 
   path.forEach((point, index) => {
@@ -279,6 +273,28 @@ function drawSelectedPath(context, cellSize) {
   });
 
   context.restore();
+}
+
+function drawPathSegment(context, fromPoint, toPoint, cellSize) {
+  const from = pointCenter(fromPoint, cellSize);
+  const to = pointCenter(toPoint, cellSize);
+  const isCut = chebyshevDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
+
+  context.strokeStyle = isCut ? "#b44b57" : "#222426";
+  context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
+  context.setLineDash(isCut ? [Math.max(3, cellSize * 0.55), Math.max(3, cellSize * 0.45)] : []);
+  context.beginPath();
+  context.moveTo(from.x, from.y);
+  context.lineTo(to.x, to.y);
+  context.stroke();
+  context.setLineDash([]);
+}
+
+function pointCenter(point, cellSize) {
+  return {
+    x: GRID_RULER_SIZE + (point.x + 0.5) * cellSize,
+    y: GRID_RULER_SIZE + (point.y + 0.5) * cellSize
+  };
 }
 
 function renderPathBuilder() {
