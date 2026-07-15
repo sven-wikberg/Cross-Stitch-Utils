@@ -43,6 +43,7 @@ const progressStepOrder = ["load", "stitch"];
 const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const REALISTIC_JUMP_THRESHOLD = 15;
 const BUILTIN_PROGRESS_DIRECTORY_DB = "cross-stitch-utils-directory";
 const BUILTIN_PROGRESS_DIRECTORY_STORE = "handles";
 const BUILTIN_PROGRESS_DIRECTORY_KEY = "project-root";
@@ -251,19 +252,19 @@ function drawStitchProgress(context, cellSize) {
 
   drawOtherStitchedPoints(context, cellSize);
 
-  if (stitchedPoints.length > 1) {
-    context.beginPath();
-    stitchedPoints.forEach((point, index) => {
-      const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
-      const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
+  if (path.points.length > 1) {
+    path.points.forEach((point, index) => {
       if (index === 0) {
-        context.moveTo(centerX, centerY);
-      } else {
-        context.lineTo(centerX, centerY);
+        return;
       }
+
+      drawPathSegment(context, path.points[index - 1], point, cellSize);
     });
-    context.stroke();
   }
+
+  path.points.forEach((point) => {
+    drawCircle(context, point, cellSize, "#ffffff", "#222426");
+  });
 
   stitchedPoints.forEach((point) => {
     drawCircle(context, point, cellSize, "#222426", "#222426");
@@ -274,6 +275,36 @@ function drawStitchProgress(context, cellSize) {
   }
 
   context.restore();
+}
+
+function drawPathSegment(context, fromPoint, toPoint, cellSize) {
+  const from = pointCenter(fromPoint, cellSize);
+  const to = pointCenter(toPoint, cellSize);
+  const isCut = isCutJump(fromPoint, toPoint);
+
+  context.strokeStyle = isCut ? "#b44b57" : "#222426";
+  context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
+  context.setLineDash(isCut ? [Math.max(3, cellSize * 0.55), Math.max(3, cellSize * 0.45)] : []);
+  context.beginPath();
+  context.moveTo(from.x, from.y);
+  context.lineTo(to.x, to.y);
+  context.stroke();
+  context.setLineDash([]);
+}
+
+function pointCenter(point, cellSize) {
+  return {
+    x: GRID_RULER_SIZE + (point.x + 0.5) * cellSize,
+    y: GRID_RULER_SIZE + (point.y + 0.5) * cellSize
+  };
+}
+
+function isCutJump(fromPoint, toPoint) {
+  return threadDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
+}
+
+function threadDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function drawOtherStitchedPoints(context, cellSize) {
