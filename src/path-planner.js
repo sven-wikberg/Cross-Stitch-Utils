@@ -30,6 +30,7 @@ const pathExportPointsText = document.querySelector("#pathExportPointsText");
 const backToPathsButton = document.querySelector("#backToPathsButton");
 const downloadPathJsonButton = document.querySelector("#downloadPathJsonButton");
 const pathExportPreview = document.querySelector("#pathExportPreview");
+const pathPerformancePanel = document.querySelector("#pathPerformancePanel");
 const metricColor = document.querySelector("#metricColor");
 const metricPoints = document.querySelector("#metricPoints");
 const metricDistance = document.querySelector("#metricDistance");
@@ -146,6 +147,7 @@ function renderPathTool() {
   pathPanels.forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.panel !== activePathStep);
   });
+  pathPerformancePanel.classList.toggle("hidden", activePathStep !== "paths");
 
   renderLoadedPattern();
   renderPatternGrid();
