@@ -764,16 +764,59 @@ function mergeCyclesByGrowingDistance(clusters) {
 
 function closestCycleMerge(clusters, maxDistance) {
   let best = null;
+  const pointsByPosition = new Map();
 
-  for (let firstIndex = 0; firstIndex < clusters.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < clusters.length; secondIndex += 1) {
-      const candidate = bestCycleConnection(clusters[firstIndex].cycle, clusters[secondIndex].cycle);
-      if (candidate.connectionDistance > maxDistance) {
-        continue;
+  clusters.forEach((cluster, clusterIndex) => {
+    cluster.cycle.forEach((point, pointIndex) => {
+      const key = cellKey(point);
+      if (!pointsByPosition.has(key)) {
+        pointsByPosition.set(key, []);
       }
 
-      if (!best || isBetterProgressiveScore(candidate.score, best.score)) {
-        best = { firstIndex, secondIndex, ...candidate };
+      pointsByPosition.get(key).push({ clusterIndex, pointIndex, point });
+    });
+  });
+
+  for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex += 1) {
+    const cluster = clusters[clusterIndex];
+    for (let pointIndex = 0; pointIndex < cluster.cycle.length; pointIndex += 1) {
+      const point = cluster.cycle[pointIndex];
+      for (let offsetY = -maxDistance; offsetY <= maxDistance; offsetY += 1) {
+        for (let offsetX = -maxDistance; offsetX <= maxDistance; offsetX += 1) {
+          const distance = Math.max(Math.abs(offsetX), Math.abs(offsetY));
+          if (distance > maxDistance) {
+            continue;
+          }
+
+          const matches = pointsByPosition.get(`${point.x + offsetX},${point.y + offsetY}`) || [];
+          for (const match of matches) {
+            if (match.clusterIndex === clusterIndex) {
+              continue;
+            }
+
+            const firstIndex = Math.min(clusterIndex, match.clusterIndex);
+            const secondIndex = Math.max(clusterIndex, match.clusterIndex);
+            const firstPointIndex = clusterIndex === firstIndex ? pointIndex : match.pointIndex;
+            const secondPointIndex = clusterIndex === firstIndex ? match.pointIndex : pointIndex;
+            const candidate = bestCycleConnectionAt(
+              clusters[firstIndex].cycle,
+              clusters[secondIndex].cycle,
+              firstPointIndex,
+              secondPointIndex
+            );
+            const merge = { firstIndex, secondIndex, ...candidate };
+
+            if (candidate.score.maxDistance <= maxDistance) {
+              return merge;
+            }
+
+            if (!best || candidate.connectionDistance < best.connectionDistance || (
+              candidate.connectionDistance === best.connectionDistance && isBetterProgressiveScore(candidate.score, best.score)
+            )) {
+              best = merge;
+            }
+          }
+        }
       }
     }
   }
@@ -781,40 +824,34 @@ function closestCycleMerge(clusters, maxDistance) {
   return best;
 }
 
-function bestCycleConnection(firstCycle, secondCycle) {
+function bestCycleConnectionAt(firstCycle, secondCycle, firstCycleIndex, secondCycleIndex) {
   let best = null;
 
-  for (let firstIndex = 0; firstIndex < firstCycle.length; firstIndex += 1) {
-    for (let secondIndex = 0; secondIndex < secondCycle.length; secondIndex += 1) {
-      [-1, 1].forEach((firstDirection) => {
-        [-1, 1].forEach((secondDirection) => {
-          const firstStart = firstCycle[firstIndex];
-          const firstEnd = cyclePreviousPoint(firstCycle, firstIndex, firstDirection);
-          const secondStart = secondCycle[secondIndex];
-          const secondEnd = cyclePreviousPoint(secondCycle, secondIndex, secondDirection);
-          const firstBridge = chebyshevDistance(firstEnd, secondStart);
-          const secondBridge = chebyshevDistance(secondEnd, firstStart);
-          const candidate = {
-            firstIndex,
-            secondIndex,
-            firstDirection,
-            secondDirection,
-            connectionDistance: Math.min(firstBridge, secondBridge),
-            score: {
-              maxDistance: Math.max(firstBridge, secondBridge),
-              totalDistance: firstBridge + secondBridge
-            }
-          };
+  [-1, 1].forEach((firstDirection) => {
+    [-1, 1].forEach((secondDirection) => {
+      const firstStart = firstCycle[firstCycleIndex];
+      const firstEnd = cyclePreviousPoint(firstCycle, firstCycleIndex, firstDirection);
+      const secondStart = secondCycle[secondCycleIndex];
+      const secondEnd = cyclePreviousPoint(secondCycle, secondCycleIndex, secondDirection);
+      const firstBridge = chebyshevDistance(firstEnd, secondStart);
+      const secondBridge = chebyshevDistance(secondEnd, firstStart);
+      const candidate = {
+        firstCycleIndex,
+        secondCycleIndex,
+        firstDirection,
+        secondDirection,
+        connectionDistance: Math.min(firstBridge, secondBridge),
+        score: {
+          maxDistance: Math.max(firstBridge, secondBridge),
+          totalDistance: firstBridge + secondBridge
+        }
+      };
 
-          if (!best || candidate.connectionDistance < best.connectionDistance || (
-            candidate.connectionDistance === best.connectionDistance && isBetterProgressiveScore(candidate.score, best.score)
-          )) {
-            best = candidate;
-          }
-        });
-      });
-    }
-  }
+      if (!best || isBetterProgressiveScore(candidate.score, best.score)) {
+        best = candidate;
+      }
+    });
+  });
 
   return best;
 }
@@ -825,8 +862,8 @@ function cyclePreviousPoint(cycle, startIndex, direction) {
 }
 
 function mergeCycles(firstCycle, secondCycle, merge) {
-  return rotateCycle(firstCycle, merge.firstIndex, merge.firstDirection)
-    .concat(rotateCycle(secondCycle, merge.secondIndex, merge.secondDirection));
+  return rotateCycle(firstCycle, merge.firstCycleIndex, merge.firstDirection)
+    .concat(rotateCycle(secondCycle, merge.secondCycleIndex, merge.secondDirection));
 }
 
 function rotateCycle(cycle, startIndex, direction = 1) {
