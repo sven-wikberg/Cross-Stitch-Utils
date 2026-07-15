@@ -306,6 +306,13 @@ function renderPathBuilder() {
 function renderPathDistanceFeedback() {
   const path = currentPath();
   if (path.length === 0) {
+    const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
+    if (bestPath?.length) {
+      showAlgorithmFeedback("Meilleur en memoire", 100, pathDistance(bestPath));
+      return;
+    }
+
+    showAlgorithmFeedback(`DMC ${selectedDmc}: aucun chemin teste`, 0, null);
     return;
   }
 
