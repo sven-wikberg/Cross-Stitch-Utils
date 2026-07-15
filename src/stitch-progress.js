@@ -262,8 +262,10 @@ function drawStitchProgress(context, cellSize) {
     });
   }
 
-  path.points.forEach((point) => {
-    drawCircle(context, point, cellSize, "#ffffff", "#222426");
+  path.points.forEach((point, index) => {
+    if (index >= stitchedCount) {
+      drawCircle(context, point, cellSize, "#ffffff", "#222426", 0.32);
+    }
   });
 
   stitchedPoints.forEach((point) => {
@@ -320,10 +322,12 @@ function drawOtherStitchedPoints(context, cellSize) {
   });
 }
 
-function drawCircle(context, point, cellSize, fill, stroke) {
+function drawCircle(context, point, cellSize, fill, stroke, alpha = 1) {
   const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
   const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
   const radius = Math.max(3, Math.floor(cellSize * 0.38));
+  context.save();
+  context.globalAlpha = alpha;
   context.fillStyle = fill;
   context.strokeStyle = stroke;
   context.lineWidth = 2;
@@ -331,6 +335,7 @@ function drawCircle(context, point, cellSize, fill, stroke) {
   context.arc(centerX, centerY, radius, 0, Math.PI * 2);
   context.fill();
   context.stroke();
+  context.restore();
 }
 
 function renderStitchColorLegend() {
