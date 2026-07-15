@@ -65,7 +65,7 @@ const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const REALISTIC_JUMP_THRESHOLD = 15;
-const REALISTIC_CUT_PENALTY = 18;
+const REALISTIC_CUT_PENALTY = REALISTIC_JUMP_THRESHOLD * 3;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
