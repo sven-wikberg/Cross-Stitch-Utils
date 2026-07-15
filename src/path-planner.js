@@ -1704,6 +1704,13 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
     const dmc = selectedDmc;
     const path = await buildPath(dmc, async ({ phase, path: candidatePath, distance, progress }) => {
       if (candidatePath?.length) {
+        if (!pathOptimizationBaseline && candidatePath.length > 1) {
+          pathOptimizationBaseline = {
+            dmc,
+            realisticScore: pathRealisticScore(candidatePath)
+          };
+        }
+
         pathsByDmc[dmc] = candidatePath;
         pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
         pathProgress.export = false;
