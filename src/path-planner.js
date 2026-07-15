@@ -585,9 +585,7 @@ function internalIslandCycle(island) {
   }
 
   const cellsByKey = new Map(island.map((cell) => [cellKey(cell), cell]));
-  const starts = island
-    .slice()
-    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const starts = progressiveStartPoints(island);
   let bestCycle = null;
   let bestScore = null;
 
@@ -615,6 +613,33 @@ function nearestNeighborPath(start, cellsByKey) {
   }
 
   return path;
+}
+
+function progressiveStartPoints(island) {
+  const sorted = island
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const byCorners = [
+    sorted[0],
+    sorted.reduce((best, cell) => (cell.x < best.x || (cell.x === best.x && cell.y < best.y) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.x > best.x || (cell.x === best.x && cell.y < best.y) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.y > best.y || (cell.y === best.y && cell.x < best.x) ? cell : best), sorted[0]),
+    sorted.reduce((best, cell) => (cell.y > best.y || (cell.y === best.y && cell.x > best.x) ? cell : best), sorted[0])
+  ];
+
+  return uniquePoints(byCorners.concat(sorted.slice(0, 8)));
+}
+
+function uniquePoints(points) {
+  const seen = new Set();
+  return points.filter((point) => {
+    if (!point || seen.has(cellKey(point))) {
+      return false;
+    }
+
+    seen.add(cellKey(point));
+    return true;
+  });
 }
 
 function nearestCell(point, cells) {
@@ -715,7 +740,11 @@ function mergeCyclesByGrowingDistance(clusters) {
   }
 
   let distance = 2;
-  while (remaining.length > 1) {
+  const maximumDistance = loadedPattern
+    ? Math.max(loadedPattern.grid.width, loadedPattern.grid.height)
+    : Number.MAX_SAFE_INTEGER;
+
+  while (remaining.length > 1 && distance <= maximumDistance) {
     const merge = closestCycleMerge(remaining, distance);
     if (!merge) {
       distance += 1;
@@ -759,10 +788,12 @@ function bestCycleConnection(firstCycle, secondCycle) {
     for (let secondIndex = 0; secondIndex < secondCycle.length; secondIndex += 1) {
       [-1, 1].forEach((firstDirection) => {
         [-1, 1].forEach((secondDirection) => {
-          const firstPath = rotateCycle(firstCycle, firstIndex, firstDirection);
-          const secondPath = rotateCycle(secondCycle, secondIndex, secondDirection);
-          const firstBridge = chebyshevDistance(firstPath[firstPath.length - 1], secondPath[0]);
-          const secondBridge = chebyshevDistance(secondPath[secondPath.length - 1], firstPath[0]);
+          const firstStart = firstCycle[firstIndex];
+          const firstEnd = cyclePreviousPoint(firstCycle, firstIndex, firstDirection);
+          const secondStart = secondCycle[secondIndex];
+          const secondEnd = cyclePreviousPoint(secondCycle, secondIndex, secondDirection);
+          const firstBridge = chebyshevDistance(firstEnd, secondStart);
+          const secondBridge = chebyshevDistance(secondEnd, firstStart);
           const candidate = {
             firstIndex,
             secondIndex,
@@ -786,6 +817,11 @@ function bestCycleConnection(firstCycle, secondCycle) {
   }
 
   return best;
+}
+
+function cyclePreviousPoint(cycle, startIndex, direction) {
+  const index = (startIndex - direction + cycle.length) % cycle.length;
+  return cycle[index];
 }
 
 function mergeCycles(firstCycle, secondCycle, merge) {
