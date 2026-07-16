@@ -1,7 +1,7 @@
 window.BUILTIN_STITCH_PROGRESS = {
   "kind": "cross-stitch-progress-save",
   "schemaVersion": 1,
-  "savedAt": "2026-07-15T22:29:27.660Z",
+  "savedAt": "2026-07-16T20:35:03.671Z",
   "pathsFile": {
     "schemaVersion": 1,
     "kind": "cross-stitch-paths",
@@ -94343,16 +94343,16 @@ window.BUILTIN_STITCH_PROGRESS = {
     "310": 0,
     "368": 0,
     "500": 0,
-    "561": 0,
-    "562": 0,
-    "720": 0,
+    "561": 474,
+    "562": 405,
+    "720": 134,
     "783": 322,
     "814": 0,
-    "816": 192,
+    "816": 283,
     "817": 407,
     "3705": 0,
     "03": 11,
     "04": 0
   },
-  "selectedDmc": "816"
+  "selectedDmc": "500"
 };
