@@ -24,6 +24,52 @@
             <span>Broder</span>
           </button>
         </nav>
+
+        <section id="globalProgressPanel" class="sidebar-panel hidden" aria-labelledby="global-progress-title">
+          <h2 id="global-progress-title">Progression globale</h2>
+          <progress id="globalProgressBar" class="sidebar-progress-bar" value="0" max="100"></progress>
+          <dl class="metric-list">
+            <div>
+              <dt>Points</dt>
+              <dd id="globalProgressPoints">0 / 0</dd>
+            </div>
+            <div>
+              <dt>Avancement</dt>
+              <dd id="globalProgressPercent">0%</dd>
+            </div>
+            <div>
+              <dt>Restant</dt>
+              <dd id="globalProgressRemaining">0</dd>
+            </div>
+            <div>
+              <dt>Couleurs terminees</dt>
+              <dd id="globalProgressColors">0 / 0</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="selectedProgressPanel" class="sidebar-panel hidden" aria-labelledby="selected-progress-title">
+          <h2 id="selected-progress-title">Couleur selectionnee</h2>
+          <progress id="selectedProgressBar" class="sidebar-progress-bar" value="0" max="100"></progress>
+          <dl class="metric-list">
+            <div>
+              <dt>Couleur</dt>
+              <dd id="selectedProgressColor">-</dd>
+            </div>
+            <div>
+              <dt>Points</dt>
+              <dd id="selectedProgressPoints">0 / 0</dd>
+            </div>
+            <div>
+              <dt>Avancement</dt>
+              <dd id="selectedProgressPercent">0%</dd>
+            </div>
+            <div>
+              <dt>Restant</dt>
+              <dd id="selectedProgressRemaining">0</dd>
+            </div>
+          </dl>
+        </section>
       </aside>
 
       <section class="workspace" aria-labelledby="progress-step-title">

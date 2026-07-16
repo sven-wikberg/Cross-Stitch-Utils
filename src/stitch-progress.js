@@ -23,6 +23,18 @@ const downloadProgressSaveButton = document.querySelector("#downloadProgressSave
 const writeBuiltinProgressButton = document.querySelector("#writeBuiltinProgressButton");
 const writeBuiltinProgressStatus = document.querySelector("#writeBuiltinProgressStatus");
 const completedColorList = document.querySelector("#completedColorList");
+const globalProgressPanel = document.querySelector("#globalProgressPanel");
+const globalProgressBar = document.querySelector("#globalProgressBar");
+const globalProgressPoints = document.querySelector("#globalProgressPoints");
+const globalProgressPercent = document.querySelector("#globalProgressPercent");
+const globalProgressRemaining = document.querySelector("#globalProgressRemaining");
+const globalProgressColors = document.querySelector("#globalProgressColors");
+const selectedProgressPanel = document.querySelector("#selectedProgressPanel");
+const selectedProgressBar = document.querySelector("#selectedProgressBar");
+const selectedProgressColor = document.querySelector("#selectedProgressColor");
+const selectedProgressPoints = document.querySelector("#selectedProgressPoints");
+const selectedProgressPercent = document.querySelector("#selectedProgressPercent");
+const selectedProgressRemaining = document.querySelector("#selectedProgressRemaining");
 const progressStepEyebrow = document.querySelector("#progressStepEyebrow");
 const progressStepTitle = document.querySelector("#progress-step-title");
 const progressStepButtons = document.querySelectorAll("[data-step]");
@@ -129,9 +141,14 @@ function renderProgressTool() {
     panel.classList.toggle("hidden", panel.dataset.panel !== activeProgressStep);
   });
 
+  const showProgressPanels = activeProgressStep === "stitch" && Boolean(loadedPaths);
+  globalProgressPanel.classList.toggle("hidden", !showProgressPanels);
+  selectedProgressPanel.classList.toggle("hidden", !showProgressPanels);
+
   renderLoadedPaths();
   renderBuiltinProgressControls();
   renderStitchView();
+  renderProgressMetrics();
 }
 
 function renderLoadedPaths() {
@@ -150,6 +167,60 @@ function renderLoadedPaths() {
   progressProjectText.textContent = loadedPaths.project.name;
   progressDimensionsText.textContent = `${loadedPaths.pattern.grid.width} x ${loadedPaths.pattern.grid.height}`;
   progressPointsText.textContent = String(pointCount);
+}
+
+function renderProgressMetrics() {
+  if (!loadedPaths) {
+    globalProgressBar.value = 0;
+    globalProgressPoints.textContent = "0 / 0";
+    globalProgressPercent.textContent = "0%";
+    globalProgressRemaining.textContent = "0";
+    globalProgressColors.textContent = "0 / 0";
+    selectedProgressBar.value = 0;
+    selectedProgressColor.textContent = "-";
+    selectedProgressPoints.textContent = "0 / 0";
+    selectedProgressPercent.textContent = "0%";
+    selectedProgressRemaining.textContent = "0";
+    return;
+  }
+
+  const totalPoints = loadedPaths.paths.reduce((sum, path) => sum + path.points.length, 0);
+  const stitchedPoints = loadedPaths.paths.reduce((sum, path) => sum + stitchedCountForDmc(path.dmc), 0);
+  const completedColors = loadedPaths.paths.filter((path) => stitchedCountForDmc(path.dmc) === path.points.length).length;
+  const globalPercent = progressPercent(stitchedPoints, totalPoints);
+
+  globalProgressBar.value = globalPercent;
+  globalProgressPoints.textContent = `${stitchedPoints} / ${totalPoints}`;
+  globalProgressPercent.textContent = formatPercent(globalPercent);
+  globalProgressRemaining.textContent = String(Math.max(0, totalPoints - stitchedPoints));
+  globalProgressColors.textContent = `${completedColors} / ${loadedPaths.paths.length}`;
+
+  const selectedPath = pathForDmc(selectedDmc);
+  if (!selectedPath) {
+    selectedProgressBar.value = 0;
+    selectedProgressColor.textContent = "-";
+    selectedProgressPoints.textContent = "0 / 0";
+    selectedProgressPercent.textContent = "0%";
+    selectedProgressRemaining.textContent = "0";
+    return;
+  }
+
+  const selectedStitched = stitchedCountForDmc(selectedDmc);
+  const selectedPercent = progressPercent(selectedStitched, selectedPath.points.length);
+  selectedProgressBar.value = selectedPercent;
+  selectedProgressColor.textContent = `DMC ${selectedDmc}`;
+  selectedProgressPoints.textContent = `${selectedStitched} / ${selectedPath.points.length}`;
+  selectedProgressPercent.textContent = formatPercent(selectedPercent);
+  selectedProgressRemaining.textContent = String(Math.max(0, selectedPath.points.length - selectedStitched));
+}
+
+function progressPercent(done, total) {
+  return total > 0 ? (done / total) * 100 : 0;
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
 }
 
 function renderBuiltinProgressControls() {
