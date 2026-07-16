@@ -279,7 +279,7 @@ function renderStitchView() {
     const color = colorByDmc.get(cell.dmc);
     if (cell.empty) {
       context.fillStyle = "#ffffff";
-    } else if (cell.dmc === selectedDmc || stitchedCellKeys.has(cellKey(cell))) {
+    } else if (stitchedCellKeys.has(cellKey(cell))) {
       context.fillStyle = color?.hex || "#d9dddd";
     } else {
       context.fillStyle = mutedHex(color?.hex || "#d9dddd");
