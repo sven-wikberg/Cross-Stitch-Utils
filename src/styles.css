@@ -641,8 +641,18 @@ select:focus {
   background: #fbfcfb;
 }
 
-.review-correction-panel .primary-button {
-  width: 100%;
+.review-color-row {
+  cursor: pointer;
+}
+
+.review-color-row:hover,
+.review-color-row.selected {
+  outline: 3px solid rgba(36, 120, 109, 0.16);
+  outline-offset: -3px;
+}
+
+.review-color-row.selected {
+  background: rgba(36, 120, 109, 0.1);
 }
 
 .path-color-legend {

@@ -107,8 +107,7 @@ const reviewStatus = document.querySelector("#reviewStatus");
 const reviewPatternCanvas = document.querySelector("#reviewPatternCanvas");
 const reviewColorsTableBody = document.querySelector("#reviewColorsTableBody");
 const reviewSelectedCellText = document.querySelector("#reviewSelectedCellText");
-const reviewCellColorSelect = document.querySelector("#reviewCellColorSelect");
-const applyReviewCellColorButton = document.querySelector("#applyReviewCellColorButton");
+const reviewCorrectionHint = document.querySelector("#reviewCorrectionHint");
 const backToAssignmentsFromReviewButton = document.querySelector("#backToAssignmentsFromReviewButton");
 const goToExportButton = document.querySelector("#goToExportButton");
 const exportStatus = document.querySelector("#exportStatus");
@@ -823,6 +822,8 @@ function renderReviewColorCounts(finalPattern, ready) {
 
   finalPattern.colors.forEach((color) => {
     const row = document.createElement("tr");
+    row.className = "review-color-row";
+    row.dataset.reviewDmc = color.dmc;
     row.innerHTML = `
       <td><span class="color-swatch"></span></td>
       <td></td>
@@ -832,10 +833,13 @@ function renderReviewColorCounts(finalPattern, ready) {
     row.querySelector(".color-swatch").style.background = color.hex || "#ffffff";
     row.children[1].textContent = `DMC ${color.dmc}`;
     row.children[2].textContent = String(countsByDmc.get(color.dmc) || 0);
+    row.classList.toggle("selected", selectedReviewCellColorValue() === color.dmc);
     reviewColorsTableBody.appendChild(row);
   });
 
   const emptyRow = document.createElement("tr");
+  emptyRow.className = "review-color-row";
+  emptyRow.dataset.reviewEmpty = "true";
   emptyRow.innerHTML = `
     <td><span class="color-swatch"></span></td>
     <td>Vide</td>
@@ -843,42 +847,38 @@ function renderReviewColorCounts(finalPattern, ready) {
   `;
   emptyRow.querySelector(".color-swatch").style.background = "#ffffff";
   emptyRow.children[2].textContent = String(emptyCount);
+  emptyRow.classList.toggle("selected", selectedReviewCellColorValue() === "__empty__");
   reviewColorsTableBody.appendChild(emptyRow);
 }
 
 function renderReviewSelection(finalPattern, ready) {
-  reviewCellColorSelect.innerHTML = "";
-
-  const emptyOption = document.createElement("option");
-  emptyOption.value = "__empty__";
-  emptyOption.textContent = "Vide";
-  reviewCellColorSelect.appendChild(emptyOption);
-
-  finalPattern.colors.forEach((color) => {
-    const option = document.createElement("option");
-    option.value = color.dmc;
-    option.textContent = `DMC ${color.dmc}`;
-    reviewCellColorSelect.appendChild(option);
-  });
-
   const selectedCell = ready && selectedReviewCellKey
     ? pattern.grid.cells.find((cell) => reviewCellKey(cell) === selectedReviewCellKey)
     : null;
 
   if (!ready || !selectedCell) {
     reviewSelectedCellText.textContent = "Aucune";
-    reviewCellColorSelect.value = "__empty__";
-    reviewCellColorSelect.disabled = true;
-    applyReviewCellColorButton.disabled = true;
+    reviewCorrectionHint.textContent = "Selectionne une case, puis clique une couleur du tableau.";
     return;
   }
 
   reviewSelectedCellText.textContent = selectedCell.empty
     ? `${selectedCell.x}, ${selectedCell.y} - Vide`
     : `${selectedCell.x}, ${selectedCell.y} - DMC ${selectedCell.dmc}`;
-  reviewCellColorSelect.value = selectedCell.empty ? "__empty__" : selectedCell.dmc;
-  reviewCellColorSelect.disabled = false;
-  applyReviewCellColorButton.disabled = false;
+  reviewCorrectionHint.textContent = "Clique une couleur du tableau pour modifier la case selectionnee.";
+}
+
+function selectedReviewCellColorValue() {
+  if (!selectedReviewCellKey) {
+    return null;
+  }
+
+  const selectedCell = pattern.grid.cells.find((cell) => reviewCellKey(cell) === selectedReviewCellKey);
+  if (!selectedCell) {
+    return null;
+  }
+
+  return selectedCell.empty ? "__empty__" : selectedCell.dmc;
 }
 
 function reviewCellKey(cell) {
@@ -1752,8 +1752,9 @@ reviewPatternCanvas.addEventListener("click", (event) => {
   render();
 });
 
-applyReviewCellColorButton.addEventListener("click", () => {
-  if (!selectedReviewCellKey || reviewCellColorSelect.disabled) {
+reviewColorsTableBody.addEventListener("click", (event) => {
+  const row = event.target.closest("[data-review-dmc], [data-review-empty]");
+  if (!row || !selectedReviewCellKey) {
     return;
   }
 
@@ -1762,12 +1763,12 @@ applyReviewCellColorButton.addEventListener("click", () => {
     return;
   }
 
-  if (reviewCellColorSelect.value === "__empty__") {
+  if (row.dataset.reviewEmpty === "true") {
     cell.dmc = null;
     cell.symbol = null;
     cell.empty = true;
   } else {
-    cell.dmc = reviewCellColorSelect.value;
+    cell.dmc = row.dataset.reviewDmc;
     cell.symbol = null;
     cell.empty = false;
   }
