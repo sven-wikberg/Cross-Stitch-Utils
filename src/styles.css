@@ -622,6 +622,14 @@ select:focus {
   user-select: none;
 }
 
+.pattern-canvas-wrap .review-pattern-canvas {
+  cursor: default;
+}
+
+.review-viewer .color-list-wrap {
+  max-height: calc(100vh - 150px);
+}
+
 .path-color-legend {
   display: grid;
   gap: 8px;

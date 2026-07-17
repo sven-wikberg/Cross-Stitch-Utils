@@ -47,8 +47,12 @@
             <span class="step-number">8</span>
             <span>Associations</span>
           </button>
-          <button class="step-item locked" type="button" data-step="export" disabled>
+          <button class="step-item locked" type="button" data-step="review" disabled>
             <span class="step-number">9</span>
+            <span>Verification</span>
+          </button>
+          <button class="step-item locked" type="button" data-step="export" disabled>
+            <span class="step-number">10</span>
             <span>Export</span>
           </button>
         </nav>
@@ -422,6 +426,40 @@
           <p id="assignmentsError" class="form-error" hidden>Chaque groupe doit avoir une couleur DMC, ou etre marque comme vide.</p>
         </section>
 
+        <section id="reviewPanel" class="tool-panel hidden" data-panel="review" aria-labelledby="review-title">
+          <div class="panel-heading">
+            <div>
+              <h3 id="review-title">Verification du pattern</h3>
+              <p>Controle la grille finale et le nombre de points par couleur avant l'export.</p>
+            </div>
+          </div>
+
+          <div id="reviewStatus" class="coverage-status invalid">Applique les associations avant la verification.</div>
+
+          <div class="pattern-viewer review-viewer">
+            <div class="pattern-canvas-wrap">
+              <canvas id="reviewPatternCanvas" class="review-pattern-canvas" width="1" height="1" aria-label="Grille finale du pattern"></canvas>
+            </div>
+            <div class="color-list-wrap">
+              <table class="color-table">
+                <thead>
+                  <tr>
+                    <th>Couleur</th>
+                    <th>Code</th>
+                    <th>Points</th>
+                  </tr>
+                </thead>
+                <tbody id="reviewColorsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="actions split-actions">
+            <button id="backToAssignmentsFromReviewButton" class="secondary-button" type="button">Retour</button>
+            <button id="goToExportButton" class="primary-button" type="button">Continuer vers l'export</button>
+          </div>
+        </section>
+
         <section id="exportPanel" class="tool-panel hidden" data-panel="export" aria-labelledby="export-title">
           <div class="panel-heading">
             <div>
@@ -448,7 +486,7 @@
           </div>
 
           <div class="actions split-actions">
-            <button id="backToAssignmentsButton" class="secondary-button" type="button">Retour</button>
+            <button id="backToReviewButton" class="secondary-button" type="button">Retour</button>
             <button id="downloadFinalJsonButton" class="primary-button" type="button">Telecharger le JSON final</button>
           </div>
           <pre id="finalJsonPreview"></pre>

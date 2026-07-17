@@ -103,11 +103,16 @@ const previousAssignmentButton = document.querySelector("#previousAssignmentButt
 const nextAssignmentButton = document.querySelector("#nextAssignmentButton");
 const applyAssignmentsButton = document.querySelector("#applyAssignmentsButton");
 const assignmentsError = document.querySelector("#assignmentsError");
+const reviewStatus = document.querySelector("#reviewStatus");
+const reviewPatternCanvas = document.querySelector("#reviewPatternCanvas");
+const reviewColorsTableBody = document.querySelector("#reviewColorsTableBody");
+const backToAssignmentsFromReviewButton = document.querySelector("#backToAssignmentsFromReviewButton");
+const goToExportButton = document.querySelector("#goToExportButton");
 const exportStatus = document.querySelector("#exportStatus");
 const exportDimensionsText = document.querySelector("#exportDimensionsText");
 const exportColorsText = document.querySelector("#exportColorsText");
 const exportCellsText = document.querySelector("#exportCellsText");
-const backToAssignmentsButton = document.querySelector("#backToAssignmentsButton");
+const backToReviewButton = document.querySelector("#backToReviewButton");
 const downloadFinalJsonButton = document.querySelector("#downloadFinalJsonButton");
 const finalJsonPreview = document.querySelector("#finalJsonPreview");
 const stepButtons = document.querySelectorAll("[data-step]");
@@ -160,13 +165,17 @@ const stepLabels = {
     eyebrow: "Etape 8",
     title: "Associations"
   },
-  export: {
+  review: {
     eyebrow: "Etape 9",
+    title: "Verification"
+  },
+  export: {
+    eyebrow: "Etape 10",
     title: "Export"
   }
 };
 
-const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups", "assignments", "export"];
+const stepOrder = ["project", "colors", "dimensions", "parts", "grid", "analysis", "groups", "assignments", "review", "export"];
 
 function loadPattern() {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -334,6 +343,7 @@ function render() {
   renderAnalysis();
   renderGroups();
   renderAssignments();
+  renderReview();
   renderExport();
   renderDmcOptions();
 }
@@ -392,6 +402,10 @@ function isStepComplete(step) {
   }
 
   if (step === "assignments") {
+    return progress.assignments && areAssignmentsApplied(pattern);
+  }
+
+  if (step === "review") {
     return progress.assignments && areAssignmentsApplied(pattern);
   }
 
@@ -675,6 +689,133 @@ function renderAssignmentsStatus() {
   } else {
     assignmentsStatus.textContent = `Associations a terminer: ${readyGroups.length} / ${groups.length} groupes prets.`;
   }
+}
+
+function renderReview() {
+  const ready = progress.assignments && areAssignmentsApplied(pattern);
+  const finalPattern = buildFinalPattern();
+
+  reviewStatus.className = `coverage-status ${ready ? "valid" : "invalid"}`;
+  reviewStatus.textContent = ready
+    ? "Verification prete: controle la grille et les points par couleur."
+    : "Applique les associations a la grille avant la verification.";
+  goToExportButton.disabled = !ready;
+  renderReviewGrid(finalPattern, ready);
+  renderReviewColorCounts(finalPattern, ready);
+}
+
+function renderReviewGrid(finalPattern, ready) {
+  const context = reviewPatternCanvas.getContext("2d");
+
+  if (!ready || finalPattern.grid.width <= 0 || finalPattern.grid.height <= 0) {
+    reviewPatternCanvas.width = 1;
+    reviewPatternCanvas.height = 1;
+    context.clearRect(0, 0, 1, 1);
+    return;
+  }
+
+  const cellSize = reviewGridCellSize(finalPattern.grid.width, finalPattern.grid.height);
+  const colorByDmc = new Map(finalPattern.colors.map((color) => [color.dmc, color]));
+  reviewPatternCanvas.width = finalPattern.grid.width * cellSize;
+  reviewPatternCanvas.height = finalPattern.grid.height * cellSize;
+  context.clearRect(0, 0, reviewPatternCanvas.width, reviewPatternCanvas.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, reviewPatternCanvas.width, reviewPatternCanvas.height);
+
+  finalPattern.grid.cells.forEach((cell) => {
+    if (cell.empty) {
+      return;
+    }
+
+    context.fillStyle = colorByDmc.get(cell.dmc)?.hex || "#d9dddd";
+    context.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
+  });
+
+  drawReviewGridLines(context, finalPattern.grid.width, finalPattern.grid.height, cellSize);
+}
+
+function reviewGridCellSize(width, height) {
+  const largestSide = Math.max(width, height);
+  if (largestSide <= 80) {
+    return 10;
+  }
+
+  if (largestSide <= 160) {
+    return 8;
+  }
+
+  return 5;
+}
+
+function drawReviewGridLines(context, width, height, cellSize) {
+  if (cellSize < 5) {
+    return;
+  }
+
+  context.save();
+
+  for (let x = 0; x <= width; x += 1) {
+    const isMajorLine = x % 10 === 0;
+    context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.35)" : "rgba(34, 36, 38, 0.13)";
+    context.lineWidth = isMajorLine ? 1.5 : 1;
+    context.beginPath();
+    context.moveTo(x * cellSize + 0.5, 0);
+    context.lineTo(x * cellSize + 0.5, height * cellSize);
+    context.stroke();
+  }
+
+  for (let y = 0; y <= height; y += 1) {
+    const isMajorLine = y % 10 === 0;
+    context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.35)" : "rgba(34, 36, 38, 0.13)";
+    context.lineWidth = isMajorLine ? 1.5 : 1;
+    context.beginPath();
+    context.moveTo(0, y * cellSize + 0.5);
+    context.lineTo(width * cellSize, y * cellSize + 0.5);
+    context.stroke();
+  }
+
+  context.restore();
+}
+
+function renderReviewColorCounts(finalPattern, ready) {
+  reviewColorsTableBody.innerHTML = "";
+
+  if (!ready) {
+    return;
+  }
+
+  const countsByDmc = finalPattern.grid.cells.reduce((counts, cell) => {
+    if (!cell.empty && cell.dmc) {
+      counts.set(cell.dmc, (counts.get(cell.dmc) || 0) + 1);
+    }
+
+    return counts;
+  }, new Map());
+  const emptyCount = finalPattern.grid.cells.filter((cell) => cell.empty).length;
+
+  finalPattern.colors.forEach((color) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><span class="color-swatch"></span></td>
+      <td></td>
+      <td></td>
+    `;
+
+    row.querySelector(".color-swatch").style.background = color.hex || "#ffffff";
+    row.children[1].textContent = `DMC ${color.dmc}`;
+    row.children[2].textContent = String(countsByDmc.get(color.dmc) || 0);
+    reviewColorsTableBody.appendChild(row);
+  });
+
+  const emptyRow = document.createElement("tr");
+  emptyRow.innerHTML = `
+    <td><span class="color-swatch"></span></td>
+    <td>Vide</td>
+    <td></td>
+  `;
+  emptyRow.querySelector(".color-swatch").style.background = "#ffffff";
+  emptyRow.children[2].textContent = String(emptyCount);
+  reviewColorsTableBody.appendChild(emptyRow);
 }
 
 function renderExport() {
@@ -1515,12 +1656,20 @@ applyAssignmentsButton.addEventListener("click", () => {
   assignmentsError.hidden = true;
   savePattern();
   saveProgress();
-  goToStep("export");
+  goToStep("review");
   showSavedStatus();
 });
 
-backToAssignmentsButton.addEventListener("click", () => {
+backToAssignmentsFromReviewButton.addEventListener("click", () => {
   goToStep("assignments");
+});
+
+goToExportButton.addEventListener("click", () => {
+  goToStep("export");
+});
+
+backToReviewButton.addEventListener("click", () => {
+  goToStep("review");
 });
 
 downloadFinalJsonButton.addEventListener("click", () => {
