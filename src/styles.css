@@ -623,11 +623,26 @@ select:focus {
 }
 
 .pattern-canvas-wrap .review-pattern-canvas {
-  cursor: default;
+  cursor: pointer;
 }
 
 .review-viewer .color-list-wrap {
+  display: grid;
+  gap: 12px;
   max-height: calc(100vh - 150px);
+}
+
+.review-correction-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.review-correction-panel .primary-button {
+  width: 100%;
 }
 
 .path-color-legend {

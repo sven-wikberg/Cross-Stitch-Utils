@@ -106,6 +106,9 @@ const assignmentsError = document.querySelector("#assignmentsError");
 const reviewStatus = document.querySelector("#reviewStatus");
 const reviewPatternCanvas = document.querySelector("#reviewPatternCanvas");
 const reviewColorsTableBody = document.querySelector("#reviewColorsTableBody");
+const reviewSelectedCellText = document.querySelector("#reviewSelectedCellText");
+const reviewCellColorSelect = document.querySelector("#reviewCellColorSelect");
+const applyReviewCellColorButton = document.querySelector("#applyReviewCellColorButton");
 const backToAssignmentsFromReviewButton = document.querySelector("#backToAssignmentsFromReviewButton");
 const goToExportButton = document.querySelector("#goToExportButton");
 const exportStatus = document.querySelector("#exportStatus");
@@ -130,6 +133,7 @@ let progress = loadProgress(pattern);
 let activeStep = "project";
 let pastedPartImage = null;
 let assignmentGroupIndex = 0;
+let selectedReviewCellKey = null;
 migrateInlinePartImagesToStore();
 
 const stepLabels = {
@@ -701,6 +705,7 @@ function renderReview() {
     : "Applique les associations a la grille avant la verification.";
   goToExportButton.disabled = !ready;
   renderReviewGrid(finalPattern, ready);
+  renderReviewSelection(finalPattern, ready);
   renderReviewColorCounts(finalPattern, ready);
 }
 
@@ -732,6 +737,29 @@ function renderReviewGrid(finalPattern, ready) {
   });
 
   drawReviewGridLines(context, finalPattern.grid.width, finalPattern.grid.height, cellSize);
+  drawReviewSelection(context, cellSize, ready);
+}
+
+function drawReviewSelection(context, cellSize, ready) {
+  if (!ready || !selectedReviewCellKey) {
+    return;
+  }
+
+  const selectedCell = pattern.grid.cells.find((cell) => reviewCellKey(cell) === selectedReviewCellKey);
+  if (!selectedCell) {
+    return;
+  }
+
+  context.save();
+  context.strokeStyle = "#b44b57";
+  context.lineWidth = Math.max(2, Math.floor(cellSize / 3));
+  context.strokeRect(
+    selectedCell.x * cellSize + 1,
+    selectedCell.y * cellSize + 1,
+    Math.max(cellSize - 2, 1),
+    Math.max(cellSize - 2, 1)
+  );
+  context.restore();
 }
 
 function reviewGridCellSize(width, height) {
@@ -818,6 +846,62 @@ function renderReviewColorCounts(finalPattern, ready) {
   reviewColorsTableBody.appendChild(emptyRow);
 }
 
+function renderReviewSelection(finalPattern, ready) {
+  reviewCellColorSelect.innerHTML = "";
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "__empty__";
+  emptyOption.textContent = "Vide";
+  reviewCellColorSelect.appendChild(emptyOption);
+
+  finalPattern.colors.forEach((color) => {
+    const option = document.createElement("option");
+    option.value = color.dmc;
+    option.textContent = `DMC ${color.dmc}`;
+    reviewCellColorSelect.appendChild(option);
+  });
+
+  const selectedCell = ready && selectedReviewCellKey
+    ? pattern.grid.cells.find((cell) => reviewCellKey(cell) === selectedReviewCellKey)
+    : null;
+
+  if (!ready || !selectedCell) {
+    reviewSelectedCellText.textContent = "Aucune";
+    reviewCellColorSelect.value = "__empty__";
+    reviewCellColorSelect.disabled = true;
+    applyReviewCellColorButton.disabled = true;
+    return;
+  }
+
+  reviewSelectedCellText.textContent = selectedCell.empty
+    ? `${selectedCell.x}, ${selectedCell.y} - Vide`
+    : `${selectedCell.x}, ${selectedCell.y} - DMC ${selectedCell.dmc}`;
+  reviewCellColorSelect.value = selectedCell.empty ? "__empty__" : selectedCell.dmc;
+  reviewCellColorSelect.disabled = false;
+  applyReviewCellColorButton.disabled = false;
+}
+
+function reviewCellKey(cell) {
+  return `${cell.x},${cell.y}`;
+}
+
+function reviewCellFromCanvasEvent(event) {
+  if (!progress.assignments || !areAssignmentsApplied(pattern)) {
+    return null;
+  }
+
+  const rect = reviewPatternCanvas.getBoundingClientRect();
+  const scaleX = reviewPatternCanvas.width / rect.width;
+  const scaleY = reviewPatternCanvas.height / rect.height;
+  const canvasX = (event.clientX - rect.left) * scaleX;
+  const canvasY = (event.clientY - rect.top) * scaleY;
+  const cellSize = reviewPatternCanvas.width / pattern.grid.width;
+  const x = Math.floor(canvasX / cellSize);
+  const y = Math.floor(canvasY / cellSize);
+
+  return pattern.grid.cells.find((cell) => cell.x === x && cell.y === y) || null;
+}
+
 function renderExport() {
   const finalPattern = buildFinalPattern();
   const ready = progress.assignments && areAssignmentsApplied(pattern);
@@ -854,6 +938,7 @@ function isGroupAssignmentReady(group) {
 function areAssignmentsApplied(patternToValidate) {
   const groups = patternToValidate.symbolGroups || [];
   const cells = patternToValidate.grid.cells || [];
+  const colorCodes = new Set(patternToValidate.colors.map((color) => color.dmc));
   if (!areSymbolGroupsGenerated(patternToValidate) || groups.length === 0) {
     return false;
   }
@@ -862,21 +947,13 @@ function areAssignmentsApplied(patternToValidate) {
     return false;
   }
 
-  const cellsByKey = new Map(cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
-  return groups.every((group) => group.cellKeys.every((key) => {
-    const cell = cellsByKey.get(key);
-    if (!cell) {
-      return false;
+  return cells.every((cell) => {
+    if (cell.empty === true) {
+      return cell.symbol === null && cell.dmc === null;
     }
 
-    if (group.isEmpty) {
-      return cell.empty === true && cell.symbol === null && cell.dmc === null;
-    }
-
-    return cell.empty !== true
-      && cell.symbol === null
-      && cell.dmc === group.dmc;
-  }));
+    return cell.symbol === null && colorCodes.has(cell.dmc);
+  });
 }
 
 function isImageAnalysisComplete(patternToValidate) {
@@ -1653,6 +1730,7 @@ applyAssignmentsButton.addEventListener("click", () => {
 
   applyGroupAssignmentsToCells();
   progress.assignments = true;
+  selectedReviewCellKey = null;
   assignmentsError.hidden = true;
   savePattern();
   saveProgress();
@@ -1662,6 +1740,42 @@ applyAssignmentsButton.addEventListener("click", () => {
 
 backToAssignmentsFromReviewButton.addEventListener("click", () => {
   goToStep("assignments");
+});
+
+reviewPatternCanvas.addEventListener("click", (event) => {
+  const cell = reviewCellFromCanvasEvent(event);
+  if (!cell) {
+    return;
+  }
+
+  selectedReviewCellKey = reviewCellKey(cell);
+  render();
+});
+
+applyReviewCellColorButton.addEventListener("click", () => {
+  if (!selectedReviewCellKey || reviewCellColorSelect.disabled) {
+    return;
+  }
+
+  const cell = pattern.grid.cells.find((candidate) => reviewCellKey(candidate) === selectedReviewCellKey);
+  if (!cell) {
+    return;
+  }
+
+  if (reviewCellColorSelect.value === "__empty__") {
+    cell.dmc = null;
+    cell.symbol = null;
+    cell.empty = true;
+  } else {
+    cell.dmc = reviewCellColorSelect.value;
+    cell.symbol = null;
+    cell.empty = false;
+  }
+
+  savePattern();
+  saveProgress();
+  render();
+  showSavedStatus();
 });
 
 goToExportButton.addEventListener("click", () => {
@@ -2112,6 +2226,7 @@ resetButton.addEventListener("click", () => {
     assignments: false
   };
   assignmentGroupIndex = 0;
+  selectedReviewCellKey = null;
   render();
 });
 
