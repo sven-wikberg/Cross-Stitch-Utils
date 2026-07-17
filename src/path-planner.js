@@ -64,6 +64,7 @@ const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const PATH_UNCROSS_TIME_LIMIT = 30000;
 const REALISTIC_JUMP_THRESHOLD = 15;
@@ -265,17 +266,42 @@ function drawSelectedPath(context, cellSize) {
   path.forEach((point, index) => {
     const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
     const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
-    const radius = Math.max(3, Math.floor(cellSize * 0.38));
+    const style = pathPointStyle(cellSize);
     context.fillStyle = index === path.length - 1 ? "#ffffff" : "#222426";
     context.strokeStyle = "#222426";
-    context.lineWidth = 2;
-    context.beginPath();
-    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
+    context.lineWidth = style.strokeWidth;
+
+    if (style.shape === "square") {
+      const x = centerX - style.size / 2;
+      const y = centerY - style.size / 2;
+      context.fillRect(x, y, style.size, style.size);
+      context.strokeRect(x, y, style.size, style.size);
+    } else {
+      context.beginPath();
+      context.arc(centerX, centerY, style.radius, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    }
   });
 
   context.restore();
+}
+
+function pathPointStyle(cellSize) {
+  if (cellSize <= COMPACT_PATH_CELL_SIZE) {
+    const size = Math.max(1.4, cellSize * 0.46);
+    return {
+      shape: "square",
+      size,
+      strokeWidth: Math.max(0.6, cellSize * 0.12)
+    };
+  }
+
+  return {
+    shape: "circle",
+    radius: Math.max(1.6, cellSize * 0.3),
+    strokeWidth: Math.max(1, cellSize * 0.13)
+  };
 }
 
 function drawPathSegment(context, fromPoint, toPoint, cellSize) {
@@ -284,13 +310,25 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize) {
   const isCut = isCutJump(fromPoint, toPoint);
 
   context.strokeStyle = isCut ? "#b44b57" : "#222426";
-  context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
-  context.setLineDash(isCut ? [Math.max(3, cellSize * 0.55), Math.max(3, cellSize * 0.45)] : []);
+  context.lineWidth = pathSegmentWidth(cellSize, isCut);
+  context.setLineDash(isCut ? pathCutDash(cellSize) : []);
   context.beginPath();
   context.moveTo(from.x, from.y);
   context.lineTo(to.x, to.y);
   context.stroke();
   context.setLineDash([]);
+}
+
+function pathSegmentWidth(cellSize, isCut) {
+  const scale = isCut ? 0.13 : 0.18;
+  return Math.max(0.6, Math.min(cellSize * scale, cellSize - 1));
+}
+
+function pathCutDash(cellSize) {
+  return [
+    Math.max(1.5, cellSize * 0.55),
+    Math.max(1.2, cellSize * 0.42)
+  ];
 }
 
 function pointCenter(point, cellSize) {
