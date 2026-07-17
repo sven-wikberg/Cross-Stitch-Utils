@@ -3,6 +3,11 @@ const PROGRESS_STORAGE_KEY = "cross-stitch-import-progress";
 const IMAGE_DB_NAME = "cross-stitch-utils";
 const IMAGE_DB_VERSION = 1;
 const IMAGE_STORE_NAME = "pattern-part-images";
+const LIGHT_CELL_MARKED_SIGNATURE_PREFIX = "LIGHT_CELL_MARKED:";
+const LIGHT_CELL_LUMINANCE_THRESHOLD = 226;
+const LIGHT_CELL_SYMBOL_LUMINANCE_THRESHOLD = 190;
+const LIGHT_CELL_SYMBOL_RATIO_THRESHOLD = 0.055;
+const CELL_SAMPLE_INSET_RATIO = 0.16;
 
 const defaultPattern = {
   schemaVersion: 1,
@@ -1607,6 +1612,14 @@ function generateSymbolGroups(patternToGroup) {
 }
 
 function signatureDistance(firstSignature, secondSignature) {
+  if (firstSignature === secondSignature) {
+    return 0;
+  }
+
+  if (isMarkedLightSignature(firstSignature) || isMarkedLightSignature(secondSignature)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   if (!firstSignature || !secondSignature || firstSignature.length !== secondSignature.length) {
     return Number.POSITIVE_INFINITY;
   }
@@ -1790,7 +1803,7 @@ function loadImage(dataUrl) {
 }
 
 function sampleCellImage(image, sx, sy, sw, sh) {
-  const size = 8;
+  const size = 16;
   const sampleArea = insetSampleArea(sx, sy, sw, sh);
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -1807,12 +1820,66 @@ function sampleCellImage(image, sx, sy, sw, sh) {
 
   const signature = [...colorCounts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "#FFFFFF";
+  const hasSymbolOnLightCell = isLightColorSignature(signature) && hasVisibleSymbolOnLightCell(data);
 
   return {
-    signature,
+    signature: hasSymbolOnLightCell ? markedLightSignature(signature) : signature,
     mean: signature,
     previewDataUrl: createCellPreview(image, sampleArea.x, sampleArea.y, sampleArea.width, sampleArea.height)
   };
+}
+
+function markedLightSignature(signature) {
+  return `${LIGHT_CELL_MARKED_SIGNATURE_PREFIX}${signature}`;
+}
+
+function isMarkedLightSignature(signature) {
+  return typeof signature === "string" && signature.startsWith(LIGHT_CELL_MARKED_SIGNATURE_PREFIX);
+}
+
+function isLightColorSignature(signature) {
+  const color = parseHexColor(signature);
+  if (!color) {
+    return false;
+  }
+
+  return colorLuminance(color) >= LIGHT_CELL_LUMINANCE_THRESHOLD;
+}
+
+function hasVisibleSymbolOnLightCell(data) {
+  let symbolPixels = 0;
+  const totalPixels = data.length / 4;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const color = {
+      red: data[index],
+      green: data[index + 1],
+      blue: data[index + 2]
+    };
+
+    if (colorLuminance(color) <= LIGHT_CELL_SYMBOL_LUMINANCE_THRESHOLD) {
+      symbolPixels += 1;
+    }
+  }
+
+  return symbolPixels / totalPixels >= LIGHT_CELL_SYMBOL_RATIO_THRESHOLD;
+}
+
+function parseHexColor(signature) {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(signature);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    red: parseInt(match[1], 16),
+    green: parseInt(match[2], 16),
+    blue: parseInt(match[3], 16)
+  };
+}
+
+function colorLuminance(color) {
+  return color.red * 0.2126 + color.green * 0.7152 + color.blue * 0.0722;
 }
 
 function dominantColorBucket(red, green, blue) {
@@ -1823,8 +1890,8 @@ function dominantColorBucket(red, green, blue) {
 }
 
 function insetSampleArea(x, y, width, height) {
-  const insetX = 0;
-  const insetY = 0;
+  const insetX = Math.floor(width * CELL_SAMPLE_INSET_RATIO);
+  const insetY = Math.floor(height * CELL_SAMPLE_INSET_RATIO);
   return {
     x: x + insetX,
     y: y + insetY,
