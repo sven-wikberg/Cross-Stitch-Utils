@@ -736,7 +736,35 @@ function renderReviewGrid(finalPattern, ready) {
   });
 
   drawReviewGridLines(context, finalPattern.grid.width, finalPattern.grid.height, cellSize);
+  drawReviewColorHighlight(context, cellSize, ready);
   drawReviewSelection(context, cellSize, ready);
+}
+
+function drawReviewColorHighlight(context, cellSize, ready) {
+  const selectedColorValue = selectedReviewCellColorValue();
+  if (!ready || !selectedColorValue) {
+    return;
+  }
+
+  context.save();
+  context.strokeStyle = "#185d55";
+  context.lineWidth = Math.max(1, Math.floor(cellSize / 5));
+
+  pattern.grid.cells.forEach((cell) => {
+    const cellColorValue = cell.empty ? "__empty__" : cell.dmc;
+    if (cellColorValue !== selectedColorValue) {
+      return;
+    }
+
+    context.strokeRect(
+      cell.x * cellSize + 1,
+      cell.y * cellSize + 1,
+      Math.max(cellSize - 2, 1),
+      Math.max(cellSize - 2, 1)
+    );
+  });
+
+  context.restore();
 }
 
 function drawReviewSelection(context, cellSize, ready) {
