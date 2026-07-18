@@ -11,7 +11,7 @@
         ? options.points.map((point) => ({ x: point.x, y: point.y }))
         : [];
       const pointCount = points.length;
-      const cutThreshold = Math.max(1, Number(options.cutThreshold) || 15);
+      const cutThreshold = Math.max(1, Number(options.cutThreshold) || 10);
       const cutPenalty = cutThreshold * 3;
       const stagnationLimitMs = Math.max(1000, Number(options.stagnationLimitMs) || 60000);
       const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
