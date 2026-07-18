@@ -1887,8 +1887,7 @@ function generateSymbolGroups(patternToGroup) {
     matchingGroup.cellKeys.push(`${cell.x},${cell.y}`);
   });
 
-  return groupedCells
-    .sort((a, b) => b.cellKeys.length - a.cellKeys.length || a.signature.localeCompare(b.signature))
+  return orderGroupsByColorProximity(groupedCells)
     .map((group, index) => ({
       id: `group-${index + 1}`,
       signature: group.signature,
@@ -1901,6 +1900,66 @@ function generateSymbolGroups(patternToGroup) {
       dmc: null,
       isEmpty: false
     }));
+}
+
+function orderGroupsByColorProximity(groups) {
+  const remaining = groups.slice().sort(compareGroupPriority);
+  const ordered = [];
+
+  while (remaining.length > 0) {
+    const current = ordered.length === 0
+      ? remaining.shift()
+      : takeNearestColorGroup(remaining, ordered[ordered.length - 1]);
+    ordered.push(current);
+  }
+
+  return ordered;
+}
+
+function takeNearestColorGroup(groups, referenceGroup) {
+  let bestIndex = 0;
+  let bestDistance = groupColorDistance(referenceGroup, groups[0]);
+
+  for (let index = 1; index < groups.length; index += 1) {
+    const distance = groupColorDistance(referenceGroup, groups[index]);
+    const isCloser = distance < bestDistance;
+    const isTieButMoreImportant = distance === bestDistance && compareGroupPriority(groups[index], groups[bestIndex]) < 0;
+    if (isCloser || isTieButMoreImportant) {
+      bestIndex = index;
+      bestDistance = distance;
+    }
+  }
+
+  return groups.splice(bestIndex, 1)[0];
+}
+
+function compareGroupPriority(a, b) {
+  return b.cellKeys.length - a.cellKeys.length || colorSortKey(a).localeCompare(colorSortKey(b));
+}
+
+function groupColorDistance(firstGroup, secondGroup) {
+  const first = groupColor(firstGroup);
+  const second = groupColor(secondGroup);
+  if (!first || !second) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.hypot(first.red - second.red, first.green - second.green, first.blue - second.blue);
+}
+
+function groupColor(group) {
+  return parseHexColor(groupColorSignature(group));
+}
+
+function colorSortKey(group) {
+  return groupColorSignature(group) || "";
+}
+
+function groupColorSignature(group) {
+  const signature = group?.sampleMean || group?.signature || "";
+  return isMarkedLightSignature(signature)
+    ? signature.slice(LIGHT_CELL_MARKED_SIGNATURE_PREFIX.length)
+    : signature;
 }
 
 function signatureDistance(firstSignature, secondSignature) {
