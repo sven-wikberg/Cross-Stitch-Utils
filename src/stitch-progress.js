@@ -13,6 +13,9 @@ const progressSaveStatus = document.querySelector("#progressSaveStatus");
 const resetProgressToolButton = document.querySelector("#resetProgressToolButton");
 const stitchStatus = document.querySelector("#stitchStatus");
 const stitchColorLabel = document.querySelector("#stitchColorLabel");
+const zoomOutButton = document.querySelector("#zoomOutButton");
+const zoomLevelText = document.querySelector("#zoomLevelText");
+const zoomInButton = document.querySelector("#zoomInButton");
 const stitchCanvas = document.querySelector("#stitchCanvas");
 const stitchColorLegend = document.querySelector("#stitchColorLegend");
 const stitchColorStatus = document.querySelector("#stitchColorStatus");
@@ -55,6 +58,10 @@ const progressStepOrder = ["load", "stitch"];
 const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const DEFAULT_STITCH_ZOOM = 1;
+const MIN_STITCH_ZOOM = 0.5;
+const MAX_STITCH_ZOOM = 4;
+const STITCH_ZOOM_STEP = 0.25;
 const REALISTIC_JUMP_THRESHOLD = 15;
 const BUILTIN_PROGRESS_DIRECTORY_DB = "cross-stitch-utils-directory";
 const BUILTIN_PROGRESS_DIRECTORY_STORE = "handles";
@@ -64,6 +71,7 @@ let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
 let stitchedByDmc = storedProgressState.stitchedByDmc;
 let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
+let stitchZoom = storedProgressState.zoom || DEFAULT_STITCH_ZOOM;
 let stitchProgress = {
   load: Boolean(loadedPaths),
   stitch: Boolean(loadedPaths) && areAllColorsStitched(loadedPaths, storedProgressState.stitchedByDmc)
@@ -86,7 +94,8 @@ function loadStoredProgressState() {
       return {
         pathsFile: parsed.pathsFile,
         stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
-        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
+        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
+        zoom: normalizeStitchZoom(parsed.zoom)
       };
     }
 
@@ -94,7 +103,8 @@ function loadStoredProgressState() {
       return {
         pathsFile: parsed.pathsFile,
         stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
-        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
+        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
+        zoom: normalizeStitchZoom(parsed.zoom)
       };
     }
 
@@ -113,8 +123,18 @@ function saveProgressState() {
   localStorage.setItem(STITCH_PROGRESS_STORAGE_KEY, JSON.stringify({
     pathsFile: loadedPaths,
     stitchedByDmc,
-    selectedDmc
+    selectedDmc,
+    zoom: stitchZoom
   }));
+}
+
+function normalizeStitchZoom(value) {
+  const zoom = Number(value);
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    return null;
+  }
+
+  return Math.min(MAX_STITCH_ZOOM, Math.max(MIN_STITCH_ZOOM, Math.round(zoom / STITCH_ZOOM_STEP) * STITCH_ZOOM_STEP));
 }
 
 function renderProgressTool() {
@@ -148,6 +168,7 @@ function renderProgressTool() {
   renderLoadedPaths();
   renderBuiltinProgressControls();
   renderStitchView();
+  renderZoomControls();
   renderProgressMetrics();
 }
 
@@ -258,11 +279,12 @@ function renderStitchView() {
 
   const pattern = loadedPaths.pattern;
   const colorByDmc = new Map(pattern.colors.map((color) => [color.dmc, color]));
-  const cellSize = gridCellSize(
+  const baseCellSize = gridCellSize(
     pattern.grid.width,
     pattern.grid.height,
     availableGridWidth(stitchCanvas) - GRID_RULER_SIZE
   );
+  const cellSize = Math.max(2, Math.round(baseCellSize * stitchZoom));
   const selectedColor = colorByDmc.get(selectedDmc);
   stitchColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
@@ -304,6 +326,12 @@ function renderStitchView() {
   renderStitchControls();
   stitchStatus.className = "coverage-status valid";
   stitchStatus.textContent = `Appuie sur Espace pour avancer dans DMC ${selectedDmc}.`;
+}
+
+function renderZoomControls() {
+  zoomLevelText.textContent = `${Math.round(stitchZoom * 100)}%`;
+  zoomOutButton.disabled = stitchZoom <= MIN_STITCH_ZOOM;
+  zoomInButton.disabled = stitchZoom >= MAX_STITCH_ZOOM;
 }
 
 function drawStitchProgress(context, cellSize) {
@@ -1141,6 +1169,21 @@ document.addEventListener("keydown", (event) => {
   advanceSelectedColor();
 });
 
+zoomOutButton.addEventListener("click", () => {
+  setStitchZoom(stitchZoom - STITCH_ZOOM_STEP);
+});
+
+zoomInButton.addEventListener("click", () => {
+  setStitchZoom(stitchZoom + STITCH_ZOOM_STEP);
+});
+
+function setStitchZoom(value) {
+  stitchZoom = normalizeStitchZoom(value) || DEFAULT_STITCH_ZOOM;
+  saveProgressState();
+  renderProgressTool();
+  showProgressSavedStatus();
+}
+
 function advanceSelectedColor() {
   const path = pathForDmc(selectedDmc);
   if (!loadedPaths || !path) {
@@ -1181,6 +1224,7 @@ resetProgressToolButton.addEventListener("click", () => {
   loadedPaths = null;
   selectedDmc = null;
   stitchedByDmc = {};
+  stitchZoom = DEFAULT_STITCH_ZOOM;
   stitchProgress = {
     load: false,
     stitch: false

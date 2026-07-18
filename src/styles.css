@@ -615,6 +615,27 @@ select:focus {
   font-weight: 900;
 }
 
+.zoom-controls {
+  position: sticky;
+  top: 42px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.zoom-controls .secondary-button {
+  width: 38px;
+  min-height: 34px;
+  padding: 0;
+}
+
 .pattern-canvas-wrap canvas {
   display: block;
   image-rendering: pixelated;

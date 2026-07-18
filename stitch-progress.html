@@ -140,6 +140,11 @@
           <div class="pattern-viewer">
             <div class="pattern-canvas-wrap">
               <div id="stitchColorLabel" class="selected-color-label">Aucune couleur selectionnee</div>
+              <div class="zoom-controls" aria-label="Zoom de la grille">
+                <button id="zoomOutButton" class="secondary-button" type="button">-</button>
+                <span id="zoomLevelText" class="status-pill">100%</span>
+                <button id="zoomInButton" class="secondary-button" type="button">+</button>
+              </div>
               <canvas id="stitchCanvas" width="1" height="1" aria-label="Grille de progression"></canvas>
             </div>
             <div>
