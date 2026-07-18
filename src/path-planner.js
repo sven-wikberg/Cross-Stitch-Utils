@@ -249,6 +249,8 @@ function drawSelectedPath(context, cellSize) {
     return;
   }
 
+  const colors = selectedPathDrawingColors();
+
   context.save();
   context.lineJoin = "round";
   context.lineCap = "round";
@@ -259,7 +261,7 @@ function drawSelectedPath(context, cellSize) {
         return;
       }
 
-      drawPathSegment(context, path[index - 1], point, cellSize);
+      drawPathSegment(context, path[index - 1], point, cellSize, colors);
     });
   }
 
@@ -267,8 +269,8 @@ function drawSelectedPath(context, cellSize) {
     const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
     const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
     const style = pathPointStyle(cellSize);
-    context.fillStyle = index === path.length - 1 ? "#ffffff" : "#222426";
-    context.strokeStyle = "#222426";
+    context.fillStyle = index === path.length - 1 ? colors.currentPointFill : colors.pointFill;
+    context.strokeStyle = colors.pointStroke;
     context.lineWidth = style.strokeWidth;
 
     if (style.shape === "square") {
@@ -285,6 +287,30 @@ function drawSelectedPath(context, cellSize) {
   });
 
   context.restore();
+}
+
+function selectedPathDrawingColors() {
+  const selectedColor = loadedPattern?.colors.find((color) => color.dmc === selectedDmc);
+  const parsed = parseHexColor(selectedColor?.hex || "");
+  const isDark = parsed ? colorLuminance(parsed) < 105 : false;
+
+  if (isDark) {
+    return {
+      line: "#ffffff",
+      cutLine: "#ffb3bd",
+      pointFill: "#ffffff",
+      pointStroke: "#111517",
+      currentPointFill: "#ffedf0"
+    };
+  }
+
+  return {
+    line: "#222426",
+    cutLine: "#b44b57",
+    pointFill: "#222426",
+    pointStroke: "#222426",
+    currentPointFill: "#ffffff"
+  };
 }
 
 function pathPointStyle(cellSize) {
@@ -304,12 +330,12 @@ function pathPointStyle(cellSize) {
   };
 }
 
-function drawPathSegment(context, fromPoint, toPoint, cellSize) {
+function drawPathSegment(context, fromPoint, toPoint, cellSize, colors) {
   const from = pointCenter(fromPoint, cellSize);
   const to = pointCenter(toPoint, cellSize);
   const isCut = isCutJump(fromPoint, toPoint);
 
-  context.strokeStyle = isCut ? "#b44b57" : "#222426";
+  context.strokeStyle = isCut ? colors.cutLine : colors.line;
   context.lineWidth = pathSegmentWidth(cellSize, isCut);
   context.setLineDash(isCut ? pathCutDash(cellSize) : []);
   context.beginPath();
@@ -495,6 +521,10 @@ function parseHexColor(hex) {
     green: parseInt(match[2], 16),
     blue: parseInt(match[3], 16)
   };
+}
+
+function colorLuminance(color) {
+  return color.red * 0.2126 + color.green * 0.7152 + color.blue * 0.0722;
 }
 
 function toHex(value) {
