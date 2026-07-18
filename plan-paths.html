@@ -66,6 +66,10 @@
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="secondary-button" type="button">Recherche 2-opt</button>
               <button id="uncrossPathButton" class="secondary-button" type="button">Decroiser</button>
+              <label class="cut-threshold-field" for="cutThresholdInput">
+                Distance de coupe
+                <input id="cutThresholdInput" type="number" min="1" step="1" value="15">
+              </label>
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
                 <progress id="pathAlgorithmProgress" value="0" max="100"></progress>
                 <p id="pathAlgorithmDistance">Pret.</p>

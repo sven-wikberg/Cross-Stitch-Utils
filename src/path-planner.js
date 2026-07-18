@@ -19,6 +19,7 @@ const uncrossPathButton = document.querySelector("#uncrossPathButton");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
 const pathAlgorithmProgress = document.querySelector("#pathAlgorithmProgress");
 const pathAlgorithmDistance = document.querySelector("#pathAlgorithmDistance");
+const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -67,8 +68,7 @@ const GRID_RULER_SIZE = 26;
 const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const PATH_UNCROSS_TIME_LIMIT = 30000;
-const REALISTIC_JUMP_THRESHOLD = 15;
-const REALISTIC_CUT_PENALTY = REALISTIC_JUMP_THRESHOLD * 3;
+const DEFAULT_CUT_THRESHOLD = 15;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -86,6 +86,7 @@ let lastDrawnCellKey = null;
 let lastPointerCell = null;
 let pathAlgorithmRunning = false;
 let pathOptimizationBaselinesByDmc = {};
+let cutThreshold = storedState.cutThreshold || DEFAULT_CUT_THRESHOLD;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -104,7 +105,8 @@ function loadStoredState() {
         pattern: parsed.pattern,
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
-        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null
+        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
+        cutThreshold: normalizeCutThreshold(parsed.cutThreshold)
       };
     }
 
@@ -124,8 +126,22 @@ function savePathPlannerState() {
     pattern: loadedPattern,
     pathsByDmc,
     bestPathsByDmc,
-    selectedDmc
+    selectedDmc,
+    cutThreshold
   }));
+}
+
+function normalizeCutThreshold(value) {
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    return null;
+  }
+
+  return Math.max(1, Math.round(threshold));
+}
+
+function realisticCutPenalty() {
+  return cutThreshold * 3;
 }
 
 function renderPathTool() {
@@ -136,6 +152,7 @@ function renderPathTool() {
   const label = pathStepLabels[activePathStep];
   pathStepEyebrow.textContent = label.eyebrow;
   pathStepTitle.textContent = label.title;
+  cutThresholdInput.value = String(cutThreshold);
 
   pathStepButtons.forEach((button) => {
     const step = button.dataset.step;
@@ -459,7 +476,7 @@ function pathPerformanceMetrics(path) {
 
     if (isCutDistance(jump)) {
       cuts += 1;
-      realisticScore += REALISTIC_CUT_PENALTY;
+      realisticScore += realisticCutPenalty();
     } else {
       realisticScore += jump;
     }
@@ -937,7 +954,7 @@ function comparePathPerformance(a, b) {
 
 function realisticStepCost(fromPoint, toPoint) {
   const jump = threadDistance(fromPoint, toPoint);
-  return isCutDistance(jump) ? REALISTIC_CUT_PENALTY : jump;
+  return isCutDistance(jump) ? realisticCutPenalty() : jump;
 }
 
 function isCutJump(fromPoint, toPoint) {
@@ -945,7 +962,7 @@ function isCutJump(fromPoint, toPoint) {
 }
 
 function isCutDistance(distance) {
-  return distance > REALISTIC_JUMP_THRESHOLD;
+  return distance > cutThreshold;
 }
 
 function rememberBestPath(dmc, candidatePath) {
@@ -1837,6 +1854,16 @@ uncrossPathButton.addEventListener("click", () => {
   applyAsyncPathAlgorithm(uncrossPathForColor, "Decroiser");
 });
 
+cutThresholdInput.addEventListener("change", () => {
+  const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
+  cutThreshold = normalized;
+  pathOptimizationBaselinesByDmc = {};
+  cutThresholdInput.value = String(cutThreshold);
+  savePathPlannerState();
+  renderPathTool();
+  showPathSavedStatus();
+});
+
 undoPathPointButton.addEventListener("click", () => {
   currentPath().pop();
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
@@ -1915,6 +1942,8 @@ resetPathToolButton.addEventListener("click", () => {
   selectedDmc = null;
   pathsByDmc = {};
   bestPathsByDmc = {};
+  cutThreshold = DEFAULT_CUT_THRESHOLD;
+  pathOptimizationBaselinesByDmc = {};
   pathProgress = {
     load: false,
     paths: false,

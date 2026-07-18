@@ -720,6 +720,17 @@ select:focus {
   gap: 8px;
 }
 
+.cut-threshold-field {
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.cut-threshold-field input {
+  min-height: 38px;
+}
+
 .algorithm-group + .algorithm-group {
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
