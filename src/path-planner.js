@@ -15,7 +15,6 @@ const patternCanvas = document.querySelector("#patternCanvas");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
-const uncrossPathButton = document.querySelector("#uncrossPathButton");
 const stopPathAlgorithmButton = document.querySelector("#stopPathAlgorithmButton");
 const pathSearchDuration = document.querySelector("#pathSearchDuration");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
@@ -73,7 +72,6 @@ const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
 const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
-const PATH_UNCROSS_TIME_LIMIT = 30000;
 const DEFAULT_CUT_THRESHOLD = 15;
 const DEFAULT_PATH_SEARCH_DURATION = 300000;
 
@@ -417,7 +415,6 @@ function renderPathBuilder() {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     optimizedPathButton.disabled = true;
-    uncrossPathButton.disabled = true;
     undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -432,7 +429,6 @@ function renderPathBuilder() {
     ? `Chemin complet: ${path.length} / ${expected} cases.`
     : `Chemin en cours: ${path.length} / ${expected} cases.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
-  uncrossPathButton.disabled = !complete || path.length < 4 || pathAlgorithmRunning;
   undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
@@ -833,95 +829,6 @@ async function optimizedPathForColor(dmc, reportProgress) {
     progress: 100
   });
   return bestPath;
-}
-
-async function uncrossPathForColor(dmc, reportProgress) {
-  let bestPath = (pathsByDmc[dmc] || []).map((point) => ({ x: point.x, y: point.y }));
-  if (bestPath.length < 4) {
-    return bestPath;
-  }
-
-  const startedAt = performance.now();
-  const seenPathKeys = new Set([pathSignature(bestPath)]);
-  let improvements = 0;
-  await reportProgress({
-    phase: "Decroisement",
-    path: bestPath,
-    distance: pathRealisticScore(bestPath),
-    progress: 5
-  });
-
-  let changed = true;
-  while (changed && performance.now() - startedAt < PATH_UNCROSS_TIME_LIMIT) {
-    changed = false;
-
-    for (let firstSegment = 0; firstSegment < bestPath.length - 3; firstSegment += 1) {
-      for (let secondSegment = firstSegment + 2; secondSegment < bestPath.length - 1; secondSegment += 1) {
-        if (isCutJump(bestPath[firstSegment], bestPath[firstSegment + 1])
-          || isCutJump(bestPath[secondSegment], bestPath[secondSegment + 1])
-          || !segmentsProperlyCross(
-            bestPath[firstSegment],
-            bestPath[firstSegment + 1],
-            bestPath[secondSegment],
-            bestPath[secondSegment + 1]
-          )) {
-          continue;
-        }
-
-        const candidatePath = reversePathSegment(bestPath, firstSegment + 1, secondSegment);
-        const candidateKey = pathSignature(candidatePath);
-        if (!seenPathKeys.has(candidateKey) && comparePathPerformance(candidatePath, bestPath) <= 0) {
-          bestPath = candidatePath;
-          seenPathKeys.add(candidateKey);
-          changed = true;
-          improvements += 1;
-
-          const elapsed = performance.now() - startedAt;
-          await reportProgress({
-            phase: `Decroisement ${improvements}`,
-            path: bestPath,
-            distance: pathRealisticScore(bestPath),
-            progress: Math.min(98, 5 + (elapsed / PATH_UNCROSS_TIME_LIMIT) * 93)
-          });
-
-          if (elapsed >= PATH_UNCROSS_TIME_LIMIT) {
-            return bestPath;
-          }
-        }
-      }
-    }
-
-    if (!changed) {
-      const elapsed = performance.now() - startedAt;
-      await reportProgress({
-        phase: "Aucun croisement ameliorable",
-        path: bestPath,
-        distance: pathRealisticScore(bestPath),
-        progress: Math.min(98, 5 + (elapsed / PATH_UNCROSS_TIME_LIMIT) * 93)
-      });
-    }
-  }
-
-  await reportProgress({
-    phase: "Decroisement termine",
-    path: bestPath,
-    distance: pathRealisticScore(bestPath),
-    progress: 100
-  });
-  return bestPath;
-}
-
-function segmentsProperlyCross(a, b, c, d) {
-  return direction(a, b, c) * direction(a, b, d) < 0
-    && direction(c, d, a) * direction(c, d, b) < 0;
-}
-
-function direction(a, b, c) {
-  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
-function pathSignature(path) {
-  return path.map((point) => cellKey(point)).join("|");
 }
 
 function pathOptimizationStartPoints(cells) {
@@ -2079,10 +1986,6 @@ function nextFrame() {
 
 optimizedPathButton.addEventListener("click", () => {
   startAdvancedPathSearch();
-});
-
-uncrossPathButton.addEventListener("click", () => {
-  applyAsyncPathAlgorithm(uncrossPathForColor, "Decroiser");
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {
