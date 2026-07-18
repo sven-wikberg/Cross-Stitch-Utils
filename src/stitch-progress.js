@@ -16,6 +16,7 @@ const stitchColorLabel = document.querySelector("#stitchColorLabel");
 const zoomOutButton = document.querySelector("#zoomOutButton");
 const zoomLevelText = document.querySelector("#zoomLevelText");
 const zoomInButton = document.querySelector("#zoomInButton");
+const followCurrentPointButton = document.querySelector("#followCurrentPointButton");
 const stitchCanvas = document.querySelector("#stitchCanvas");
 const stitchColorLegend = document.querySelector("#stitchColorLegend");
 const stitchColorStatus = document.querySelector("#stitchColorStatus");
@@ -73,6 +74,7 @@ let loadedPaths = storedProgressState.pathsFile;
 let stitchedByDmc = storedProgressState.stitchedByDmc;
 let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
 let stitchZoom = storedProgressState.zoom || DEFAULT_STITCH_ZOOM;
+let followCurrentPoint = Boolean(storedProgressState.followCurrentPoint);
 let stitchProgress = {
   load: Boolean(loadedPaths),
   stitch: Boolean(loadedPaths) && areAllColorsStitched(loadedPaths, storedProgressState.stitchedByDmc)
@@ -96,7 +98,8 @@ function loadStoredProgressState() {
         pathsFile: parsed.pathsFile,
         stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
-        zoom: normalizeStitchZoom(parsed.zoom)
+        zoom: normalizeStitchZoom(parsed.zoom),
+        followCurrentPoint: Boolean(parsed.followCurrentPoint)
       };
     }
 
@@ -105,7 +108,8 @@ function loadStoredProgressState() {
         pathsFile: parsed.pathsFile,
         stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
-        zoom: normalizeStitchZoom(parsed.zoom)
+        zoom: normalizeStitchZoom(parsed.zoom),
+        followCurrentPoint: Boolean(parsed.followCurrentPoint)
       };
     }
 
@@ -125,7 +129,8 @@ function saveProgressState() {
     pathsFile: loadedPaths,
     stitchedByDmc,
     selectedDmc,
-    zoom: stitchZoom
+    zoom: stitchZoom,
+    followCurrentPoint
   }));
 }
 
@@ -328,12 +333,40 @@ function renderStitchView() {
   renderStitchControls();
   stitchStatus.className = "coverage-status valid";
   stitchStatus.textContent = `Appuie sur Espace pour avancer dans DMC ${selectedDmc}.`;
+  centerCurrentPointIfNeeded(cellSize);
 }
 
 function renderZoomControls() {
   zoomLevelText.textContent = `${Math.round(stitchZoom * 100)}%`;
   zoomOutButton.disabled = stitchZoom <= MIN_STITCH_ZOOM;
   zoomInButton.disabled = stitchZoom >= MAX_STITCH_ZOOM;
+  followCurrentPointButton.classList.toggle("selected", followCurrentPoint);
+  followCurrentPointButton.textContent = followCurrentPoint ? "Suivi actif" : "Suivre le point";
+}
+
+function centerCurrentPointIfNeeded(cellSize) {
+  const path = pathForDmc(selectedDmc);
+  if (!followCurrentPoint || !path) {
+    return;
+  }
+
+  const stitchedCount = stitchedCountForDmc(selectedDmc);
+  const point = path.points[stitchedCount] || path.points[path.points.length - 1];
+  if (!point) {
+    return;
+  }
+
+  const wrapper = stitchCanvas.parentElement;
+  if (!wrapper) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+    const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
+    wrapper.scrollLeft = Math.max(0, centerX - wrapper.clientWidth / 2);
+    wrapper.scrollTop = Math.max(0, centerY - wrapper.clientHeight / 2);
+  });
 }
 
 function drawStitchProgress(context, cellSize) {
@@ -1179,6 +1212,13 @@ zoomInButton.addEventListener("click", () => {
   setStitchZoom(stitchZoom + STITCH_ZOOM_STEP);
 });
 
+followCurrentPointButton.addEventListener("click", () => {
+  followCurrentPoint = !followCurrentPoint;
+  saveProgressState();
+  renderProgressTool();
+  showProgressSavedStatus();
+});
+
 function setStitchZoom(value) {
   stitchZoom = normalizeStitchZoom(value) || DEFAULT_STITCH_ZOOM;
   saveProgressState();
@@ -1227,6 +1267,7 @@ resetProgressToolButton.addEventListener("click", () => {
   selectedDmc = null;
   stitchedByDmc = {};
   stitchZoom = DEFAULT_STITCH_ZOOM;
+  followCurrentPoint = false;
   stitchProgress = {
     load: false,
     stitch: false
