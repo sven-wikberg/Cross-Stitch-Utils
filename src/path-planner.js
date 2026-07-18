@@ -16,7 +16,7 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const stopPathAlgorithmButton = document.querySelector("#stopPathAlgorithmButton");
-const pathSearchDuration = document.querySelector("#pathSearchDuration");
+const pathStagnationLimit = document.querySelector("#pathStagnationLimit");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
 const pathAlgorithmProgress = document.querySelector("#pathAlgorithmProgress");
 const pathAlgorithmDistance = document.querySelector("#pathAlgorithmDistance");
@@ -73,7 +73,7 @@ const GRID_RULER_SIZE = 26;
 const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const DEFAULT_CUT_THRESHOLD = 15;
-const DEFAULT_PATH_SEARCH_DURATION = 300000;
+const DEFAULT_PATH_STAGNATION_LIMIT = 60000;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -92,7 +92,7 @@ let lastPointerCell = null;
 let pathAlgorithmRunning = false;
 let pathOptimizationBaselinesByDmc = {};
 let cutThreshold = storedState.cutThreshold || DEFAULT_CUT_THRESHOLD;
-let pathSearchDurationMs = storedState.pathSearchDurationMs || DEFAULT_PATH_SEARCH_DURATION;
+let pathStagnationLimitMs = storedState.pathStagnationLimitMs || DEFAULT_PATH_STAGNATION_LIMIT;
 let activePathOptimizerWorker = null;
 let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
@@ -118,7 +118,7 @@ function loadStoredState() {
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
         cutThreshold: normalizeCutThreshold(parsed.cutThreshold),
-        pathSearchDurationMs: normalizePathSearchDuration(parsed.pathSearchDurationMs)
+        pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs)
       };
     }
 
@@ -140,7 +140,7 @@ function savePathPlannerState() {
     bestPathsByDmc,
     selectedDmc,
     cutThreshold,
-    pathSearchDurationMs
+    pathStagnationLimitMs
   }));
 }
 
@@ -153,13 +153,13 @@ function normalizeCutThreshold(value) {
   return Math.max(1, Math.round(threshold));
 }
 
-function normalizePathSearchDuration(value) {
-  const duration = Number(value);
-  if (!Number.isFinite(duration) || duration < 10000 || duration > 3600000) {
+function normalizePathStagnationLimit(value) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit < 10000 || limit > 3600000) {
     return null;
   }
 
-  return Math.round(duration);
+  return Math.round(limit);
 }
 
 function realisticCutPenalty() {
@@ -176,7 +176,7 @@ function renderPathTool() {
   pathStepTitle.textContent = label.title;
   resetPathToolButton.disabled = pathAlgorithmRunning;
   cutThresholdInput.value = String(cutThreshold);
-  pathSearchDuration.value = String(pathSearchDurationMs);
+  pathStagnationLimit.value = String(pathStagnationLimitMs);
 
   pathStepButtons.forEach((button) => {
     const step = button.dataset.step;
@@ -408,7 +408,7 @@ function pointCenter(point, cellSize) {
 function renderPathBuilder() {
   stopPathAlgorithmButton.classList.toggle("hidden", !activePathOptimizerWorker);
   stopPathAlgorithmButton.disabled = !activePathOptimizerWorker;
-  pathSearchDuration.disabled = pathAlgorithmRunning;
+  pathStagnationLimit.disabled = pathAlgorithmRunning;
   cutThresholdInput.disabled = pathAlgorithmRunning;
 
   if (!loadedPattern || !selectedDmc) {
@@ -1841,7 +1841,7 @@ function startAdvancedPathSearch() {
     points: cellsForColor(dmc).map(copyPoint),
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
-    timeLimitMs: pathSearchDurationMs
+    stagnationLimitMs: pathStagnationLimitMs
   });
 }
 
@@ -1945,10 +1945,10 @@ function updateAlgorithmLiveMetrics(snapshot) {
     return;
   }
 
-  pathAlgorithmElapsed.textContent = `${formatAlgorithmTime(snapshot.elapsedMs)} / ${formatAlgorithmTime(snapshot.timeLimitMs || pathSearchDurationMs)}`;
+  pathAlgorithmElapsed.textContent = formatAlgorithmTime(snapshot.elapsedMs);
   pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
   pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
-  pathAlgorithmLastImprovement.textContent = formatAlgorithmTime(snapshot.lastImprovementMs || 0);
+  pathAlgorithmLastImprovement.textContent = `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs)}`;
 }
 
 function resetAlgorithmLiveMetrics() {
@@ -1992,9 +1992,9 @@ stopPathAlgorithmButton.addEventListener("click", () => {
   stopAdvancedPathSearch();
 });
 
-pathSearchDuration.addEventListener("change", () => {
-  pathSearchDurationMs = normalizePathSearchDuration(pathSearchDuration.value) || DEFAULT_PATH_SEARCH_DURATION;
-  pathSearchDuration.value = String(pathSearchDurationMs);
+pathStagnationLimit.addEventListener("change", () => {
+  pathStagnationLimitMs = normalizePathStagnationLimit(pathStagnationLimit.value) || DEFAULT_PATH_STAGNATION_LIMIT;
+  pathStagnationLimit.value = String(pathStagnationLimitMs);
   savePathPlannerState();
   showPathSavedStatus();
 });
@@ -2096,7 +2096,7 @@ resetPathToolButton.addEventListener("click", () => {
   pathsByDmc = {};
   bestPathsByDmc = {};
   cutThreshold = DEFAULT_CUT_THRESHOLD;
-  pathSearchDurationMs = DEFAULT_PATH_SEARCH_DURATION;
+  pathStagnationLimitMs = DEFAULT_PATH_STAGNATION_LIMIT;
   pathOptimizationBaselinesByDmc = {};
   pathProgress = {
     load: false,

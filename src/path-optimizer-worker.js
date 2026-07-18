@@ -13,10 +13,9 @@
       const pointCount = points.length;
       const cutThreshold = Math.max(1, Number(options.cutThreshold) || 15);
       const cutPenalty = cutThreshold * 3;
-      const timeLimitMs = Math.max(1000, Number(options.timeLimitMs) || 120000);
+      const stagnationLimitMs = Math.max(1000, Number(options.stagnationLimitMs) || 60000);
       const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
       const startedAt = now();
-      const deadline = startedAt + timeLimitMs;
       const random = createRandom(hashPoints(points));
       let evaluations = 0;
       let restarts = 0;
@@ -38,19 +37,21 @@
           evaluations,
           restarts,
           improvements,
-          elapsedMs: now() - startedAt
+          elapsedMs: now() - startedAt,
+          lastImprovementMs: 0,
+          stagnationLimitMs
         };
       }
 
-      reportSetup("Calcul des distances", 1);
+      reportSetup("Calcul des distances");
       const distances = buildDistanceMatrix(points, (row) => {
         if (row % 80 === 0) {
-          reportSetup("Calcul des distances", 1 + (row / pointCount) * 8);
+          reportSetup("Calcul des distances");
         }
       });
       const candidateLists = buildCandidateLists(points, distances, CANDIDATE_COUNT, (row) => {
         if (row % 80 === 0) {
-          reportSetup("Voisinages", 9 + (row / pointCount) * 8);
+          reportSetup("Voisinages");
         }
       });
 
@@ -181,7 +182,9 @@
         restarts,
         improvements,
         passes,
-        elapsedMs: now() - startedAt
+        elapsedMs: now() - startedAt,
+        lastImprovementMs: now() - lastImprovementAt,
+        stagnationLimitMs
       };
 
       function twoOptPass(route, lists, getEdgeValues) {
@@ -350,21 +353,21 @@
       }
 
       function expired() {
-        return now() >= deadline;
+        return bestRoute.length > 0 && now() - lastImprovementAt >= stagnationLimitMs;
       }
 
-      function reportSetup(phase, progress) {
+      function reportSetup(phase) {
         const current = now();
-        if (current - lastProgressAt < PROGRESS_INTERVAL && progress < 100) {
+        if (current - lastProgressAt < PROGRESS_INTERVAL) {
           return;
         }
 
         lastProgressAt = current;
         onProgress({
           phase,
-          progress: Math.max(0, Math.min(100, progress)),
+          progress: 0,
           elapsedMs: current - startedAt,
-          timeLimitMs,
+          stagnationLimitMs,
           evaluations,
           restarts,
           improvements,
@@ -386,9 +389,11 @@
         const elapsedMs = current - startedAt;
         onProgress({
           phase,
-          progress: forcedProgress === null ? Math.min(99, (elapsedMs / timeLimitMs) * 100) : forcedProgress,
+          progress: forcedProgress === null
+            ? Math.min(99, ((current - lastImprovementAt) / stagnationLimitMs) * 100)
+            : forcedProgress,
           elapsedMs,
-          timeLimitMs,
+          stagnationLimitMs,
           evaluations,
           restarts,
           improvements,
@@ -875,13 +880,13 @@
         return;
       }
 
-      const { runId, points, initialPath, cutThreshold, timeLimitMs } = event.data;
+      const { runId, points, initialPath, cutThreshold, stagnationLimitMs } = event.data;
       try {
         const result = optimizer.optimizePath({
           points,
           initialPath,
           cutThreshold,
-          timeLimitMs,
+          stagnationLimitMs,
           onProgress(snapshot) {
             self.postMessage({
               type: "progress",

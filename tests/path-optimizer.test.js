@@ -17,16 +17,25 @@ for (const offsetX of [0, 20]) {
 }
 
 async function run() {
+  let lastImprovementElapsed = 0;
+  let observedImprovements = -1;
   const result = createPathOptimizerApi().optimizePath({
     points,
     cutThreshold: 5,
-    timeLimitMs: 1000
+    stagnationLimitMs: 1000,
+    onProgress(snapshot) {
+      if (snapshot.metrics && snapshot.improvements !== observedImprovements) {
+        observedImprovements = snapshot.improvements;
+        lastImprovementElapsed = snapshot.elapsedMs;
+      }
+    }
   });
 
   assert.equal(result.route.length, points.length);
   assert.equal(new Set(result.route).size, points.length);
   assert.ok(result.metrics.score <= result.initialMetrics.score);
   assert.equal(result.metrics.cuts, 1);
+  assert.ok(result.elapsedMs - lastImprovementElapsed >= 900);
 
   const workerSource = `
     const { parentPort } = require("node:worker_threads");
@@ -55,12 +64,14 @@ async function run() {
       points,
       initialPath: [],
       cutThreshold: 5,
-      timeLimitMs: 1000
+      stagnationLimitMs: 1000
     });
   });
 
   assert.equal(workerResult.path.length, points.length);
   assert.equal(new Set(workerResult.path.map((point) => `${point.x},${point.y}`)).size, points.length);
+  assert.ok(workerResult.lastImprovementMs >= 900);
+  assert.equal(workerResult.stagnationLimitMs, 1000);
   console.log("path optimizer tests passed");
 }
 

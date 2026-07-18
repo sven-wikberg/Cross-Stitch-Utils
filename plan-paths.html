@@ -66,12 +66,13 @@
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="secondary-button" type="button">Recherche approfondie</button>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
-              <label class="cut-threshold-field" for="pathSearchDuration">
-                Duree de recherche
-                <select id="pathSearchDuration">
+              <label class="cut-threshold-field" for="pathStagnationLimit">
+                Temps sans amelioration
+                <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
+                  <option value="60000" selected>1 minute</option>
                   <option value="120000">2 minutes</option>
-                  <option value="300000" selected>5 minutes</option>
+                  <option value="300000">5 minutes</option>
                   <option value="600000">10 minutes</option>
                 </select>
               </label>
