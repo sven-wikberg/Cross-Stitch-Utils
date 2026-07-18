@@ -761,8 +761,15 @@ select:focus {
   font-weight: 800;
 }
 
-.cut-threshold-field input {
+.cut-threshold-field input,
+.cut-threshold-field select {
   min-height: 38px;
+}
+
+.algorithm-stop-button {
+  border-color: rgba(255, 179, 189, 0.62);
+  color: #ffffff;
+  background: rgba(180, 75, 87, 0.3);
 }
 
 .algorithm-group + .algorithm-group {
@@ -798,6 +805,33 @@ select:focus {
 
 .sidebar-panel .algorithm-feedback p {
   color: rgba(255, 255, 255, 0.86);
+}
+
+.algorithm-live-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 10px;
+  margin: 2px 0 0;
+}
+
+.algorithm-live-metrics div {
+  min-width: 0;
+}
+
+.algorithm-live-metrics dt {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.algorithm-live-metrics dd {
+  overflow: hidden;
+  margin: 1px 0 0;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .embedded-save-panel {

@@ -64,8 +64,18 @@
           <div class="path-algorithm-panel">
             <div class="algorithm-group">
               <p class="field-label">Optimisation</p>
-              <button id="optimizedPathButton" class="secondary-button" type="button">Recherche 2-opt</button>
+              <button id="optimizedPathButton" class="secondary-button" type="button">Recherche approfondie</button>
               <button id="uncrossPathButton" class="secondary-button" type="button">Decroiser</button>
+              <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
+              <label class="cut-threshold-field" for="pathSearchDuration">
+                Duree de recherche
+                <select id="pathSearchDuration">
+                  <option value="30000">30 secondes</option>
+                  <option value="120000">2 minutes</option>
+                  <option value="300000" selected>5 minutes</option>
+                  <option value="600000">10 minutes</option>
+                </select>
+              </label>
               <label class="cut-threshold-field" for="cutThresholdInput">
                 Distance de coupe
                 <input id="cutThresholdInput" type="number" min="1" step="1" value="15">
@@ -73,6 +83,24 @@
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
                 <progress id="pathAlgorithmProgress" value="0" max="100"></progress>
                 <p id="pathAlgorithmDistance">Pret.</p>
+                <dl class="algorithm-live-metrics">
+                  <div>
+                    <dt>Temps</dt>
+                    <dd id="pathAlgorithmElapsed">-</dd>
+                  </div>
+                  <div>
+                    <dt>Relances</dt>
+                    <dd id="pathAlgorithmRestarts">-</dd>
+                  </div>
+                  <div>
+                    <dt>Ameliorations</dt>
+                    <dd id="pathAlgorithmImprovements">-</dd>
+                  </div>
+                  <div>
+                    <dt>Dernier gain</dt>
+                    <dd id="pathAlgorithmLastImprovement">-</dd>
+                  </div>
+                </dl>
               </div>
             </div>
           </div>
@@ -197,6 +225,7 @@
       </section>
     </main>
 
+    <script src="src/path-optimizer-worker.js"></script>
     <script src="src/path-planner.js"></script>
   </body>
 </html>

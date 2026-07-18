@@ -16,9 +16,15 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const uncrossPathButton = document.querySelector("#uncrossPathButton");
+const stopPathAlgorithmButton = document.querySelector("#stopPathAlgorithmButton");
+const pathSearchDuration = document.querySelector("#pathSearchDuration");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
 const pathAlgorithmProgress = document.querySelector("#pathAlgorithmProgress");
 const pathAlgorithmDistance = document.querySelector("#pathAlgorithmDistance");
+const pathAlgorithmElapsed = document.querySelector("#pathAlgorithmElapsed");
+const pathAlgorithmRestarts = document.querySelector("#pathAlgorithmRestarts");
+const pathAlgorithmImprovements = document.querySelector("#pathAlgorithmImprovements");
+const pathAlgorithmLastImprovement = document.querySelector("#pathAlgorithmLastImprovement");
 const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
@@ -69,6 +75,7 @@ const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const PATH_UNCROSS_TIME_LIMIT = 30000;
 const DEFAULT_CUT_THRESHOLD = 15;
+const DEFAULT_PATH_SEARCH_DURATION = 300000;
 
 let storedState = loadStoredState();
 let loadedPattern = storedState.pattern;
@@ -87,6 +94,12 @@ let lastPointerCell = null;
 let pathAlgorithmRunning = false;
 let pathOptimizationBaselinesByDmc = {};
 let cutThreshold = storedState.cutThreshold || DEFAULT_CUT_THRESHOLD;
+let pathSearchDurationMs = storedState.pathSearchDurationMs || DEFAULT_PATH_SEARCH_DURATION;
+let activePathOptimizerWorker = null;
+let activePathOptimizerRunId = null;
+let activePathOptimizerDmc = null;
+let activePathOptimizerLastSavedAt = 0;
+let activePathOptimizerSnapshot = null;
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -106,7 +119,8 @@ function loadStoredState() {
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
-        cutThreshold: normalizeCutThreshold(parsed.cutThreshold)
+        cutThreshold: normalizeCutThreshold(parsed.cutThreshold),
+        pathSearchDurationMs: normalizePathSearchDuration(parsed.pathSearchDurationMs)
       };
     }
 
@@ -127,7 +141,8 @@ function savePathPlannerState() {
     pathsByDmc,
     bestPathsByDmc,
     selectedDmc,
-    cutThreshold
+    cutThreshold,
+    pathSearchDurationMs
   }));
 }
 
@@ -138,6 +153,15 @@ function normalizeCutThreshold(value) {
   }
 
   return Math.max(1, Math.round(threshold));
+}
+
+function normalizePathSearchDuration(value) {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration < 10000 || duration > 3600000) {
+    return null;
+  }
+
+  return Math.round(duration);
 }
 
 function realisticCutPenalty() {
@@ -152,7 +176,9 @@ function renderPathTool() {
   const label = pathStepLabels[activePathStep];
   pathStepEyebrow.textContent = label.eyebrow;
   pathStepTitle.textContent = label.title;
+  resetPathToolButton.disabled = pathAlgorithmRunning;
   cutThresholdInput.value = String(cutThreshold);
+  pathSearchDuration.value = String(pathSearchDurationMs);
 
   pathStepButtons.forEach((button) => {
     const step = button.dataset.step;
@@ -382,6 +408,11 @@ function pointCenter(point, cellSize) {
 }
 
 function renderPathBuilder() {
+  stopPathAlgorithmButton.classList.toggle("hidden", !activePathOptimizerWorker);
+  stopPathAlgorithmButton.disabled = !activePathOptimizerWorker;
+  pathSearchDuration.disabled = pathAlgorithmRunning;
+  cutThresholdInput.disabled = pathAlgorithmRunning;
+
   if (!loadedPattern || !selectedDmc) {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
@@ -412,6 +443,7 @@ function renderPathBuilder() {
 }
 
 function renderPathDistanceFeedback() {
+  resetAlgorithmLiveMetrics();
   const path = currentPath();
   if (path.length === 0) {
     const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
@@ -947,6 +979,10 @@ function comparePathPerformance(a, b) {
   const bMetrics = pathPerformanceMetrics(b);
   if (aMetrics.realisticScore !== bMetrics.realisticScore) {
     return aMetrics.realisticScore - bMetrics.realisticScore;
+  }
+
+  if (aMetrics.cuts !== bMetrics.cuts) {
+    return aMetrics.cuts - bMetrics.cuts;
   }
 
   return aMetrics.distance - bMetrics.distance;
@@ -1687,6 +1723,10 @@ function showPathSavedStatus() {
 }
 
 patternJsonFileInput.addEventListener("change", async () => {
+  if (activePathOptimizerWorker) {
+    stopAdvancedPathSearch();
+  }
+
   const file = patternJsonFileInput.files[0];
   if (!file) {
     return;
@@ -1763,6 +1803,10 @@ patternCanvas.addEventListener("pointercancel", () => {
 });
 
 pathColorLegend.addEventListener("click", (event) => {
+  if (pathAlgorithmRunning) {
+    return;
+  }
+
   const button = event.target.closest("[data-dmc]");
   if (!button) {
     return;
@@ -1783,6 +1827,7 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
     pathOptimizationBaselinesByDmc[selectedDmc] = pathRealisticScore(baselinePath);
   }
   pathAlgorithmRunning = true;
+  resetAlgorithmLiveMetrics();
   showAlgorithmFeedback("Preparation", 0, null);
   renderPathTool();
 
@@ -1824,6 +1869,192 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
   }
 }
 
+function startAdvancedPathSearch() {
+  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
+    return;
+  }
+
+  let worker = null;
+  try {
+    worker = window.createPathOptimizerWorker?.();
+  } catch (error) {
+    showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`, 0, null);
+    return;
+  }
+  if (!worker) {
+    showAlgorithmFeedback("Le calcul en arriere-plan n'est pas disponible dans ce navigateur.", 0, null);
+    return;
+  }
+
+  const dmc = selectedDmc;
+  const startingPath = bestCompletePathForColor(dmc);
+  if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
+    pathOptimizationBaselinesByDmc[dmc] = pathRealisticScore(startingPath);
+  }
+
+  activePathOptimizerWorker = worker;
+  activePathOptimizerRunId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  activePathOptimizerDmc = dmc;
+  activePathOptimizerLastSavedAt = 0;
+  activePathOptimizerSnapshot = null;
+  pathAlgorithmRunning = true;
+  resetAlgorithmLiveMetrics();
+  showAlgorithmFeedback("Preparation de la recherche approfondie", 0, null);
+  renderPathTool();
+
+  worker.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.runId !== activePathOptimizerRunId) {
+      return;
+    }
+
+    if (message.type === "error") {
+      finishAdvancedPathSearch(`Erreur: ${message.message}`, message, false);
+      return;
+    }
+
+    if (message.type === "progress") {
+      applyAdvancedPathSnapshot(dmc, message);
+      return;
+    }
+
+    if (message.type === "complete") {
+      applyAdvancedPathSnapshot(dmc, message);
+      finishAdvancedPathSearch("Recherche approfondie terminee", message, true);
+    }
+  });
+
+  worker.addEventListener("error", (event) => {
+    finishAdvancedPathSearch(`Erreur du moteur: ${event.message || "calcul interrompu"}`, null, false);
+  });
+
+  worker.postMessage({
+    type: "start",
+    runId: activePathOptimizerRunId,
+    points: cellsForColor(dmc).map(copyPoint),
+    initialPath: startingPath.map(copyPoint),
+    cutThreshold,
+    timeLimitMs: pathSearchDurationMs
+  });
+}
+
+function bestCompletePathForColor(dmc) {
+  const candidates = [
+    Array.isArray(pathsByDmc[dmc]) ? pathsByDmc[dmc] : [],
+    Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : []
+  ].filter((path) => isCompletePathForColor(loadedPattern, { [dmc]: path }, dmc));
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  return candidates.sort(comparePathPerformance)[0].map(copyPoint);
+}
+
+function applyAdvancedPathSnapshot(dmc, snapshot) {
+  activePathOptimizerSnapshot = snapshot;
+  if (pathOptimizationBaselinesByDmc[dmc] === undefined && Number.isFinite(snapshot.initialMetrics?.score)) {
+    pathOptimizationBaselinesByDmc[dmc] = snapshot.initialMetrics.score;
+  }
+
+  let pathChanged = false;
+  if (Array.isArray(snapshot.path) && isCompletePathForColor(loadedPattern, { [dmc]: snapshot.path }, dmc)) {
+    const result = rememberBestPath(dmc, snapshot.path);
+    pathsByDmc[dmc] = result.path;
+    pathChanged = result.improved;
+  }
+
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+
+  if (pathChanged) {
+    renderPathTool();
+    if (snapshot.elapsedMs - activePathOptimizerLastSavedAt >= 3000) {
+      activePathOptimizerLastSavedAt = snapshot.elapsedMs;
+      savePathPlannerState();
+    }
+  }
+
+  showAdvancedPathFeedback(snapshot);
+}
+
+function finishAdvancedPathSearch(label, snapshot, completed) {
+  const finalSnapshot = snapshot || activePathOptimizerSnapshot;
+  if (activePathOptimizerWorker) {
+    activePathOptimizerWorker.terminate();
+  }
+
+  activePathOptimizerWorker = null;
+  activePathOptimizerRunId = null;
+  activePathOptimizerDmc = null;
+  pathAlgorithmRunning = false;
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+
+  const path = currentPath();
+  const metrics = pathPerformanceMetrics(path);
+  const progress = completed ? 100 : Math.min(99, finalSnapshot?.progress || 0);
+  showAlgorithmFeedback(
+    label,
+    progress,
+    path.length > 1 ? metrics.realisticScore : null,
+    null,
+    path.length > 1 ? metrics : null
+  );
+  updateAlgorithmLiveMetrics(finalSnapshot);
+  activePathOptimizerSnapshot = null;
+  showPathSavedStatus();
+}
+
+function stopAdvancedPathSearch() {
+  if (!activePathOptimizerWorker) {
+    return;
+  }
+
+  finishAdvancedPathSearch("Recherche arretee, meilleur chemin conserve", null, false);
+}
+
+function showAdvancedPathFeedback(snapshot) {
+  const path = activePathOptimizerDmc ? pathsByDmc[activePathOptimizerDmc] || [] : [];
+  const metrics = pathPerformanceMetrics(path);
+  showAlgorithmFeedback(
+    snapshot.phase || "Recherche approfondie",
+    snapshot.progress || 0,
+    path.length > 1 ? metrics.realisticScore : snapshot.metrics?.score,
+    null,
+    path.length > 1 ? metrics : null
+  );
+  updateAlgorithmLiveMetrics(snapshot);
+}
+
+function updateAlgorithmLiveMetrics(snapshot) {
+  if (!snapshot) {
+    pathAlgorithmElapsed.textContent = "-";
+    pathAlgorithmRestarts.textContent = "-";
+    pathAlgorithmImprovements.textContent = "-";
+    pathAlgorithmLastImprovement.textContent = "-";
+    return;
+  }
+
+  pathAlgorithmElapsed.textContent = `${formatAlgorithmTime(snapshot.elapsedMs)} / ${formatAlgorithmTime(snapshot.timeLimitMs || pathSearchDurationMs)}`;
+  pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
+  pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
+  pathAlgorithmLastImprovement.textContent = formatAlgorithmTime(snapshot.lastImprovementMs || 0);
+}
+
+function resetAlgorithmLiveMetrics() {
+  updateAlgorithmLiveMetrics(null);
+}
+
+function formatAlgorithmTime(milliseconds) {
+  const totalSeconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function showAlgorithmFeedback(phase, progress, distance, candidateDistance = null, metrics = null) {
   pathAlgorithmFeedback.classList.remove("hidden");
   pathAlgorithmProgress.value = Math.max(0, Math.min(100, Math.round(progress || 0)));
@@ -1847,11 +2078,22 @@ function nextFrame() {
 }
 
 optimizedPathButton.addEventListener("click", () => {
-  applyAsyncPathAlgorithm(optimizedPathForColor, "Recherche 2-opt");
+  startAdvancedPathSearch();
 });
 
 uncrossPathButton.addEventListener("click", () => {
   applyAsyncPathAlgorithm(uncrossPathForColor, "Decroiser");
+});
+
+stopPathAlgorithmButton.addEventListener("click", () => {
+  stopAdvancedPathSearch();
+});
+
+pathSearchDuration.addEventListener("change", () => {
+  pathSearchDurationMs = normalizePathSearchDuration(pathSearchDuration.value) || DEFAULT_PATH_SEARCH_DURATION;
+  pathSearchDuration.value = String(pathSearchDurationMs);
+  savePathPlannerState();
+  showPathSavedStatus();
 });
 
 cutThresholdInput.addEventListener("change", () => {
@@ -1938,11 +2180,20 @@ window.addEventListener("resize", () => {
 });
 
 resetPathToolButton.addEventListener("click", () => {
+  if (activePathOptimizerWorker) {
+    activePathOptimizerWorker.terminate();
+    activePathOptimizerWorker = null;
+    activePathOptimizerRunId = null;
+    activePathOptimizerDmc = null;
+    activePathOptimizerSnapshot = null;
+    pathAlgorithmRunning = false;
+  }
   loadedPattern = null;
   selectedDmc = null;
   pathsByDmc = {};
   bestPathsByDmc = {};
   cutThreshold = DEFAULT_CUT_THRESHOLD;
+  pathSearchDurationMs = DEFAULT_PATH_SEARCH_DURATION;
   pathOptimizationBaselinesByDmc = {};
   pathProgress = {
     load: false,
