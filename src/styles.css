@@ -616,24 +616,27 @@ select:focus {
 }
 
 .zoom-controls {
-  position: sticky;
-  top: 42px;
-  z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  width: fit-content;
-  margin: 0 0 12px;
+  width: 100%;
+  margin: 2px 0 0;
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .zoom-controls .secondary-button {
   width: 38px;
   min-height: 34px;
   padding: 0;
+}
+
+.zoom-controls .status-pill {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .pattern-canvas-wrap canvas {
