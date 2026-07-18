@@ -38,6 +38,7 @@ const selectedProgressColor = document.querySelector("#selectedProgressColor");
 const selectedProgressPoints = document.querySelector("#selectedProgressPoints");
 const selectedProgressPercent = document.querySelector("#selectedProgressPercent");
 const selectedProgressRemaining = document.querySelector("#selectedProgressRemaining");
+const zoomPanel = document.querySelector("#zoomPanel");
 const progressStepEyebrow = document.querySelector("#progressStepEyebrow");
 const progressStepTitle = document.querySelector("#progress-step-title");
 const progressStepButtons = document.querySelectorAll("[data-step]");
@@ -164,6 +165,7 @@ function renderProgressTool() {
   const showProgressPanels = activeProgressStep === "stitch" && Boolean(loadedPaths);
   globalProgressPanel.classList.toggle("hidden", !showProgressPanels);
   selectedProgressPanel.classList.toggle("hidden", !showProgressPanels);
+  zoomPanel.classList.toggle("hidden", !showProgressPanels);
 
   renderLoadedPaths();
   renderBuiltinProgressControls();
