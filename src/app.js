@@ -3,6 +3,7 @@ const PROGRESS_STORAGE_KEY = "cross-stitch-import-progress";
 const IMAGE_DB_NAME = "cross-stitch-utils";
 const IMAGE_DB_VERSION = 1;
 const IMAGE_STORE_NAME = "pattern-part-images";
+const DRAFT_STORAGE_VERSION = 2;
 const LIGHT_CELL_MARKED_SIGNATURE_PREFIX = "LIGHT_CELL_MARKED:";
 const LIGHT_CELL_LUMINANCE_THRESHOLD = 226;
 const LIGHT_CELL_SYMBOL_LUMINANCE_THRESHOLD = 190;
@@ -188,20 +189,24 @@ function loadPattern() {
 
   try {
     const parsed = JSON.parse(stored);
+    const { draftStorageVersion: _draftStorageVersion, ...storedPattern } = parsed;
+    const storedParts = Array.isArray(parsed.parts) ? parsed.parts : [];
+    const gridWidth = Number.isInteger(parsed.grid?.width) ? parsed.grid.width : 0;
     return {
       ...structuredClone(defaultPattern),
-      ...parsed,
+      ...storedPattern,
       project: {
         ...structuredClone(defaultPattern.project),
         ...parsed.project
       },
       grid: {
         ...structuredClone(defaultPattern.grid),
-        ...parsed.grid
+        ...parsed.grid,
+        cells: hydrateDraftCells(parsed.grid?.cells, storedParts)
       },
       partsExpected: Number.isInteger(parsed.partsExpected) ? parsed.partsExpected : 0,
-      parts: Array.isArray(parsed.parts) ? parsed.parts : [],
-      symbolGroups: Array.isArray(parsed.symbolGroups) ? parsed.symbolGroups : [],
+      parts: storedParts,
+      symbolGroups: hydrateDraftGroups(parsed.symbolGroups, gridWidth),
       groupingTolerance: Number.isInteger(parsed.groupingTolerance) ? parsed.groupingTolerance : defaultPattern.groupingTolerance,
       colors: Array.isArray(parsed.colors) ? hydrateStoredColors(parsed.colors) : []
     };
@@ -268,7 +273,7 @@ function colorFromReference(referenceColor) {
 }
 
 function savePattern() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(patternForLocalStorage(pattern), null, 2));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patternForLocalStorage(pattern)));
 }
 
 function saveProgress() {
@@ -287,28 +292,129 @@ function trySaveDraft() {
 }
 
 function patternForLocalStorage(patternToStore) {
+  const storedParts = (patternToStore.parts || []).map((part) => {
+    if (part.imageStored) {
+      const { imageDataUrl, ...storedPart } = part;
+      return storedPart;
+    }
+
+    return part;
+  });
+  const partIndexById = new Map(storedParts.map((part, index) => [part.id, index]));
+
   return {
     ...patternToStore,
-    parts: (patternToStore.parts || []).map((part) => {
-      if (part.imageStored) {
-        const { imageDataUrl, ...storedPart } = part;
-        return storedPart;
-      }
-
-      return part;
-    }),
+    draftStorageVersion: DRAFT_STORAGE_VERSION,
+    parts: storedParts,
     grid: {
       ...patternToStore.grid,
-      cells: (patternToStore.grid.cells || []).map((cell) => {
-        const { samplePreviewDataUrl, ...storedCell } = cell;
-        return storedCell;
-      })
+      cells: (patternToStore.grid.cells || []).map((cell) => serializeDraftCell(cell, partIndexById))
     },
-    symbolGroups: (patternToStore.symbolGroups || []).map((group) => {
-      const { previewDataUrl, ...storedGroup } = group;
-      return storedGroup;
-    })
+    symbolGroups: (patternToStore.symbolGroups || []).map((group) => (
+      serializeDraftGroup(group, patternToStore.grid.width)
+    ))
   };
+}
+
+function serializeDraftCell(cell, partIndexById) {
+  const emptyState = cell.empty === true ? 1 : cell.empty === false ? 0 : null;
+  return [
+    cell.x,
+    cell.y,
+    partIndexById.get(cell.partId) ?? cell.partId,
+    cell.sampleSignature || null,
+    cell.dmc || null,
+    emptyState,
+    cell.symbol || null
+  ];
+}
+
+function hydrateDraftCells(storedCells, parts) {
+  if (!Array.isArray(storedCells)) {
+    return [];
+  }
+
+  return storedCells.map((storedCell) => {
+    if (!Array.isArray(storedCell)) {
+      return storedCell;
+    }
+
+    const [x, y, storedPart, sampleSignature, dmc, emptyState, symbol] = storedCell;
+    const partId = Number.isInteger(storedPart) ? parts[storedPart]?.id : storedPart;
+    const cell = {
+      x,
+      y,
+      partId,
+      symbol: symbol || null,
+      dmc: dmc || null
+    };
+
+    if (sampleSignature) {
+      cell.sampleSignature = sampleSignature;
+      cell.sampleMean = sampleMeanFromSignature(sampleSignature);
+      cell.sampleSource = "image-slice";
+    }
+    if (emptyState === 1) {
+      cell.empty = true;
+    } else if (emptyState === 0) {
+      cell.empty = false;
+    }
+
+    return cell;
+  });
+}
+
+function serializeDraftGroup(group, gridWidth) {
+  return [
+    group.signature || null,
+    group.sampleMean || null,
+    Number.isInteger(group.tolerance) ? group.tolerance : 0,
+    (group.cellKeys || []).map((key) => cellKeyToIndex(key, gridWidth)),
+    group.dmc || null,
+    group.isEmpty ? 1 : 0,
+    group.symbol || null
+  ];
+}
+
+function hydrateDraftGroups(storedGroups, gridWidth) {
+  if (!Array.isArray(storedGroups)) {
+    return [];
+  }
+
+  return storedGroups.map((storedGroup, index) => {
+    if (!Array.isArray(storedGroup)) {
+      return storedGroup;
+    }
+
+    const [signature, sampleMean, tolerance, cellIndexes, dmc, isEmpty, symbol] = storedGroup;
+    const cellKeys = (cellIndexes || []).map((cellIndex) => cellIndexToKey(cellIndex, gridWidth));
+    return {
+      id: `group-${index + 1}`,
+      signature: signature || "",
+      sampleMean: sampleMean || sampleMeanFromSignature(signature),
+      tolerance,
+      cellCount: cellKeys.length,
+      cellKeys,
+      symbol: symbol || null,
+      dmc: dmc || null,
+      isEmpty: isEmpty === 1
+    };
+  });
+}
+
+function sampleMeanFromSignature(signature) {
+  return isMarkedLightSignature(signature)
+    ? signature.slice(LIGHT_CELL_MARKED_SIGNATURE_PREFIX.length)
+    : signature || "";
+}
+
+function cellKeyToIndex(key, gridWidth) {
+  const [x, y] = String(key).split(",").map(Number);
+  return y * gridWidth + x;
+}
+
+function cellIndexToKey(index, gridWidth) {
+  return `${index % gridWidth},${Math.floor(index / gridWidth)}`;
 }
 
 async function migrateInlinePartImagesToStore() {
@@ -338,7 +444,7 @@ function render() {
   gridHeightInput.value = pattern.grid.height || "";
   partsExpectedInput.value = pattern.partsExpected || "";
   groupingToleranceSelect.value = String(pattern.groupingTolerance);
-  jsonPreview.textContent = JSON.stringify(patternForLocalStorage(pattern), null, 2);
+  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
   renderParts();
@@ -1666,11 +1772,15 @@ sliceImagesButton.addEventListener("click", async () => {
     progress.groups = false;
     progress.assignments = false;
     pattern.symbolGroups = [];
-    analysisError.hidden = true;
-    savePattern();
-    saveProgress();
+    const draftSaved = trySaveDraft();
     render();
-    showSavedStatus();
+    if (draftSaved) {
+      analysisError.hidden = true;
+      showSavedStatus();
+    } else {
+      analysisError.textContent = "Decoupage termine, mais le brouillon local n'a pas pu etre sauvegarde. Tu peux continuer dans cette session.";
+      analysisError.hidden = false;
+    }
   } catch (error) {
     analysisError.textContent = error.message;
     analysisError.hidden = false;
