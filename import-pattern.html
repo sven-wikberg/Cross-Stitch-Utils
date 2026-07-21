@@ -64,10 +64,13 @@
             <p id="stepEyebrow" class="eyebrow">Etape 1</p>
             <h2 id="step-title">Nom du projet</h2>
           </div>
-          <button id="resetButton" class="icon-button" type="button" title="Reinitialiser">
-            <span aria-hidden="true">Reset</span>
-            <span class="sr-only">Reinitialiser</span>
-          </button>
+          <div class="topbar-actions">
+            <span id="saveStatus" class="status-pill">Brouillon</span>
+            <button id="resetButton" class="icon-button" type="button" title="Reinitialiser">
+              <span aria-hidden="true">Reset</span>
+              <span class="sr-only">Reinitialiser</span>
+            </button>
+          </div>
         </div>
 
         <form id="projectForm" class="tool-panel" data-panel="project">
@@ -497,15 +500,6 @@
             <button id="backToReviewButton" class="secondary-button" type="button">Retour</button>
             <button id="downloadFinalJsonButton" class="primary-button" type="button">Telecharger le JSON final</button>
           </div>
-          <pre id="finalJsonPreview"></pre>
-        </section>
-
-        <section class="json-panel" aria-labelledby="json-title">
-          <div class="panel-title-row">
-            <h3 id="json-title">JSON</h3>
-            <span id="saveStatus" class="status-pill">Brouillon</span>
-          </div>
-          <pre id="jsonPreview"></pre>
         </section>
       </section>
     </main>

@@ -113,10 +113,13 @@
             <p id="pathStepEyebrow" class="eyebrow">Etape 1</p>
             <h2 id="path-step-title">Charger le pattern</h2>
           </div>
-          <button id="resetPathToolButton" class="icon-button" type="button" title="Reinitialiser">
-            <span aria-hidden="true">Reset</span>
-            <span class="sr-only">Reinitialiser</span>
-          </button>
+          <div class="topbar-actions">
+            <span id="pathSaveStatus" class="status-pill">Brouillon</span>
+            <button id="resetPathToolButton" class="icon-button" type="button" title="Reinitialiser">
+              <span aria-hidden="true">Reset</span>
+              <span class="sr-only">Reinitialiser</span>
+            </button>
+          </div>
         </div>
 
         <section id="loadPanel" class="tool-panel" data-panel="load" aria-labelledby="load-title">
@@ -211,16 +214,6 @@
             <button id="backToPathsButton" class="secondary-button" type="button">Retour</button>
             <button id="downloadPathJsonButton" class="primary-button" type="button">Telecharger le JSON des chemins</button>
           </div>
-
-          <pre id="pathExportPreview"></pre>
-        </section>
-
-        <section class="json-panel" aria-labelledby="loaded-json-title">
-          <div class="panel-title-row">
-            <h3 id="loaded-json-title">JSON charge</h3>
-            <span id="pathSaveStatus" class="status-pill">Brouillon</span>
-          </div>
-          <pre id="loadedJsonPreview"></pre>
         </section>
       </section>
     </main>

@@ -6,7 +6,6 @@ const loadedProjectText = document.querySelector("#loadedProjectText");
 const loadedDimensionsText = document.querySelector("#loadedDimensionsText");
 const loadedColorsText = document.querySelector("#loadedColorsText");
 const loadError = document.querySelector("#loadError");
-const loadedJsonPreview = document.querySelector("#loadedJsonPreview");
 const pathSaveStatus = document.querySelector("#pathSaveStatus");
 const resetPathToolButton = document.querySelector("#resetPathToolButton");
 const pathGridStatus = document.querySelector("#pathGridStatus");
@@ -34,7 +33,6 @@ const pathExportPathsText = document.querySelector("#pathExportPathsText");
 const pathExportPointsText = document.querySelector("#pathExportPointsText");
 const backToPathsButton = document.querySelector("#backToPathsButton");
 const downloadPathJsonButton = document.querySelector("#downloadPathJsonButton");
-const pathExportPreview = document.querySelector("#pathExportPreview");
 const pathPerformancePanel = document.querySelector("#pathPerformancePanel");
 const metricColor = document.querySelector("#metricColor");
 const metricPoints = document.querySelector("#metricPoints");
@@ -207,7 +205,6 @@ function renderLoadedPattern() {
     loadedProjectText.textContent = "-";
     loadedDimensionsText.textContent = "0 x 0";
     loadedColorsText.textContent = "0";
-    loadedJsonPreview.textContent = "";
     return;
   }
 
@@ -216,7 +213,6 @@ function renderLoadedPattern() {
   loadedProjectText.textContent = loadedPattern.project.name;
   loadedDimensionsText.textContent = `${loadedPattern.grid.width} x ${loadedPattern.grid.height}`;
   loadedColorsText.textContent = String(loadedPattern.colors.length);
-  loadedJsonPreview.textContent = JSON.stringify(loadedPattern, null, 2);
 }
 
 function renderPatternGrid() {
@@ -539,7 +535,6 @@ function renderPathExport() {
     ? "JSON des chemins pret."
     : "Complete tous les chemins avant l'export.";
   downloadPathJsonButton.disabled = !ready;
-  pathExportPreview.textContent = exportData ? JSON.stringify(exportData, null, 2) : "";
 }
 
 function mutedHex(hex) {

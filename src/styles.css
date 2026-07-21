@@ -283,8 +283,13 @@ h3 {
   gap: 16px;
 }
 
-.tool-panel,
-.json-panel {
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -984,20 +989,6 @@ select:focus {
   background: rgba(36, 120, 109, 0.08);
 }
 
-.json-panel {
-  overflow: hidden;
-}
-
-.panel-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--surface-muted);
-  border-bottom: 1px solid var(--line);
-}
-
 .status-pill {
   padding: 4px 9px;
   border-radius: 999px;
@@ -1005,18 +996,6 @@ select:focus {
   background: rgba(36, 120, 109, 0.12);
   font-size: 0.78rem;
   font-weight: 800;
-}
-
-pre {
-  min-height: 220px;
-  margin: 0;
-  padding: 18px;
-  overflow: auto;
-  color: #293133;
-  background: #fbfcfb;
-  font-family: Consolas, "Liberation Mono", monospace;
-  font-size: 0.92rem;
-  line-height: 1.55;
 }
 
 .sr-only {

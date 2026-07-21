@@ -117,12 +117,10 @@ const exportColorsText = document.querySelector("#exportColorsText");
 const exportCellsText = document.querySelector("#exportCellsText");
 const backToReviewButton = document.querySelector("#backToReviewButton");
 const downloadFinalJsonButton = document.querySelector("#downloadFinalJsonButton");
-const finalJsonPreview = document.querySelector("#finalJsonPreview");
 const stepButtons = document.querySelectorAll("[data-step]");
 const panels = document.querySelectorAll("[data-panel]");
 const stepEyebrow = document.querySelector("#stepEyebrow");
 const stepTitle = document.querySelector("#step-title");
-const jsonPreview = document.querySelector("#jsonPreview");
 const saveStatus = document.querySelector("#saveStatus");
 const resetButton = document.querySelector("#resetButton");
 
@@ -444,7 +442,6 @@ function render() {
   gridHeightInput.value = pattern.grid.height || "";
   partsExpectedInput.value = pattern.partsExpected || "";
   groupingToleranceSelect.value = String(pattern.groupingTolerance);
-  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   renderStep();
   renderColors();
   renderParts();
@@ -1048,7 +1045,6 @@ function renderExport() {
     ? "Fichier final pret."
     : "Applique les associations a la grille avant l'export.";
   downloadFinalJsonButton.disabled = !ready;
-  finalJsonPreview.textContent = JSON.stringify(finalPattern, null, 2);
 }
 
 function areSymbolGroupsGenerated(patternToValidate) {
@@ -1957,7 +1953,6 @@ function classifyCurrentGroup({ dmc, isEmpty }) {
   assignmentsError.hidden = true;
   advanceToNextAssignment();
   renderAssignments();
-  jsonPreview.textContent = JSON.stringify(pattern, null, 2);
   if (trySaveDraft()) {
     showSavedStatus();
   }
