@@ -208,8 +208,13 @@ function renderLoadedPattern() {
     return;
   }
 
+  const loadedPathCount = loadedPattern.colors.filter((color) => (
+    isCompletePathForColor(loadedPattern, pathsByDmc, color.dmc)
+  )).length;
   loadStatus.className = "coverage-status valid";
-  loadStatus.textContent = "Pattern charge et format valide.";
+  loadStatus.textContent = loadedPathCount > 0
+    ? `Pattern et ${loadedPathCount} chemin${loadedPathCount > 1 ? "s" : ""} charges.`
+    : "Pattern charge et format valide.";
   loadedProjectText.textContent = loadedPattern.project.name;
   loadedDimensionsText.textContent = `${loadedPattern.grid.width} x ${loadedPattern.grid.height}`;
   loadedColorsText.textContent = String(loadedPattern.colors.length);
@@ -1566,15 +1571,38 @@ function goToPathStep(step) {
   renderPathTool();
 }
 
-async function readSelectedPattern(file) {
+async function readSelectedPathInput(file) {
   const text = await file.text();
   const parsed = JSON.parse(text);
-  const validation = validateFinalPattern(parsed);
-  if (!validation.valid) {
-    throw new Error(validation.message);
+
+  const patternValidation = validateFinalPattern(parsed);
+  if (patternValidation.valid) {
+    return {
+      pattern: parsed,
+      pathsByDmc: {}
+    };
   }
 
-  return parsed;
+  const pathsValidation = validatePathsFile(parsed);
+  if (pathsValidation.valid) {
+    return {
+      pattern: parsed.pattern,
+      pathsByDmc: Object.fromEntries(parsed.paths.map((path) => [
+        path.dmc,
+        path.points.map((point) => ({ x: point.x, y: point.y }))
+      ]))
+    };
+  }
+
+  if (parsed?.kind === "cross-stitch-pattern") {
+    throw new Error(patternValidation.message);
+  }
+
+  if (parsed?.kind === "cross-stitch-paths") {
+    throw new Error(pathsValidation.message);
+  }
+
+  throw new Error("Ce fichier n'est ni un pattern de l'outil 1 ni un fichier de chemins de l'outil 2.");
 }
 
 function validateFinalPattern(pattern) {
@@ -1617,6 +1645,64 @@ function validateFinalPattern(pattern) {
   return { valid: true, message: "" };
 }
 
+function validatePathsFile(data) {
+  if (!data || data.kind !== "cross-stitch-paths" || data.schemaVersion !== 1) {
+    return { valid: false, message: "Ce fichier n'est pas un export de chemins de l'outil 2." };
+  }
+
+  if (!data.project || typeof data.project.name !== "string" || data.project.name.trim().length === 0) {
+    return { valid: false, message: "Nom de projet manquant." };
+  }
+
+  const patternValidation = validateFinalPattern(data.pattern);
+  if (!patternValidation.valid) {
+    return patternValidation;
+  }
+
+  if (!Array.isArray(data.paths) || data.paths.length !== data.pattern.colors.length) {
+    return { valid: false, message: "La liste des chemins ne correspond pas aux couleurs." };
+  }
+
+  const colorCodes = new Set(data.pattern.colors.map((color) => color.dmc));
+  const pathCodes = new Set();
+  for (const path of data.paths) {
+    if (!path || !colorCodes.has(path.dmc) || pathCodes.has(path.dmc) || !Array.isArray(path.points)) {
+      return { valid: false, message: "Un chemin utilise une couleur invalide ou dupliquee." };
+    }
+    pathCodes.add(path.dmc);
+
+    const expectedKeys = new Set(
+      data.pattern.grid.cells
+        .filter((cell) => !cell.empty && cell.dmc === path.dmc)
+        .map(cellKey)
+    );
+    const pointsAreCoordinates = path.points.every((point) => (
+      Number.isInteger(point?.x) && Number.isInteger(point?.y)
+    ));
+    if (!pointsAreCoordinates) {
+      return { valid: false, message: "Un chemin contient des coordonnees invalides." };
+    }
+
+    const pointKeys = new Set(path.points.map(cellKey));
+    if (expectedKeys.size !== path.points.length || pointKeys.size !== path.points.length) {
+      return { valid: false, message: "Un chemin ne couvre pas exactement sa couleur." };
+    }
+
+    if (!path.points.every((point) => expectedKeys.has(cellKey(point)))) {
+      return { valid: false, message: "Un chemin contient une case hors couleur." };
+    }
+  }
+
+  return { valid: true, message: "" };
+}
+
+function clonePaths(paths) {
+  return Object.fromEntries(Object.entries(paths).map(([dmc, points]) => [
+    dmc,
+    points.map((point) => ({ x: point.x, y: point.y }))
+  ]));
+}
+
 function showPathSavedStatus() {
   pathSaveStatus.textContent = "Enregistre";
   window.setTimeout(() => {
@@ -1635,12 +1721,14 @@ patternJsonFileInput.addEventListener("change", async () => {
   }
 
   try {
-    loadedPattern = await readSelectedPattern(file);
-    pathsByDmc = {};
-    bestPathsByDmc = {};
+    const imported = await readSelectedPathInput(file);
+    loadedPattern = imported.pattern;
+    pathsByDmc = imported.pathsByDmc;
+    bestPathsByDmc = clonePaths(pathsByDmc);
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
+    pathOptimizationBaselinesByDmc = {};
     pathProgress.load = true;
-    pathProgress.paths = false;
+    pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
     pathProgress.export = false;
     loadError.hidden = true;
     savePathPlannerState();
