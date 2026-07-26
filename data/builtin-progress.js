@@ -1,7 +1,7 @@
 window.BUILTIN_STITCH_PROGRESS = {
   "kind": "cross-stitch-progress-save",
   "schemaVersion": 1,
-  "savedAt": "2026-07-23T16:49:44.720Z",
+  "savedAt": "2026-07-25T20:59:02.266Z",
   "pathsFile": {
     "schemaVersion": 1,
     "kind": "cross-stitch-paths",
@@ -677044,7 +677044,7 @@ window.BUILTIN_STITCH_PROGRESS = {
     ]
   },
   "stitchedByDmc": {
-    "151": 1056,
+    "151": 1717,
     "3688": 0,
     "3810": 0,
     "3811": 0
