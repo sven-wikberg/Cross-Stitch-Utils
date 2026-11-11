@@ -31,11 +31,21 @@ Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application
 
 Ouvrir `index.html` dans un navigateur sur PC, puis choisir l'outil voulu.
 
+La version hebergee est publiee par GitHub Pages a chaque push sur `main` :
+
+`https://sven-wikberg.github.io/Cross-Stitch-Utils/`
+
 L'outil 1, `Importer un pattern`, est disponible dans `import-pattern.html`.
 
 L'outil 2, `Definir les chemins`, est disponible dans `plan-paths.html`.
 
 L'outil 3, `Suivre la broderie`, est disponible dans `stitch-progress.html`.
+
+## Synchronisation de la progression
+
+L'outil 3 peut lire et mettre a jour `data/builtin-progress.js` directement sur GitHub. Sur chaque PC utilise pour enregistrer la progression, creer un jeton personnel fin limite au depot `Cross-Stitch-Utils`, avec la permission `Contents: Read and write`, puis le saisir dans `Connexion GitHub`.
+
+Le jeton reste uniquement dans le stockage local du navigateur. Il ne doit jamais etre ajoute aux fichiers du depot. Le bouton `Synchroniser sur GitHub` cree un commit; `Charger la sauvegarde synchronisee` recupere la derniere version du depot.
 
 ## Direction technique
 

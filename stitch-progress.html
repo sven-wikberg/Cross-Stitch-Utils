@@ -113,8 +113,21 @@
           </label>
 
           <div class="embedded-save-panel">
-            <button id="loadBuiltinProgressButton" class="secondary-button" type="button">Charger la sauvegarde integree</button>
-            <p id="builtinProgressStatus" class="empty-message">Aucune sauvegarde integree dans le repo.</p>
+            <button id="loadBuiltinProgressButton" class="secondary-button" type="button">Charger la sauvegarde synchronisee</button>
+            <button id="toggleGithubSetupButton" class="secondary-button" type="button">Connexion GitHub</button>
+            <div id="githubSetupPanel" class="github-setup-panel hidden">
+              <label for="githubTokenInput">
+                Jeton GitHub
+                <input id="githubTokenInput" type="password" autocomplete="off" spellcheck="false">
+              </label>
+              <div class="github-setup-actions">
+                <a class="secondary-button button-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Creer un jeton</a>
+                <button id="saveGithubTokenButton" class="primary-button" type="button">Connecter</button>
+                <button id="clearGithubTokenButton" class="secondary-button" type="button">Oublier</button>
+              </div>
+              <p class="empty-message">Acces limite a ce depot, permission Contents en lecture et ecriture.</p>
+            </div>
+            <p id="builtinProgressStatus" class="empty-message">Recherche la derniere sauvegarde sur GitHub.</p>
           </div>
 
           <div id="progressLoadStatus" class="coverage-status invalid">Aucun fichier charge.</div>
@@ -163,8 +176,8 @@
                 </div>
                 <button id="nextStitchButton" class="primary-button" type="button">Point suivant</button>
                 <button id="downloadProgressSaveButton" class="secondary-button" type="button">Telecharger la sauvegarde</button>
-                <button id="writeBuiltinProgressButton" class="secondary-button" type="button">Mettre en sauvegarde integree</button>
-                <p id="writeBuiltinProgressStatus" class="empty-message">Genere le fichier suivi par Git pour reprendre ce projet depuis un autre PC.</p>
+                <button id="writeBuiltinProgressButton" class="secondary-button" type="button">Synchroniser sur GitHub</button>
+                <p id="writeBuiltinProgressStatus" class="empty-message">La progression synchronisee sera disponible sur les autres PC.</p>
                 <div class="completed-color-panel">
                   <p class="field-label">Couleurs terminees</p>
                   <div id="completedColorList" class="completed-color-list">
@@ -179,6 +192,7 @@
     </main>
 
     <script src="data/builtin-progress.js"></script>
+    <script src="src/github-sync.js"></script>
     <script src="src/stitch-progress.js"></script>
   </body>
 </html>

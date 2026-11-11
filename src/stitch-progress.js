@@ -26,6 +26,11 @@ const nextStitchButton = document.querySelector("#nextStitchButton");
 const downloadProgressSaveButton = document.querySelector("#downloadProgressSaveButton");
 const writeBuiltinProgressButton = document.querySelector("#writeBuiltinProgressButton");
 const writeBuiltinProgressStatus = document.querySelector("#writeBuiltinProgressStatus");
+const toggleGithubSetupButton = document.querySelector("#toggleGithubSetupButton");
+const githubSetupPanel = document.querySelector("#githubSetupPanel");
+const githubTokenInput = document.querySelector("#githubTokenInput");
+const saveGithubTokenButton = document.querySelector("#saveGithubTokenButton");
+const clearGithubTokenButton = document.querySelector("#clearGithubTokenButton");
 const completedColorList = document.querySelector("#completedColorList");
 const globalProgressPanel = document.querySelector("#globalProgressPanel");
 const globalProgressBar = document.querySelector("#globalProgressBar");
@@ -57,7 +62,9 @@ const progressStepLabels = {
 };
 
 const progressStepOrder = ["load", "stitch"];
-const builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
+const githubSync = window.CrossStitchGithubSync || null;
+const GITHUB_TOKEN_STORAGE_KEY = "cross-stitch-utils-github-token";
+let builtinProgressSave = window.BUILTIN_STITCH_PROGRESS || null;
 const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
 const DEFAULT_STITCH_ZOOM = 1;
@@ -65,9 +72,6 @@ const MIN_STITCH_ZOOM = 0.5;
 const MAX_STITCH_ZOOM = 4;
 const STITCH_ZOOM_STEP = 0.25;
 const REALISTIC_JUMP_THRESHOLD = 15;
-const BUILTIN_PROGRESS_DIRECTORY_DB = "cross-stitch-utils-directory";
-const BUILTIN_PROGRESS_DIRECTORY_STORE = "handles";
-const BUILTIN_PROGRESS_DIRECTORY_KEY = "project-root";
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -75,6 +79,8 @@ let stitchedByDmc = storedProgressState.stitchedByDmc;
 let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
 let stitchZoom = storedProgressState.zoom || DEFAULT_STITCH_ZOOM;
 let followCurrentPoint = Boolean(storedProgressState.followCurrentPoint);
+let githubSyncInProgress = false;
+let builtinProgressMessage = "";
 let stitchProgress = {
   load: Boolean(loadedPaths),
   stitch: Boolean(loadedPaths) && areAllColorsStitched(loadedPaths, storedProgressState.stitchedByDmc)
@@ -174,6 +180,7 @@ function renderProgressTool() {
 
   renderLoadedPaths();
   renderBuiltinProgressControls();
+  renderGithubConnectionControls();
   renderStitchView();
   renderZoomControls();
   renderProgressMetrics();
@@ -253,15 +260,26 @@ function formatPercent(value) {
 
 function renderBuiltinProgressControls() {
   const validation = validateProgressSave(builtinProgressSave);
-  loadBuiltinProgressButton.disabled = !validation.valid;
+  loadBuiltinProgressButton.disabled = githubSyncInProgress || (!githubSync && !validation.valid);
 
-  if (validation.valid) {
-    const projectName = builtinProgressSave.pathsFile.project.name;
-    builtinProgressStatus.textContent = `Sauvegarde integree disponible: ${projectName}.`;
+  if (builtinProgressMessage) {
+    builtinProgressStatus.textContent = builtinProgressMessage;
     return;
   }
 
-  builtinProgressStatus.textContent = "Aucune sauvegarde integree dans le repo.";
+  if (validation.valid) {
+    const projectName = builtinProgressSave.pathsFile.project.name;
+    builtinProgressStatus.textContent = `Sauvegarde disponible: ${projectName}. GitHub sera verifie au chargement.`;
+    return;
+  }
+
+  builtinProgressStatus.textContent = "Clique pour rechercher la sauvegarde sur GitHub.";
+}
+
+function renderGithubConnectionControls() {
+  const connected = Boolean(readGithubToken());
+  toggleGithubSetupButton.textContent = connected ? "Connexion GitHub active" : "Connexion GitHub";
+  clearGithubTokenButton.disabled = !connected;
 }
 
 function renderStitchView() {
@@ -547,7 +565,7 @@ function renderStitchControls() {
   resetColorProgressButton.disabled = stitched === 0;
   nextStitchButton.disabled = complete;
   downloadProgressSaveButton.disabled = false;
-  writeBuiltinProgressButton.disabled = false;
+  writeBuiltinProgressButton.disabled = githubSyncInProgress;
 }
 
 function isProgressStepComplete(step) {
@@ -894,144 +912,55 @@ function downloadJson(data, filename) {
   URL.revokeObjectURL(url);
 }
 
-function buildBuiltinProgressFile() {
-  return `window.BUILTIN_STITCH_PROGRESS = ${JSON.stringify(buildProgressSave(), null, 2)};\n`;
+function buildBuiltinProgressFile(progressSave = buildProgressSave()) {
+  return `window.BUILTIN_STITCH_PROGRESS = ${JSON.stringify(progressSave, null, 2)};\n`;
 }
 
-function downloadText(content, filename, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-async function writeBuiltinProgressFile(content) {
-  if (window.showDirectoryPicker && window.indexedDB) {
-    const wroteToProject = await writeBuiltinProgressToProjectDirectory(content);
-    if (wroteToProject) {
-      writeBuiltinProgressStatus.textContent = "data/builtin-progress.js mis a jour. Il reste a commit le fichier.";
-      return;
-    }
+function parseBuiltinProgressFile(content) {
+  const prefix = "window.BUILTIN_STITCH_PROGRESS =";
+  const trimmed = String(content || "").trim();
+  if (!trimmed.startsWith(prefix)) {
+    throw new Error("Le fichier GitHub n'est pas une sauvegarde integree valide.");
   }
 
-  if (window.showSaveFilePicker) {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: "builtin-progress.js",
-      types: [{
-        description: "JavaScript",
-        accept: { "text/javascript": [".js"] }
-      }]
-    });
-    const writable = await handle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    writeBuiltinProgressStatus.textContent = "Fichier sauvegarde. Il reste a commit data/builtin-progress.js.";
-    return;
+  const json = trimmed.slice(prefix.length).trim().replace(/;$/, "");
+  const progressSave = JSON.parse(json);
+  const validation = validateProgressSave(progressSave);
+  if (!validation.valid) {
+    throw new Error(validation.message);
   }
-
-  downloadText(content, "builtin-progress.js", "text/javascript");
-  writeBuiltinProgressStatus.textContent = "Fichier telecharge. Remplace data/builtin-progress.js puis commit le fichier.";
+  return progressSave;
 }
 
-async function writeBuiltinProgressToProjectDirectory(content) {
-  const rootHandle = await getProjectDirectoryHandle();
-  if (!rootHandle) {
-    return false;
-  }
-
-  try {
-    const dataHandle = await rootHandle.getDirectoryHandle("data");
-    const fileHandle = await dataHandle.getFileHandle("builtin-progress.js", { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    return true;
-  } catch {
-    await clearProjectDirectoryHandle();
-    writeBuiltinProgressStatus.textContent = "Dossier invalide. Selectionne le dossier racine Cross Stitch Utils.";
-    return false;
-  }
+function readGithubToken() {
+  return localStorage.getItem(GITHUB_TOKEN_STORAGE_KEY) || "";
 }
 
-async function getProjectDirectoryHandle() {
-  const storedHandle = await readProjectDirectoryHandle();
-  if (storedHandle && await requestDirectoryPermission(storedHandle)) {
-    return storedHandle;
+async function loadBuiltinProgressFromGithub() {
+  if (!githubSync) {
+    throw new Error("La synchronisation GitHub n'est pas disponible.");
+  }
+  const content = await githubSync.loadFile(readGithubToken());
+  return parseBuiltinProgressFile(content);
+}
+
+async function saveBuiltinProgressToGithub() {
+  if (!githubSync) {
+    throw new Error("La synchronisation GitHub n'est pas disponible.");
   }
 
-  const selectedHandle = await window.showDirectoryPicker({
-    id: "cross-stitch-utils-root",
-    mode: "readwrite"
-  });
-
-  if (!await requestDirectoryPermission(selectedHandle)) {
-    return null;
+  const token = readGithubToken();
+  if (!token) {
+    githubSetupPanel.classList.remove("hidden");
+    goToProgressStep("load");
+    window.setTimeout(() => githubTokenInput.focus(), 0);
+    throw new Error("Connecte GitHub avant de synchroniser.");
   }
 
-  await saveProjectDirectoryHandle(selectedHandle);
-  return selectedHandle;
-}
-
-async function requestDirectoryPermission(handle) {
-  const options = { mode: "readwrite" };
-  if (await handle.queryPermission(options) === "granted") {
-    return true;
-  }
-
-  return await handle.requestPermission(options) === "granted";
-}
-
-function openProjectDirectoryDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(BUILTIN_PROGRESS_DIRECTORY_DB, 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(BUILTIN_PROGRESS_DIRECTORY_STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function readProjectDirectoryHandle() {
-  try {
-    const db = await openProjectDirectoryDb();
-    return await directoryDbRequest(db, "readonly", (store) => store.get(BUILTIN_PROGRESS_DIRECTORY_KEY));
-  } catch {
-    return null;
-  }
-}
-
-async function saveProjectDirectoryHandle(handle) {
-  const db = await openProjectDirectoryDb();
-  await directoryDbRequest(db, "readwrite", (store) => store.put(handle, BUILTIN_PROGRESS_DIRECTORY_KEY));
-}
-
-async function clearProjectDirectoryHandle() {
-  try {
-    const db = await openProjectDirectoryDb();
-    await directoryDbRequest(db, "readwrite", (store) => store.delete(BUILTIN_PROGRESS_DIRECTORY_KEY));
-  } catch {
-    // Nothing to clear.
-  }
-}
-
-function directoryDbRequest(db, mode, operation) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(BUILTIN_PROGRESS_DIRECTORY_STORE, mode);
-    const request = operation(transaction.objectStore(BUILTIN_PROGRESS_DIRECTORY_STORE));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
-  });
+  const progressSave = buildProgressSave();
+  await githubSync.saveFile(buildBuiltinProgressFile(progressSave), token);
+  builtinProgressSave = progressSave;
+  window.BUILTIN_STITCH_PROGRESS = progressSave;
 }
 
 function safeFilePart(value) {
@@ -1106,15 +1035,33 @@ progressSaveFileInput.addEventListener("change", async () => {
   }
 });
 
-loadBuiltinProgressButton.addEventListener("click", () => {
-  const validation = validateProgressSave(builtinProgressSave);
-  if (!validation.valid) {
-    progressLoadError.textContent = validation.message;
-    progressLoadError.hidden = false;
-    return;
-  }
+loadBuiltinProgressButton.addEventListener("click", async () => {
+  const bundledProgressSave = builtinProgressSave;
+  githubSyncInProgress = true;
+  builtinProgressMessage = "Chargement de la sauvegarde GitHub...";
+  renderProgressTool();
 
-  applyProgressSave(builtinProgressSave);
+  try {
+    builtinProgressSave = await loadBuiltinProgressFromGithub();
+    window.BUILTIN_STITCH_PROGRESS = builtinProgressSave;
+    builtinProgressMessage = "Derniere sauvegarde GitHub chargee.";
+    githubSyncInProgress = false;
+    applyProgressSave(builtinProgressSave);
+  } catch (error) {
+    const fallbackValidation = validateProgressSave(bundledProgressSave);
+    githubSyncInProgress = false;
+    if (fallbackValidation.valid) {
+      builtinProgressSave = bundledProgressSave;
+      builtinProgressMessage = `GitHub indisponible. Sauvegarde incluse chargee: ${error.message}`;
+      applyProgressSave(bundledProgressSave);
+      return;
+    }
+
+    builtinProgressMessage = error.message;
+    progressLoadError.textContent = error.message;
+    progressLoadError.hidden = false;
+    renderProgressTool();
+  }
 });
 
 stitchColorLegend.addEventListener("click", (event) => {
@@ -1158,17 +1105,69 @@ writeBuiltinProgressButton.addEventListener("click", async () => {
     return;
   }
 
+  githubSyncInProgress = true;
+  writeBuiltinProgressStatus.textContent = "Synchronisation avec GitHub...";
+  renderStitchControls();
   try {
-    await writeBuiltinProgressFile(buildBuiltinProgressFile());
+    await saveBuiltinProgressToGithub();
+    builtinProgressMessage = "Sauvegarde GitHub a jour.";
+    writeBuiltinProgressStatus.textContent = "Progression synchronisee. Le deploiement du site va se mettre a jour.";
+    showProgressSavedStatus();
   } catch (error) {
-    if (error.name === "AbortError") {
-      writeBuiltinProgressStatus.textContent = "Sauvegarde integree annulee.";
-      return;
+    writeBuiltinProgressStatus.textContent = error.message;
+    if (activeProgressStep === "load") {
+      builtinProgressMessage = error.message;
+      renderBuiltinProgressControls();
     }
-
-    downloadText(buildBuiltinProgressFile(), "builtin-progress.js", "text/javascript");
-    writeBuiltinProgressStatus.textContent = "Ecriture directe impossible. Fichier telecharge a la place.";
+  } finally {
+    githubSyncInProgress = false;
+    renderStitchControls();
   }
+});
+
+toggleGithubSetupButton.addEventListener("click", () => {
+  githubSetupPanel.classList.toggle("hidden");
+  if (!githubSetupPanel.classList.contains("hidden")) {
+    githubTokenInput.focus();
+  }
+});
+
+saveGithubTokenButton.addEventListener("click", async () => {
+  const token = githubTokenInput.value.trim();
+  if (!token) {
+    writeBuiltinProgressStatus.textContent = "Entre un jeton GitHub.";
+    githubTokenInput.focus();
+    return;
+  }
+
+  saveGithubTokenButton.disabled = true;
+  writeBuiltinProgressStatus.textContent = "Verification de la connexion GitHub...";
+  try {
+    if (!githubSync) {
+      throw new Error("La synchronisation GitHub n'est pas disponible.");
+    }
+    await githubSync.getFileMetadata(token);
+    localStorage.setItem(GITHUB_TOKEN_STORAGE_KEY, token);
+    githubTokenInput.value = "";
+    githubSetupPanel.classList.add("hidden");
+    builtinProgressMessage = "Connexion GitHub enregistree sur ce PC.";
+    writeBuiltinProgressStatus.textContent = "Connexion GitHub enregistree sur ce PC.";
+    renderGithubConnectionControls();
+    renderBuiltinProgressControls();
+  } catch (error) {
+    writeBuiltinProgressStatus.textContent = error.message;
+  } finally {
+    saveGithubTokenButton.disabled = false;
+  }
+});
+
+clearGithubTokenButton.addEventListener("click", () => {
+  localStorage.removeItem(GITHUB_TOKEN_STORAGE_KEY);
+  githubTokenInput.value = "";
+  builtinProgressMessage = "Connexion GitHub oubliee sur ce PC.";
+  writeBuiltinProgressStatus.textContent = "Connexion GitHub oubliee sur ce PC.";
+  renderGithubConnectionControls();
+  renderBuiltinProgressControls();
 });
 
 undoStitchButton.addEventListener("click", () => {
