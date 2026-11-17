@@ -98,6 +98,8 @@ let viewPosition = { left: 0, top: 0 };
 let restoringSession = false;
 autoSyncToggle.checked = localStorage.getItem("cross-stitch-auto-sync") === "true";
 
+const upgradedProgressSaves = new WeakMap();
+let pendingLegacyBackup = null;
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
 let stitchedByDmc = storedProgressState.stitchedByDmc;
@@ -114,40 +116,15 @@ let activeProgressStep = "load";
 
 function loadStoredProgressState() {
   const stored = localStorage.getItem(STITCH_PROGRESS_STORAGE_KEY);
-  if (!stored) {
-    return { pathsFile: null, stitchedByDmc: {}, selectedDmc: null };
-  }
-
+  const empty = { pathsFile: null, stitchedByDmc: {}, selectedDmc: null };
+  if (!stored) return empty;
   try {
     const parsed = JSON.parse(stored);
-    if (validatePathsFile(parsed).valid) {
-      return { pathsFile: parsed, stitchedByDmc: {}, selectedDmc: null };
-    }
-
-    if (validateProgressSave(parsed).valid) {
-      return {
-        pathsFile: parsed.pathsFile,
-        stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
-        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
-        zoom: normalizeStitchZoom(parsed.zoom),
-        followCurrentPoint: Boolean(parsed.followCurrentPoint)
-      };
-    }
-
-    if (validatePathsFile(parsed.pathsFile).valid) {
-      return {
-        pathsFile: parsed.pathsFile,
-        stitchedByDmc: normalizeStitchedState(parsed.pathsFile, parsed.stitchedByDmc),
-        selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
-        zoom: normalizeStitchZoom(parsed.zoom),
-        followCurrentPoint: Boolean(parsed.followCurrentPoint)
-      };
-    }
-
-    return { pathsFile: null, stitchedByDmc: {}, selectedDmc: null };
-  } catch {
-    return { pathsFile: null, stitchedByDmc: {}, selectedDmc: null };
-  }
+    pendingLegacyBackup = parsed;
+    if (parsed.kind === "cross-stitch-paths") return { ...empty, pathsFile: StitchModel.upgradePathsFile(parsed) };
+    return StitchModel.upgradeProgressSave(parsed.kind === "cross-stitch-progress-save" ? parsed
+      : { ...parsed, kind: "cross-stitch-progress-save", schemaVersion: parsed.pathsFile?.schemaVersion || 1 });
+  } catch { return empty; }
 }
 
 function saveProgressState() {
@@ -164,10 +141,14 @@ function saveProgressState() {
     return;
   }
   const paths = loadedPaths;
-  const snapshot = { kind: "cross-stitch-progress-state", schemaVersion: 2, savedAt: new Date().toISOString(),
+  const snapshot = { kind: "cross-stitch-progress-state", schemaVersion: 3, stitchUnit: "diagonal", savedAt: new Date().toISOString(),
     stitchedByDmc: normalizeStitchedState(paths, stitchedByDmc), selectedDmc, zoom: stitchZoom, followCurrentPoint,
     sessionMode, viewPosition: { ...viewPosition }, undoActions: structuredClone(undoActions), redoActions: structuredClone(redoActions) };
   localSaveQueue = localSaveQueue.catch(() => {}).then(async () => {
+    if (pendingLegacyBackup) {
+      await progressStore.write("migration-backup:legacy-storage", pendingLegacyBackup);
+      pendingLegacyBackup = null;
+    }
     let id = patternIds.get(paths);
     if (!id) { id = await progressStore.identify(paths); patternIds.set(paths, id); }
     if (!storedPatternIds.has(id)) { await progressStore.write(`pattern:${id}`, paths); storedPatternIds.add(id); }
@@ -275,6 +256,12 @@ function renderLoadedPaths() {
 }
 
 function renderProgressMetrics() {
+  const completions = loadedPaths?.paths.map(path => ({ dmc: path.dmc, ...StitchModel.completion(path.points, stitchedCountForDmc(path.dmc)) })) || [];
+  const selectedCompletion = completions.find(c => c.dmc === selectedDmc);
+  document.querySelector("#globalCompleteCrosses").textContent = String(completions.reduce((sum, c) => sum + c.complete, 0));
+  document.querySelector("#globalPartialCrosses").textContent = String(completions.reduce((sum, c) => sum + c.partial, 0));
+  document.querySelector("#selectedCompleteCrosses").textContent = String(selectedCompletion?.complete || 0);
+  document.querySelector("#selectedPartialCrosses").textContent = String(selectedCompletion?.partial || 0);
   if (!loadedPaths) {
     globalProgressBar.value = 0;
     globalProgressPoints.textContent = "0 / 0";
@@ -421,6 +408,18 @@ function renderStitchView() {
   context.beginPath();
   context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, stitchView.width * cellSize, stitchView.height * cellSize);
   context.clip();
+  loadedPaths.paths.filter(path => path.dmc !== selectedDmc).forEach(path => {
+    const partial = StitchModel.completion(path.points, stitchedCountForDmc(path.dmc));
+    const color = colorByDmc.get(path.dmc);
+    for (const point of path.points.slice(0, stitchedCountForDmc(path.dmc))) {
+      if (partial.cells.get(cellKey(point)) === 3) continue;
+      if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
+          || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) continue;
+      const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
+      context.strokeStyle = color?.hex || "#222426"; context.lineWidth = Math.max(1.5, cellSize * 0.16);
+      context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+    }
+  });
   drawStitchProgress(context, cellSize);
   context.restore();
   drawGridRulers(context, stitchView.width, stitchView.height, cellSize);
@@ -428,7 +427,12 @@ function renderStitchView() {
   renderCompletedColorList();
   renderStitchControls();
   stitchStatus.className = "coverage-status valid";
-  stitchStatus.textContent = `Appuie sur Espace pour avancer dans DMC ${selectedDmc}.`;
+  const action = pathForDmc(selectedDmc)?.points[stitchedCountForDmc(selectedDmc)];
+  if (action) {
+    const holes = StitchModel.holes(action);
+    const corner = h => `${h.y === action.y ? "haut" : "bas"} ${h.x === action.x ? "gauche" : "droit"}`;
+    stitchStatus.textContent = `Case ${action.x + 1}, ${action.y + 1} - ${action.diagonal === "lower" ? "/ Dessous" : "\\ Dessus"} - ${corner(holes.start)} vers ${corner(holes.end)}`;
+  } else stitchStatus.textContent = `DMC ${selectedDmc} terminee.`;
   centerCurrentPointIfNeeded(cellSize);
 }
 
@@ -491,71 +495,59 @@ function centerCurrentPointIfNeeded(cellSize) {
 
 function drawStitchProgress(context, cellSize) {
   const path = pathForDmc(selectedDmc);
-  if (!path) {
-    return;
-  }
-
-  const stitchedCount = stitchedCountForDmc(selectedDmc);
-  const stitchedPoints = path.points.slice(0, stitchedCount);
-  const currentPoint = path.points[stitchedCount] || null;
-
-  context.save();
-  context.strokeStyle = "#222426";
-  context.lineWidth = Math.max(2, Math.floor(cellSize / 3));
-  context.lineJoin = "round";
-  context.lineCap = "round";
-
-  if (path.points.length > 1) {
-    path.points.forEach((point, index) => {
-      if (index === 0 || (sessionMode && index >= stitchedCount + 8)) {
-        return;
-      }
-
-      const segmentAlpha = index > stitchedCount ? 0.32 : 1;
-      drawPathSegment(context, path.points[index - 1], point, cellSize, segmentAlpha);
-    });
-  }
-
+  if (!path) return;
+  const count = stitchedCountForDmc(selectedDmc);
+  const selectedColor = loadedPaths.pattern.colors.find(c => c.dmc === selectedDmc);
+  const rgb = parseHexColor(selectedColor?.hex || "#ffffff");
+  const dark = rgb && (rgb.red * 0.299 + rgb.green * 0.587 + rgb.blue * 0.114) < 110;
+  const completion = StitchModel.completion(path.points, count).cells;
+  context.save(); context.lineCap = "round"; context.lineJoin = "round";
   path.points.forEach((point, index) => {
-    if (index >= stitchedCount && (!sessionMode || index < stitchedCount + 8)) {
-      drawCircle(context, point, cellSize, "#ffffff", "#222426", 0.32);
-      if (sessionMode && cellSize >= 14) {
-        const center = pointCenter(point, cellSize);
-        context.fillStyle = "#222426";
-        context.font = "bold 11px sans-serif";
-        context.textAlign = "center";
-        context.fillText(String(index - stitchedCount + 1), center.x, center.y - cellSize * 0.35);
+    if (index && (!sessionMode || index < count + 8)) drawPathSegment(context, path.points[index - 1], point, cellSize, index > count ? 0.2 : 0.7);
+  });
+  const drawingOrder = path.points.map((point, index) => ({ point, index })).filter(item => item.index !== count);
+  if (path.points[count]) drawingOrder.push({ point: path.points[count], index: count });
+  drawingOrder.forEach(({ point, index }) => {
+    if (sessionMode && index >= count + 8) return;
+    if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
+        || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) return;
+    const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
+    const ink = dark && completion.get(cellKey(point)) === 3 ? "#ffffff" : "#222426";
+    context.globalAlpha = index > count ? 0.2 : 1;
+    context.strokeStyle = index === count ? "#c63848" : index < count ? ink : "#222426";
+    context.lineWidth = Math.max(1, cellSize * (index === count ? 0.12 : 0.085));
+    context.setLineDash([]);
+    context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+    if (index === count) {
+      const radius = Math.max(2, Math.min(5, cellSize * 0.12));
+      context.fillStyle = "#ffffff"; context.fillRect(from.x - radius, from.y - radius, radius * 2, radius * 2);
+      context.strokeRect(from.x - radius, from.y - radius, radius * 2, radius * 2);
+      context.fillStyle = "#c63848"; context.beginPath(); context.arc(to.x, to.y, radius, 0, Math.PI * 2); context.fill();
+      if (cellSize >= 12) {
+        const angle = Math.atan2(to.y - from.y, to.x - from.x), length = Math.min(8, cellSize * 0.25);
+        context.beginPath(); context.moveTo(to.x - length * Math.cos(angle - 0.5), to.y - length * Math.sin(angle - 0.5));
+        context.lineTo(to.x, to.y); context.lineTo(to.x - length * Math.cos(angle + 0.5), to.y - length * Math.sin(angle + 0.5));
+        context.stroke();
       }
     }
   });
-
-  stitchedPoints.forEach((point) => {
-    drawCircle(context, point, cellSize, "#222426", "#222426");
-  });
-
-  if (currentPoint) {
-    drawCircle(context, currentPoint, cellSize, "#ffffff", "#b44b57");
-  }
-
   context.restore();
 }
 
 function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1) {
-  const from = pointCenter(fromPoint, cellSize);
-  const to = pointCenter(toPoint, cellSize);
+  const from = holePixel(StitchModel.holes(fromPoint).end, cellSize), to = holePixel(StitchModel.holes(toPoint).start, cellSize);
   const isCut = isCutJump(fromPoint, toPoint);
-
-  context.save();
-  context.globalAlpha = alpha;
-  context.strokeStyle = isCut ? "#b44b57" : "#222426";
-  context.lineWidth = isCut ? Math.max(1, Math.floor(cellSize / 5)) : Math.max(2, Math.floor(cellSize / 3));
-  context.setLineDash(isCut ? [Math.max(3, cellSize * 0.55), Math.max(3, cellSize * 0.45)] : []);
-  context.beginPath();
-  context.moveTo(from.x, from.y);
-  context.lineTo(to.x, to.y);
-  context.stroke();
-  context.setLineDash([]);
+  context.save(); context.globalAlpha = alpha;
+  context.strokeStyle = isCut ? "#c63848" : "#56616a";
+  context.lineWidth = Math.max(0.6, Math.min(2, cellSize * (isCut ? 0.035 : 0.05)));
+  context.setLineDash(isCut ? [Math.max(2, cellSize * 0.4), Math.max(2, cellSize * 0.3)] : [2, 2]);
+  context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
   context.restore();
+}
+
+function holePixel(hole, cellSize) {
+  return { x: GRID_RULER_SIZE + (hole.x - stitchView.startX) * cellSize,
+    y: GRID_RULER_SIZE + (hole.y - stitchView.startY) * cellSize };
 }
 
 function pointCenter(point, cellSize) {
@@ -566,10 +558,7 @@ function pointCenter(point, cellSize) {
 }
 
 function isCutJump(fromPoint, toPoint) {
-  const cuts = pathForDmc(selectedDmc)?.forcedCuts || [];
-  return cuts.some(edge => (cellKey(edge.from) === cellKey(fromPoint) && cellKey(edge.to) === cellKey(toPoint))
-    || (cellKey(edge.to) === cellKey(fromPoint) && cellKey(edge.from) === cellKey(toPoint)))
-    || threadDistance(fromPoint, toPoint) > (loadedPaths?.settings?.cutThreshold || REALISTIC_JUMP_THRESHOLD);
+  return Boolean(toPoint.cutBefore) || threadDistance(fromPoint, toPoint) > (loadedPaths?.settings?.cutThreshold || REALISTIC_JUMP_THRESHOLD);
 }
 
 function renderCutNotice() {
@@ -579,20 +568,18 @@ function renderCutNotice() {
   if (path) for (let i = Math.max(1, count); i < path.points.length; i++) {
     if (isCutJump(path.points[i - 1], path.points[i])) { next = i; break; }
   }
-  document.querySelector("#nextCutText").textContent = !path ? "" : next === count && count > 0 ? "Couper le fil avant le prochain point"
-    : next >= 0 ? `Prochaine coupe dans ${next - count} point(s)` : "Aucune coupe restante";
+  document.querySelector("#nextCutText").textContent = !path ? "" : next === count && count > 0 ? "Couper le fil avant la prochaine diagonale"
+    : next >= 0 ? `Prochaine coupe dans ${next - count} diagonale(s)` : "Aucune coupe restante";
 }
 
 function threadDistance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+  return StitchModel.distance(a, b);
 }
 
 function stitchedCellKeysForProgress() {
   const keys = new Set();
-  loadedPaths.paths.forEach((path) => {
-    path.points.slice(0, stitchedCountForDmc(path.dmc)).forEach((point) => {
-      keys.add(cellKey(point));
-    });
+  loadedPaths.paths.forEach(path => {
+    for (const [key, bits] of StitchModel.completion(path.points, stitchedCountForDmc(path.dmc)).cells) if (bits === 3) keys.add(key);
   });
   return keys;
 }
@@ -685,8 +672,8 @@ function renderStitchControls() {
   const complete = path && stitched === path.points.length;
   stitchColorStatus.className = `coverage-status ${complete ? "valid" : "invalid"}`;
   stitchColorStatus.textContent = complete
-    ? `Couleur terminee: ${stitched} / ${path.points.length} points.`
-    : `Progression: ${stitched} / ${path.points.length} points.`;
+    ? `Couleur terminee: ${stitched} / ${path.points.length} diagonales.`
+    : `Progression: ${stitched} / ${path.points.length} diagonales.`;
   undoStitchButton.disabled = stitched === 0;
   resetColorProgressButton.disabled = stitched === 0;
   nextStitchButton.disabled = complete;
@@ -732,7 +719,7 @@ async function readSelectedPaths(file) {
     throw new Error(validation.message);
   }
 
-  return parsed;
+  return StitchModel.upgradePathsFile(parsed);
 }
 
 async function readSelectedProgressSave(file) {
@@ -747,6 +734,9 @@ async function readSelectedProgressSave(file) {
 }
 
 function applyProgressSave(progressSave) {
+  const validation = validateProgressSave(progressSave);
+  if (!validation.valid) throw new Error(validation.message);
+  progressSave = upgradedProgressSaves.get(progressSave);
   undoActions = [];
   redoActions = [];
   loadedPaths = progressSave.pathsFile;
@@ -769,75 +759,15 @@ function applyProgressSave(progressSave) {
 }
 
 function validatePathsFile(data) {
-  if (!data || data.kind !== "cross-stitch-paths" || data.schemaVersion !== 1) {
-    return { valid: false, message: "Ce fichier n'est pas un export de chemins de l'outil 2." };
-  }
-
-  if (!data.project || typeof data.project.name !== "string" || data.project.name.trim().length === 0) {
-    return { valid: false, message: "Nom de projet manquant." };
-  }
-
-  const patternValidation = validatePattern(data.pattern);
-  if (!patternValidation.valid) {
-    return patternValidation;
-  }
-
-  if (!Array.isArray(data.paths) || data.paths.length !== data.pattern.colors.length) {
-    return { valid: false, message: "La liste des chemins ne correspond pas aux couleurs." };
-  }
-
-  const colorCodes = new Set(data.pattern.colors.map((color) => color.dmc));
-  const pathCodes = new Set();
-  for (const path of data.paths) {
-    if (!path || !colorCodes.has(path.dmc) || pathCodes.has(path.dmc) || !Array.isArray(path.points)) {
-      return { valid: false, message: "Un chemin utilise une couleur invalide." };
-    }
-    pathCodes.add(path.dmc);
-    if (!path.points.every(point => Number.isInteger(point?.x) && Number.isInteger(point?.y))) return { valid: false, message: "Coordonnees de chemin invalides." };
-
-    const expectedKeys = new Set(
-      data.pattern.grid.cells
-        .filter((cell) => !cell.empty && cell.dmc === path.dmc)
-        .map(cellKey)
-    );
-    const pointKeys = new Set(path.points.map(cellKey));
-    if (expectedKeys.size !== path.points.length || pointKeys.size !== path.points.length) {
-      return { valid: false, message: "Un chemin ne couvre pas exactement sa couleur." };
-    }
-
-    const everyPointMatches = path.points.every((point) => expectedKeys.has(cellKey(point)));
-    if (!everyPointMatches) {
-      return { valid: false, message: "Un chemin contient une case hors couleur." };
-    }
-  }
-
-  const settingsError = window.PathSettings.validate(data);
-  return { valid: !settingsError, message: settingsError };
+  try { StitchModel.upgradePathsFile(data); return { valid: true, message: "" }; }
+  catch (error) { return { valid: false, message: error.message }; }
 }
 
 function validateProgressSave(data) {
-  if (!data || data.kind !== "cross-stitch-progress-save" || data.schemaVersion !== 1) {
-    return { valid: false, message: "Ce fichier n'est pas une sauvegarde de progression." };
-  }
-
-  const pathsValidation = validatePathsFile(data.pathsFile);
-  if (!pathsValidation.valid) {
-    return pathsValidation;
-  }
-
-  if (!data.stitchedByDmc || typeof data.stitchedByDmc !== "object" || Array.isArray(data.stitchedByDmc)) {
-    return { valid: false, message: "Progression manquante dans la sauvegarde." };
-  }
-
-  const pathByDmc = new Map(data.pathsFile.paths.map((path) => [path.dmc, path]));
-  const everyCountValid = Object.entries(data.stitchedByDmc).every(([dmc, count]) => (
-    pathByDmc.has(dmc) && Number.isInteger(count) && count >= 0 && count <= pathByDmc.get(dmc).points.length
-  ));
-  if (!everyCountValid) {
-    return { valid: false, message: "La sauvegarde contient une progression invalide." };
-  }
-
-  return { valid: true, message: "" };
+  try {
+    if (!upgradedProgressSaves.has(data)) upgradedProgressSaves.set(data, StitchModel.upgradeProgressSave(data));
+    return { valid: true, message: "" };
+  } catch (error) { return { valid: false, message: error.message }; }
 }
 
 function validatePattern(pattern) {
@@ -1028,7 +958,8 @@ function cellKey(point) {
 function buildProgressSave() {
   return {
     kind: "cross-stitch-progress-save",
-    schemaVersion: 1,
+    schemaVersion: 2,
+    stitchUnit: "diagonal",
     savedAt: new Date().toISOString(),
     pathsFile: loadedPaths,
     stitchedByDmc: normalizeStitchedState(loadedPaths, stitchedByDmc),
@@ -1457,7 +1388,9 @@ stitchCanvas.addEventListener("click", event => {
   if (localX < 0 || localY < 0) return;
   const x = stitchView.startX + Math.floor(localX / size);
   const y = stitchView.startY + Math.floor(localY / size);
-  const index = pathForDmc(selectedDmc)?.points.findIndex(p => p.x === x && p.y === y) ?? -1;
+  const fx = localX / size - Math.floor(localX / size), fy = localY / size - Math.floor(localY / size);
+  const diagonal = Math.abs(fx + fy - 1) < Math.abs(fy - fx) ? "lower" : "upper";
+  const index = pathForDmc(selectedDmc)?.points.findIndex(p => p.x === x && p.y === y && p.diagonal === diagonal) ?? -1;
   if (index >= 0) changeStitchCount(selectedDmc, index + 1);
 });
 document.querySelector("#sessionModeButton").addEventListener("click", () => {
@@ -1526,13 +1459,18 @@ async function restoreLocalSession() {
     const state = await progressStore.read("active");
     if (state) {
       const paths = await progressStore.read(`pattern:${state.patternId}`);
+      if (await progressStore.identify(paths) !== state.patternId) throw new Error("Le pattern local a ete modifie.");
       const save = progressStore.unpack(state, paths);
       if (!validateProgressSave(save).valid) throw new Error("Sauvegarde locale invalide.");
-      patternIds.set(paths, state.patternId); storedPatternIds.add(state.patternId);
+      if (state.schemaVersion === 2 && !await progressStore.read(`migration-backup:${state.patternId}`)) {
+        await progressStore.write(`migration-backup:${state.patternId}`, state);
+      }
+      storedPatternIds.add(state.patternId);
       remoteSha = state.remoteSha || null; lastSyncedFingerprint = state.lastSyncedFingerprint || ""; lastSyncedAt = state.lastSyncedAt;
       restoringSession = true;
       applyProgressSave(save);
-      undoActions = state.undoActions || []; redoActions = state.redoActions || [];
+      const upgraded = upgradedProgressSaves.get(save);
+      undoActions = upgraded.undoActions || []; redoActions = upgraded.redoActions || [];
       saveProgressState();
       const savedView = state.viewPosition || { left: 0, top: 0 };
       requestAnimationFrame(() => { stitchCanvas.parentElement.scrollTo(sessionMode ? 0 : savedView.left, sessionMode ? 0 : savedView.top); restoringSession = false; });

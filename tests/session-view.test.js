@@ -11,6 +11,7 @@ async function run() {
   const longest = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
   const initialCount = Math.floor(longest.points.length / 2);
   Object.assign(save, { selectedDmc: longest.dmc, stitchedByDmc: { [longest.dmc]: initialCount }, zoom: 4, sessionMode: true });
+  const initialDiagonals = initialCount * 2;
   const browser = await chromium.launch({ headless: true, channel: process.env.BROWSER_CHANNEL || "msedge" });
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   const page = await context.newPage();
@@ -28,14 +29,13 @@ async function run() {
       const state = await page.evaluate(() => {
         const point = pathForDmc(selectedDmc).points[stitchedCountForDmc(selectedDmc)];
         const center = pointCenter(point, stitchView.cellSize);
-        const radius = Math.max(3, Math.floor(stitchView.cellSize * 0.38));
-        const ring = [...stitchCanvas.getContext("2d").getImageData(Math.round(center.x + radius), Math.round(center.y), 1, 1).data];
+        const ring = [...stitchCanvas.getContext("2d").getImageData(Math.round(center.x), Math.round(center.y), 1, 1).data];
         return { width: stitchCanvas.width, height: stitchCanvas.height, viewportWidth: innerWidth, viewportHeight: innerHeight,
           view: stitchView, center, ring, count: stitchedCountForDmc(selectedDmc) };
       });
       assert.ok(state.width <= state.viewportWidth && state.height <= state.viewportHeight, "The close view canvas stays viewport-sized, even at 400% zoom");
       assert.ok(state.center.x > 26 && state.center.x < state.width && state.center.y > 26 && state.center.y < state.height);
-      assert.ok(Math.abs(state.ring[0] - 180) < 20 && Math.abs(state.ring[1] - 75) < 20 && Math.abs(state.ring[2] - 87) < 20 && state.ring[3] === 255,
+      assert.ok(Math.abs(state.ring[0] - 198) < 20 && Math.abs(state.ring[1] - 56) < 20 && Math.abs(state.ring[2] - 72) < 20 && state.ring[3] === 255,
         `The current stitch marker must actually render, got ${state.ring}`);
       return state;
     }
@@ -44,19 +44,20 @@ async function run() {
     assert.ok(initial.view.startX > 0 && initial.view.startY > 0, "Exercise a cropped view away from the grid origin");
     for (let i = 0; i < 8; i++) {
       await page.locator("#nextStitchButton").click();
-      assert.equal((await checkCanvas()).count, initialCount + i + 1);
+      assert.equal((await checkCanvas()).count, initialDiagonals + i + 1);
     }
     await page.locator("#markUntilToggle").check();
     const position = await page.evaluate(() => {
-      const center = pointCenter(pathForDmc(selectedDmc).points[stitchedCountForDmc(selectedDmc)], stitchView.cellSize);
-      return { x: center.x, y: center.y };
+      const action = pathForDmc(selectedDmc).points[stitchedCountForDmc(selectedDmc)];
+      const center = pointCenter(action, stitchView.cellSize);
+      return { x: center.x - stitchView.cellSize * 0.2, y: center.y + stitchView.cellSize * (action.diagonal === "lower" ? 0.2 : -0.2) };
     });
     await page.locator("#stitchCanvas").click({ position });
-    assert.equal((await checkCanvas()).count, initialCount + 9, "Click correction uses the cropped grid's global coordinates");
+    assert.equal((await checkCanvas()).count, initialDiagonals + 9, "Click correction uses the cropped grid's global coordinates");
     await page.evaluate(() => localSaveQueue);
     await page.reload();
     await page.waitForFunction(() => !document.querySelector("main").inert && sessionMode && activeProgressStep === "stitch");
-    assert.equal((await checkCanvas()).count, initialCount + 9);
+    assert.equal((await checkCanvas()).count, initialDiagonals + 9);
     await fs.mkdir(path.join(root, "exports/verification"), { recursive: true });
     await page.screenshot({ path: path.join(root, "exports/verification/session-large.png"), fullPage: true });
     while (await page.evaluate(() => stitchZoom > 1)) await page.locator("#zoomOutButton").click();
@@ -79,7 +80,7 @@ async function run() {
     });
     assert.equal(overview.mode, false);
     assert.equal(overview.visible, true, "Returning to overview keeps the current stitch visible");
-    assert.equal(overview.count, initialCount + 9);
+    assert.equal(overview.count, initialDiagonals + 9);
     assert.equal(overview.view.startX, 0);
     assert.deepEqual(errors, []);
     console.log("session view tests passed: real large pattern, 400% zoom, visible marker, following, click correction, reload, mobile, overview");

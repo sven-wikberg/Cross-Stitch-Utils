@@ -88,14 +88,14 @@ async function run() {
       return { x: rect.x + GRID_RULER_SIZE + size * 2.5, y: rect.y + GRID_RULER_SIZE + size * 0.5 };
     });
     await page.mouse.click(point.x, point.y);
-    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 3);
+    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 6);
     assert.match(await page.locator("#nextCutText").innerText(), /Couper le fil/);
     await page.locator("#sessionModeButton").click();
     await page.locator("#zoomInButton").click();
     await page.evaluate(() => localSaveQueue);
     await page.reload();
     await page.waitForFunction(() => !document.querySelector("main").inert && activeProgressStep === "stitch");
-    assert.deepEqual(await page.evaluate(() => [stitchedCountForDmc("310"), sessionMode, stitchZoom, undoActions.length]), [3, true, 1.25, 3]);
+    assert.deepEqual(await page.evaluate(() => [stitchedCountForDmc("310"), sessionMode, stitchZoom, undoActions.length]), [6, true, 1.25, 3]);
     const active = await page.evaluate(() => progressStore.read("active"));
     assert.ok(!active.pathsFile && active.patternId.length === 64);
     await page.screenshot({ path: path.join(screenshotDirectory, "stitch-session.png"), fullPage: true });
@@ -116,7 +116,7 @@ async function run() {
     await other.locator("#loadBuiltinProgressButton").click();
     await other.waitForFunction(() => activeProgressStep === "stitch" && !githubSyncInProgress);
     await other.evaluate(() => localSaveQueue);
-    assert.equal(await other.evaluate(() => stitchedCountForDmc("310")), 3);
+    assert.equal(await other.evaluate(() => stitchedCountForDmc("310")), 6);
     assert.match(await other.locator("#syncStateText").innerText(), /Synchronise le/);
     await page.locator("#nextStitchButton").click();
     await page.locator("#writeBuiltinProgressButton").click();
@@ -132,10 +132,45 @@ async function run() {
     await other.locator("#historyPanel").waitFor({ state: "visible" });
     await other.locator("#historySelect").selectOption(history[history.length - 1].sha);
     await other.locator("#restoreHistoryButton").click();
-    await other.waitForFunction(() => stitchedCountForDmc("310") === 3);
+    await other.waitForFunction(() => stitchedCountForDmc("310") === 6);
     await other.evaluate(() => localSaveQueue);
     assert.match(await other.locator("#syncStateText").innerText(), /Modifications locales/);
     await otherContext.close();
+
+    const migrationContext = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+    await migrationContext.route("https://api.github.com/**", route => route.abort());
+    const migrated = await migrationContext.newPage();
+    migrated.on("pageerror", error => errors.push(error.message));
+    await migrated.goto(`${origin}/stitch-progress.html`);
+    await migrated.waitForFunction(() => !document.querySelector("main").inert);
+    const legacyState = await migrated.evaluate(async paths => {
+      const patternId = await progressStore.identify(paths);
+      const state = { kind: "cross-stitch-progress-state", schemaVersion: 2, patternId,
+        stitchedByDmc: { "310": 3, "321": 1 }, selectedDmc: "321", zoom: 1.25,
+        undoActions: [{ dmc: "321", before: 0, after: 1 }], redoActions: [] };
+      await progressStore.write(`pattern:${patternId}`, paths);
+      await progressStore.write("active", state);
+      return state;
+    }, data);
+    await migrated.reload();
+    await migrated.waitForFunction(() => !document.querySelector("main").inert && activeProgressStep === "stitch");
+    await migrated.evaluate(() => localSaveQueue);
+    assert.deepEqual(await migrated.evaluate(() => [stitchedByDmc, selectedDmc, stitchZoom, undoActions[0]]),
+      [{ "310": 6, "321": 2 }, "321", 1.25, { dmc: "321", before: 0, after: 2 }]);
+    assert.deepEqual(await migrated.evaluate(id => progressStore.read(`migration-backup:${id}`), legacyState.patternId), legacyState);
+    assert.deepEqual(await migrated.evaluate(id => progressStore.read(`pattern:${id}`), legacyState.patternId), data);
+    assert.equal(await migrated.evaluate(async () => (await progressStore.read("active")).schemaVersion), 3);
+    await migrated.locator("#nextStitchButton").click();
+    assert.equal(await migrated.locator("#selectedPartialCrosses").innerText(), "1");
+    assert.equal(await migrated.locator("#selectedCompleteCrosses").innerText(), "1");
+    const partialSave = await migrated.evaluate(() => buildProgressSave());
+    await migrated.evaluate(() => localSaveQueue);
+    await migrated.reload();
+    await migrated.waitForFunction(() => !document.querySelector("main").inert && activeProgressStep === "stitch");
+    assert.equal(await migrated.evaluate(() => stitchedCountForDmc("321")), 3);
+    assert.equal(await migrated.locator("#selectedPartialCrosses").innerText(), "1");
+    assert.deepEqual(await migrated.evaluate(() => buildProgressSave().stitchedByDmc), partialSave.stitchedByDmc);
+    await migrationContext.close();
 
     const planner = await context.newPage();
     await planner.goto(`${origin}/plan-paths.html`);
@@ -149,6 +184,7 @@ async function run() {
     assert.equal(await planner.evaluate(() => constraintsByDmc["310"].forcedCuts.length), 1);
     await planner.locator("#lockedPrefixCount").fill("2");
     await planner.locator("#lockedPrefixCount").dispatchEvent("change");
+    const lockedDiagonals = await planner.evaluate(() => currentPath().slice(0, 2));
     await planner.evaluate(() => { pathStagnationLimitMs = 1000; });
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => pathAlgorithmRunning);
@@ -161,10 +197,30 @@ async function run() {
     await planner.evaluate(() => { pathStagnationLimitMs = 1000; });
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => !batchRunning && batchPlan.results.length === 2, { timeout: 15000 });
-    assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), data.paths[0].points.slice(0, 2));
+    assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), lockedDiagonals);
+    assert.equal(await planner.evaluate(() => buildPathExport().schemaVersion), 2);
+    assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor())), "");
     assert.equal(await planner.evaluate(() => buildPathExport().settings.cutThreshold), 12);
     await planner.evaluate(() => { pathStagnationLimitMs = 60000; renderPathTool(); });
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner.png"), fullPage: true });
+
+    await planner.locator('[data-dmc="310"]').click();
+    await planner.locator("#clearPathButton").click();
+    await planner.locator("#diagonalMode").selectOption("upper");
+    const canvasCell = async x => planner.locator("#patternCanvas").click({ position: { x: 26 + (x + 0.5) * 18, y: 35 } });
+    await canvasCell(2);
+    assert.equal(await planner.evaluate(() => currentPath().length), 0, "An upper leg cannot precede its lower leg");
+    await planner.locator("#diagonalMode").selectOption("lower");
+    await planner.locator("#diagonalDirection").selectOption("1");
+    await canvasCell(2); await canvasCell(1);
+    await planner.locator("#diagonalMode").selectOption("upper");
+    await canvasCell(2);
+    assert.equal(await planner.evaluate(() => currentPath().length), 2, "A same-hole transition is refused in manual mode");
+    await planner.locator("#diagonalDirection").selectOption("auto");
+    await canvasCell(2);
+    assert.equal(await planner.evaluate(() => currentPath().length), 3);
+    assert.equal(await planner.evaluate(() => currentPath()[2].direction), -1);
+    assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor(), false)), "");
 
     const importer = await context.newPage();
     await importer.goto(`${origin}/import-pattern.html`);
@@ -234,10 +290,19 @@ async function run() {
       await fileContext.close();
       console.log(`large real pattern restored through IndexedDB and file:// (${large.length} bytes)`);
       const route = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
-      const result = require("../src/path-optimizer-worker.js").createPathOptimizerApi().optimizePath({ points: route.points, initialPath: route.points, cutThreshold: 10, stagnationLimitMs: 1000 });
-      assert.equal(new Set(result.route).size, route.points.length);
-      assert.ok(result.metrics.score <= result.initialMetrics.score + 0.0001);
-      console.log(`large optimizer passed (${route.points.length} points, ${Math.round(result.elapsedMs)} ms, short stagnation test)`);
+      await planner.locator('[data-step="paths"]').click();
+      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 200; renderPathTool(); }, route.dmc);
+      await planner.locator("#optimizedPathButton").click();
+      await planner.waitForFunction(() => !pathAlgorithmRunning, null, { timeout: 30000 });
+      const result = await planner.evaluate(() => ({ count: currentPath().length,
+        error: StitchModel.validateRoute(currentPath(), cellsForSelectedColor()), metrics: pathPerformanceMetrics(currentPath()),
+        initial: pathOptimizationBaselinesByDmc[selectedDmc], feedback: pathAlgorithmDistance.textContent }));
+      assert.equal(result.count, route.points.length * 2);
+      assert.equal(result.error, "");
+      assert.ok(result.metrics.score <= result.initial + 0.0001);
+      assert.doesNotMatch(result.feedback, /Erreur/);
+      await planner.evaluate(() => plannerSaveQueue);
+      console.log(`large diagonal worker passed (${result.count} diagonals, score ${result.metrics.score.toFixed(2)}, initial ${result.initial.toFixed(2)})`);
     }
     assert.deepEqual(errors, []);
     console.log("browser workflows passed: resume, undo/redo, session, batch, constraints, group editing, source overlay, responsive layout");

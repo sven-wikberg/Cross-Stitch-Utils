@@ -56,11 +56,23 @@ Les brouillons des outils 2 et 3 utilisent IndexedDB, avec migration du stockage
 ## Commandes de travail
 
 - Outil 1 : en verification, regler l'opacite de l'image source et le zoom commun. Dans les associations, `Corriger les groupes` permet de fusionner deux groupes ou de separer les cases cochees. La couleur du groupe cible est conservee a la fusion; un groupe separe reste a classer. Les autres associations et corrections de cases sont conservees.
-- Outil 2 : `Optimiser toutes les couleurs` traite la file en arriere-plan. Arreter conserve les meilleurs chemins; reprendre continue avec la couleur interrompue. Le depart impose, les premiers points verrouilles et les coupes manuelles sont propres a chaque couleur. Une coupe imposee conserve l'adjacence de ses deux points pendant la recherche.
+- Outil 2 : `Optimiser toutes les couleurs` traite la file en arriere-plan. Arreter conserve les meilleurs chemins; reprendre continue avec la couleur interrompue. Le depart impose, les premieres diagonales verrouillees et les coupes manuelles sont propres a chaque couleur. Une coupe imposee reste attachee a l'entree de la diagonale choisie pendant la recherche.
 - Les chemins exportent `settings.cutThreshold` et, pour chaque couleur, `forcedCuts` et `constraints`. Le score compte chaque coupe comme trois fois le seuil. Les anciens chemins sans reglage utilisent le seuil de 10 cases.
-- Outil 3 : `Vue rapprochee` affiche la zone autour du point a broder et met en avant les huit prochains points. Elle suit automatiquement l'avancement, sans agrandir le canvas du pattern entier. `Vue d'ensemble` revient au pattern complet; `Plein ecran` est independant. `Annuler` et `Retablir` gardent les 100 dernieres actions. Le mode `Marquer jusqu'a la case cliquee` permet de corriger une portion d'un coup. Maintenir Espace ne valide pas plusieurs points.
+- Outil 3 : `Vue rapprochee` affiche la zone autour de la diagonale a broder et les huit suivantes. Elle suit automatiquement l'avancement, sans agrandir le canvas du pattern entier. `Vue d'ensemble` revient au pattern complet; `Plein ecran` est independant. `Annuler` et `Retablir` gardent les 100 dernieres actions. Le mode de correction par clic choisit la diagonale la plus proche du curseur. Espace valide une diagonale; maintenir la touche ne valide pas plusieurs diagonales.
 
 Les trois outils restent independants : aucun brouillon n'est partage entre eux. Le passage de l'un a l'autre se fait toujours par un fichier JSON explicite.
+
+## Chemins de fil et compatibilite
+
+Le pattern de l'outil 1 reste en version 1, avec une couleur par case. Les chemins de l'outil 2 passent en version 2 (`stitchUnit: "diagonal"`). Chaque entree de `paths[].points` contient `x`, `y`, `diagonal` (`lower` pour /, `upper` pour \\), `direction` (1 de gauche a droite, -1 de droite a gauche), et eventuellement `cutBefore: true`. Les coordonnees des trous se deduisent des coins de la case.
+
+Deux contraintes sont obligatoires, meme en presence d'une coupe : la diagonale / precede la diagonale \\ de sa case; le trou de sortie d'une diagonale ne peut pas etre le trou d'entree de la suivante. Les croix peuvent etre entrelacees dans le chemin. Les traits pleins representent l'endroit, les traits fins pointilles le dos, et les coupes sont rouges. La diagonale courante a une entree carree et une sortie flechee; les coins sont aussi nommes dans son statut.
+
+Le moteur conserve le meilleur chemin valide : il essaie des parcours par rangees/colonnes, du plus proche voisin avec precedence, des deplacements locaux de diagonales et l'optimisation exacte des deux sens pour un ordre donne (programmation dynamique). Le score optimise concerne les transitions au dos; la longueur sur l'endroit est constante. Ce moteur heuristique ne garantit pas l'optimum global. Il fonctionne dans un Worker, affiche ses ameliorations et s'arrete apres le delai sans amelioration choisi.
+
+Les anciens chemins sont convertis sans changer l'ordre des cases, avec les deux diagonales de chaque ancienne case consecutives. Les sauvegardes completes passent en version 2; l'etat compact synchronise passe en version 3. `stitchedByDmc` compte alors des diagonales, jamais des croix. A la migration, chaque ancienne croix brodee devient deux diagonales brodees : la meme case reste terminee, la prochaine case reste la meme, et les compteurs d'annulation sont convertis aussi. Les croix terminees et commencees sont comptees separement dans l'interface.
+
+Avant de remplacer un ancien etat local IndexedDB, sa copie est gardee sous `migration-backup:<ancien patternId>` dans la meme base; l'ancien pattern immuable reste present. Les donnees legacy de localStorage sont copiees avant suppression. Les fichiers de sauvegarde du depot ne sont pas reecrits par cette mise a jour. La prochaine synchronisation explicite (ou automatique si activee) stockera un nouveau pattern immuable et la nouvelle progression, avec la protection habituelle contre les conflits. Mettre a jour la page sur chaque PC avant d'utiliser les nouveaux fichiers.
 
 ## Verification
 
@@ -68,11 +80,12 @@ Les trois outils restent independants : aucun brouillon n'est partage entre eux.
 node tests/path-optimizer.test.js
 node tests/github-sync.test.js
 node tests/upgrades.test.js
+node tests/stitch-model.test.js
 node tests/workflows.test.js
 node tests/session-view.test.js
 ```
 
-Les tests de parcours necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import et la reprise du gros fichier inclus au depot. Le moteur calcule les distances a la demande au-dela de 4 000 points afin d'eviter une allocation memoire quadratique.
+Les tests de parcours necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import et la reprise du gros fichier inclus au depot. Le nouveau moteur de diagonales utilise un index spatial et ne construit pas de matrice de distances quadratique.
 
 ## Direction technique
 

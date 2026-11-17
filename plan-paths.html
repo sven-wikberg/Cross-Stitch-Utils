@@ -37,11 +37,11 @@
               <dd id="metricColor">-</dd>
             </div>
             <div>
-              <dt>Cases</dt>
+              <dt>Diagonales</dt>
               <dd id="metricPoints">0 / 0</dd>
             </div>
             <div>
-              <dt>Distance</dt>
+              <dt>Distance au dos</dt>
               <dd id="metricDistance">-</dd>
             </div>
             <div>
@@ -191,7 +191,19 @@
                     <option value="start">Choisir le depart</option>
                     <option value="cut">Coupe avant la case</option>
                   </select>
-                  <label for="lockedPrefixCount">Premiers points verrouilles</label>
+                  <label for="diagonalMode">Diagonale</label>
+                  <select id="diagonalMode">
+                    <option value="auto">Automatique</option>
+                    <option value="lower">/ Dessous</option>
+                    <option value="upper">\ Dessus</option>
+                  </select>
+                  <label for="diagonalDirection">Sens du fil</label>
+                  <select id="diagonalDirection">
+                    <option value="auto">Automatique</option>
+                    <option value="1">Gauche vers droite</option>
+                    <option value="-1">Droite vers gauche</option>
+                  </select>
+                  <label for="lockedPrefixCount">Premieres diagonales verrouillees</label>
                   <input id="lockedPrefixCount" type="number" min="0" step="1" value="0">
                   <p id="constraintsStatus" class="compact-status"></p>
                   <button id="clearConstraintsButton" class="secondary-button" type="button">Retirer les contraintes</button>
@@ -221,7 +233,7 @@
               <strong id="pathExportPathsText">0</strong>
             </div>
             <div>
-              <span class="stat-label">Points</span>
+              <span class="stat-label">Diagonales</span>
               <strong id="pathExportPointsText">0</strong>
             </div>
           </div>
@@ -234,7 +246,8 @@
       </section>
     </main>
 
-    <script src="src/path-optimizer-worker.js"></script>
+    <script src="src/stitch-model.js"></script>
+    <script src="src/diagonal-optimizer-worker.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/path-planner.js"></script>

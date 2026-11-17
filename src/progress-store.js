@@ -38,9 +38,9 @@
     return JSON.stringify([state.patternId, Object.entries(state.stitchedByDmc || {}).sort(), state.selectedDmc]);
   }
   function unpack(state, pathsFile) {
-    if (!state || state.kind !== "cross-stitch-progress-state" || state.schemaVersion !== 2
+    if (!state || state.kind !== "cross-stitch-progress-state" || ![2, 3].includes(state.schemaVersion)
         || !/^[a-f0-9]{64}$/.test(state.patternId)) throw new Error("Sauvegarde synchronisee invalide.");
-    return { ...state, kind: "cross-stitch-progress-save", schemaVersion: 1, pathsFile };
+    return { ...state, kind: "cross-stitch-progress-save", schemaVersion: state.schemaVersion - 1, pathsFile };
   }
   root.StitchProgressStore = { read, write, identify, fingerprint, unpack };
 })(typeof window === "undefined" ? globalThis : window);

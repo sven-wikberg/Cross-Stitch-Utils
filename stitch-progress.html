@@ -30,9 +30,11 @@
           <progress id="globalProgressBar" class="sidebar-progress-bar" value="0" max="100"></progress>
           <dl class="metric-list">
             <div>
-              <dt>Points</dt>
+              <dt>Diagonales</dt>
               <dd id="globalProgressPoints">0 / 0</dd>
             </div>
+            <div><dt>Croix terminees</dt><dd id="globalCompleteCrosses">0</dd></div>
+            <div><dt>Croix commencees</dt><dd id="globalPartialCrosses">0</dd></div>
             <div>
               <dt>Avancement</dt>
               <dd id="globalProgressPercent">0%</dd>
@@ -57,9 +59,11 @@
               <dd id="selectedProgressColor">-</dd>
             </div>
             <div>
-              <dt>Points</dt>
+              <dt>Diagonales</dt>
               <dd id="selectedProgressPoints">0 / 0</dd>
             </div>
+            <div><dt>Croix terminees</dt><dd id="selectedCompleteCrosses">0</dd></div>
+            <div><dt>Croix commencees</dt><dd id="selectedPartialCrosses">0</dd></div>
             <div>
               <dt>Avancement</dt>
               <dd id="selectedProgressPercent">0%</dd>
@@ -156,7 +160,7 @@
               <strong id="progressDimensionsText">0 x 0</strong>
             </div>
             <div>
-              <span class="stat-label">Points</span>
+              <span class="stat-label">Diagonales</span>
               <strong id="progressPointsText">0</strong>
             </div>
           </div>
@@ -176,7 +180,7 @@
           <div class="session-toolbar">
             <button id="sessionModeButton" class="secondary-button" type="button" aria-pressed="false" title="Centrer la grille sur le point a broder">Vue rapprochee</button>
             <button id="fullscreenButton" class="secondary-button" type="button">Plein ecran</button>
-            <label class="inline-check"><input id="markUntilToggle" type="checkbox"> Marquer jusqu'a la case cliquee</label>
+            <label class="inline-check"><input id="markUntilToggle" type="checkbox"> Marquer jusqu'a la diagonale cliquee</label>
             <span id="nextCutText" role="status"></span>
           </div>
 
@@ -196,7 +200,7 @@
                   <button id="redoActionButton" class="secondary-button" type="button" title="Retablir la derniere action">Retablir</button>
                   <button id="resetColorProgressButton" class="secondary-button" type="button">Remettre a zero</button>
                 </div>
-                <button id="nextStitchButton" class="primary-button" type="button">Point suivant</button>
+                <button id="nextStitchButton" class="primary-button" type="button">Valider la diagonale</button>
                 <button id="downloadProgressSaveButton" class="secondary-button" type="button">Telecharger la sauvegarde</button>
                 <button id="writeBuiltinProgressButton" class="secondary-button" type="button">Synchroniser sur GitHub</button>
                 <p id="writeBuiltinProgressStatus" class="empty-message">La progression synchronisee sera disponible sur les autres PC.</p>
@@ -217,6 +221,7 @@
     <script src="src/github-sync.js"></script>
     <script src="src/progress-store.js"></script>
     <script src="src/path-settings.js"></script>
+    <script src="src/stitch-model.js"></script>
     <script src="src/stitch-progress.js"></script>
   </body>
 </html>

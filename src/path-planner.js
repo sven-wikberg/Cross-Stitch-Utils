@@ -73,7 +73,7 @@ const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const DEFAULT_CUT_THRESHOLD = 10;
 const DEFAULT_PATH_STAGNATION_LIMIT = 60000;
 
-let storedState = loadStoredState();
+let storedState = migratePlannerState(loadStoredState());
 let loadedPattern = storedState.pattern;
 let pathsByDmc = storedState.pathsByDmc;
 let bestPathsByDmc = storedState.bestPathsByDmc;
@@ -107,6 +107,21 @@ const batchOptimizeButton = document.querySelector("#batchOptimizeButton");
 const pathEditMode = document.querySelector("#pathEditMode");
 const lockedPrefixCount = document.querySelector("#lockedPrefixCount");
 
+function migratePlannerState(state) {
+  if (!state?.pattern || state.pathSchemaVersion === 2) return state;
+  const threshold = state.cutThreshold || 10, oldConstraints = state.constraintsByDmc || {};
+  const convert = paths => Object.fromEntries(Object.entries(paths || {}).map(([dmc, points]) =>
+    [dmc, StitchModel.expandCells(points, threshold, oldConstraints[dmc] || {})]));
+  const paths = convert(state.pathsByDmc);
+  const constraints = Object.fromEntries(Object.entries(paths).map(([dmc, points]) => [dmc, {
+    ...(oldConstraints[dmc]?.start && points.length ? { start: copyPoint(points[0]) } : {}),
+    lockedPrefix: points.slice(0, (oldConstraints[dmc]?.lockedPrefix?.length || 0) * 2).map(copyPoint),
+    forcedCuts: points.filter(p => p.cutBefore).map(copyPoint)
+  }]));
+  return { ...state, pathSchemaVersion: 2, pathsByDmc: paths, bestPathsByDmc: convert(state.bestPathsByDmc),
+    constraintsByDmc: constraints, pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
+}
+
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
   if (!stored) {
@@ -121,6 +136,7 @@ function loadStoredState() {
 
     if (validateFinalPattern(parsed.pattern).valid) {
       return {
+        pathSchemaVersion: parsed.pathSchemaVersion,
         pattern: parsed.pattern,
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
@@ -140,6 +156,7 @@ function loadStoredState() {
 
 function savePathPlannerState() {
   const snapshot = loadedPattern ? structuredClone({
+    pathSchemaVersion: 2,
     pattern: loadedPattern,
     pathsByDmc,
     bestPathsByDmc,
@@ -309,48 +326,23 @@ function renderPatternGrid() {
 }
 
 function drawSelectedPath(context, cellSize) {
-  const path = currentPath();
-  if (path.length === 0) {
-    return;
-  }
-
-  const colors = selectedPathDrawingColors();
-
-  context.save();
-  context.lineJoin = "round";
-  context.lineCap = "round";
-
-  if (path.length > 1) {
-    path.forEach((point, index) => {
-      if (index === 0) {
-        return;
-      }
-
-      drawPathSegment(context, path[index - 1], point, cellSize, colors);
-    });
-  }
-
+  const path = currentPath(), colors = selectedPathDrawingColors();
+  context.save(); context.lineCap = "round";
+  const pixel = hole => ({ x: GRID_RULER_SIZE + hole.x * cellSize, y: GRID_RULER_SIZE + hole.y * cellSize });
   path.forEach((point, index) => {
-    const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
-    const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
-    const style = pathPointStyle(cellSize);
-    context.fillStyle = index === path.length - 1 ? colors.currentPointFill : colors.pointFill;
-    context.strokeStyle = colors.pointStroke;
-    context.lineWidth = style.strokeWidth;
-
-    if (style.shape === "square") {
-      const x = centerX - style.size / 2;
-      const y = centerY - style.size / 2;
-      context.fillRect(x, y, style.size, style.size);
-      context.strokeRect(x, y, style.size, style.size);
-    } else {
-      context.beginPath();
-      context.arc(centerX, centerY, style.radius, 0, Math.PI * 2);
-      context.fill();
-      context.stroke();
+    if (index) drawPathSegment(context, path[index - 1], point, cellSize, colors);
+  });
+  path.forEach((point, index) => {
+    const holes = StitchModel.holes(point), from = pixel(holes.start), to = pixel(holes.end);
+    context.strokeStyle = colors.line; context.lineWidth = Math.max(1, cellSize * 0.14);
+    context.setLineDash([]);
+    context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+    if (index === path.length - 1) {
+      context.fillStyle = "#c63848";
+      context.beginPath(); context.arc(to.x, to.y, Math.max(2, cellSize * 0.16), 0, Math.PI * 2); context.fill();
+      context.strokeStyle = "#c63848"; context.strokeRect(from.x - 2, from.y - 2, 4, 4);
     }
   });
-
   context.restore();
 }
 
@@ -396,18 +388,15 @@ function pathPointStyle(cellSize) {
 }
 
 function drawPathSegment(context, fromPoint, toPoint, cellSize, colors) {
-  const from = pointCenter(fromPoint, cellSize);
-  const to = pointCenter(toPoint, cellSize);
+  const from = StitchModel.holes(fromPoint).end, to = StitchModel.holes(toPoint).start;
   const isCut = isCutJump(fromPoint, toPoint);
-
-  context.strokeStyle = isCut ? colors.cutLine : colors.line;
-  context.lineWidth = pathSegmentWidth(cellSize, isCut);
-  context.setLineDash(isCut ? pathCutDash(cellSize) : []);
+  context.strokeStyle = isCut ? "#c63848" : colors.line;
+  context.lineWidth = Math.max(0.6, cellSize * (isCut ? 0.045 : 0.065));
+  context.setLineDash(isCut ? pathCutDash(cellSize) : [Math.max(1, cellSize * 0.15), Math.max(1, cellSize * 0.15)]);
   context.beginPath();
-  context.moveTo(from.x, from.y);
-  context.lineTo(to.x, to.y);
-  context.stroke();
-  context.setLineDash([]);
+  context.moveTo(GRID_RULER_SIZE + from.x * cellSize, GRID_RULER_SIZE + from.y * cellSize);
+  context.lineTo(GRID_RULER_SIZE + to.x * cellSize, GRID_RULER_SIZE + to.y * cellSize);
+  context.stroke(); context.setLineDash([]);
 }
 
 function pathSegmentWidth(cellSize, isCut) {
@@ -446,12 +435,12 @@ function renderPathBuilder() {
   }
 
   const path = currentPath();
-  const expected = cellsForSelectedColor().length;
+  const expected = cellsForSelectedColor().length * 2;
   const complete = isPathComplete(selectedDmc);
   pathBuildStatus.className = `coverage-status ${complete ? "valid" : "invalid"}`;
   pathBuildStatus.textContent = complete
-    ? `Chemin complet: ${path.length} / ${expected} cases.`
-    : `Chemin en cours: ${path.length} / ${expected} cases.`;
+    ? `Chemin complet: ${path.length} / ${expected} diagonales.`
+    : `Chemin en cours: ${path.length} / ${expected} diagonales.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
@@ -495,7 +484,7 @@ function renderPathMetrics() {
   }
 
   const path = currentPath();
-  const expected = cellsForSelectedColor().length;
+  const expected = cellsForSelectedColor().length * 2;
   const metrics = pathPerformanceMetrics(path);
 
   metricColor.textContent = `DMC ${selectedDmc}`;
@@ -514,27 +503,7 @@ function renderPathMetrics() {
 }
 
 function pathPerformanceMetrics(path) {
-  let distance = 0;
-  let realisticScore = 0;
-  let cuts = 0;
-
-  path.forEach((point, index) => {
-    if (index === 0) {
-      return;
-    }
-
-    const jump = threadDistance(path[index - 1], point);
-    distance += jump;
-
-    if (isCutJump(path[index - 1], point)) {
-      cuts += 1;
-      realisticScore += realisticCutPenalty();
-    } else {
-      realisticScore += jump;
-    }
-  });
-
-  return { distance, realisticScore, cuts };
+  return StitchModel.metrics(path, cutThreshold);
 }
 
 function formatMetric(value) {
@@ -700,7 +669,7 @@ function renderPathColorLegend() {
 
   loadedPattern.colors.forEach((color) => {
     const path = pathsByDmc[color.dmc] || [];
-    const expected = cellsForColor(color.dmc).length;
+    const expected = cellsForColor(color.dmc).length * 2;
     const complete = expected > 0 && path.length === expected;
     const item = document.createElement("button");
     item.className = "path-color-item";
@@ -924,10 +893,7 @@ function realisticStepCost(fromPoint, toPoint) {
 }
 
 function isCutJump(fromPoint, toPoint) {
-  return isCutDistance(threadDistance(fromPoint, toPoint)) || (constraintsByDmc[selectedDmc]?.forcedCuts || []).some((edge) => (
-    (cellKey(edge.from) === cellKey(fromPoint) && cellKey(edge.to) === cellKey(toPoint))
-    || (cellKey(edge.to) === cellKey(fromPoint) && cellKey(edge.from) === cellKey(toPoint))
-  ));
+  return Boolean(toPoint.cutBefore) || isCutDistance(threadDistance(fromPoint, toPoint));
 }
 
 function isCutDistance(distance) {
@@ -963,7 +929,7 @@ function rememberBestPath(dmc, candidatePath) {
 }
 
 function copyPoint(point) {
-  return { x: point.x, y: point.y };
+  return point.diagonal ? StitchModel.copy(point) : { x: point.x, y: point.y };
 }
 
 function strictIslandsForCells(cells) {
@@ -1362,7 +1328,7 @@ function chebyshevDistance(a, b) {
 }
 
 function threadDistance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+  return a.diagonal && b.diagonal ? StitchModel.distance(a, b) : Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function progressivePathScore(path) {
@@ -1416,24 +1382,28 @@ function cellFromCanvasEvent(event) {
 }
 
 function addCellToCurrentPath(cell) {
-  if (!loadedPattern || !selectedDmc || !cell || cell.empty || cell.dmc !== selectedDmc) {
-    return false;
-  }
-
+  if (!loadedPattern || !selectedDmc || !cell || cell.empty || cell.dmc !== selectedDmc) return false;
   const key = cellKey(cell);
-  if (key === lastDrawnCellKey) {
-    return false;
-  }
-
-  const path = currentPath();
-  const alreadySelected = path.some((point) => cellKey(point) === key);
-  if (alreadySelected) {
-    lastDrawnCellKey = key;
-    return false;
-  }
-
-  path.push({ x: cell.x, y: cell.y });
+  if (key === lastDrawnCellKey) return false;
   lastDrawnCellKey = key;
+  const path = currentPath(), existing = new Set(path.filter(p => cellKey(p) === key).map(p => p.diagonal));
+  const mode = document.querySelector("#diagonalMode").value;
+  const diagonal = mode === "auto" ? (existing.has("lower") ? "upper" : "lower") : mode;
+  if (existing.has(diagonal)) return false;
+  if (diagonal === "upper" && !existing.has("lower")) {
+    pathGridStatus.textContent = "La diagonale / de cette case doit etre ajoutee d'abord.";
+    return false;
+  }
+  const chosenDirection = document.querySelector("#diagonalDirection").value;
+  const candidate = { x: cell.x, y: cell.y, diagonal, direction: chosenDirection === "-1" ? -1 : 1 };
+  if (path.length && StitchModel.distance(path.at(-1), candidate) === 0) {
+    if (chosenDirection !== "auto") {
+      pathGridStatus.textContent = "Transition impossible : sortie et entree dans le meme trou.";
+      return false;
+    }
+    candidate.direction *= -1;
+  }
+  path.push(candidate);
   return true;
 }
 
@@ -1508,23 +1478,8 @@ function areAllColorPathsComplete(pattern, paths) {
 }
 
 function isCompletePathForColor(pattern, paths, dmc) {
-  if (!pattern || !dmc) {
-    return false;
-  }
-
-  const expectedKeys = new Set(
-    pattern.grid.cells
-      .filter((cell) => !cell.empty && cell.dmc === dmc)
-      .map(cellKey)
-  );
-  const path = Array.isArray(paths[dmc]) ? paths[dmc] : [];
-  const pathKeys = new Set(path.map(cellKey));
-
-  if (expectedKeys.size === 0 || path.length !== expectedKeys.size || pathKeys.size !== path.length) {
-    return false;
-  }
-
-  return path.every((point) => expectedKeys.has(cellKey(point)));
+  if (!pattern || !dmc) return false;
+  return !StitchModel.validateRoute(paths[dmc] || [], pattern.grid.cells.filter(cell => !cell.empty && cell.dmc === dmc));
 }
 
 function selectNextIncompleteColor() {
@@ -1542,23 +1497,12 @@ function selectNextIncompleteColor() {
 
 function buildPathExport() {
   return {
-    schemaVersion: 1,
-    kind: "cross-stitch-paths",
-    project: {
-      name: loadedPattern.project.name
-    },
-    pattern: loadedPattern,
-    settings: { cutThreshold },
-    paths: loadedPattern.colors.map((color) => ({
-      dmc: color.dmc,
-      symbol: color.symbol || null,
-      constraints: constraintsByDmc[color.dmc] || {},
-      forcedCuts: constraintsByDmc[color.dmc]?.forcedCuts || [],
-      points: (pathsByDmc[color.dmc] || []).map((point, index) => ({
-        order: index + 1,
-        x: point.x,
-        y: point.y
-      }))
+    schemaVersion: 2, stitchUnit: "diagonal", kind: "cross-stitch-paths",
+    project: { name: loadedPattern.project.name }, pattern: loadedPattern, settings: { cutThreshold },
+    paths: loadedPattern.colors.map(color => ({
+      dmc: color.dmc, symbol: color.symbol || null, constraints: constraintsByDmc[color.dmc] || {},
+      forcedCuts: (pathsByDmc[color.dmc] || []).filter(p => p.cutBefore).map(copyPoint),
+      points: (pathsByDmc[color.dmc] || []).map(copyPoint)
     }))
   };
 }
@@ -1602,140 +1546,31 @@ function goToPathStep(step) {
 }
 
 async function readSelectedPathInput(file) {
-  const text = await file.text();
-  const parsed = JSON.parse(text);
-
-  const patternValidation = validateFinalPattern(parsed);
-  if (patternValidation.valid) {
-    return {
-      pattern: parsed,
-      pathsByDmc: {}
-    };
-  }
-
-  const pathsValidation = validatePathsFile(parsed);
-  if (pathsValidation.valid) {
-    return {
-      pattern: parsed.pattern,
-      cutThreshold: normalizeCutThreshold(parsed.settings?.cutThreshold),
-      constraintsByDmc: Object.fromEntries(parsed.paths.map((path) => [path.dmc, {
-        ...(path.constraints || {}), forcedCuts: path.forcedCuts || path.constraints?.forcedCuts || []
-      }])),
-      pathsByDmc: Object.fromEntries(parsed.paths.map((path) => [
-        path.dmc,
-        path.points.map((point) => ({ x: point.x, y: point.y }))
-      ]))
-    };
-  }
-
+  const parsed = JSON.parse(await file.text());
   if (parsed?.kind === "cross-stitch-pattern") {
-    throw new Error(patternValidation.message);
+    StitchModel.validatePattern(parsed);
+    return { pattern: parsed, pathsByDmc: {} };
   }
-
-  if (parsed?.kind === "cross-stitch-paths") {
-    throw new Error(pathsValidation.message);
-  }
-
-  throw new Error("Ce fichier n'est ni un pattern de l'outil 1 ni un fichier de chemins de l'outil 2.");
+  const paths = StitchModel.upgradePathsFile(parsed);
+  return {
+    pattern: paths.pattern, cutThreshold: normalizeCutThreshold(paths.settings?.cutThreshold),
+    constraintsByDmc: Object.fromEntries(paths.paths.map(p => [p.dmc, p.constraints || {}])),
+    pathsByDmc: Object.fromEntries(paths.paths.map(p => [p.dmc, p.points.map(copyPoint)]))
+  };
 }
 
 function validateFinalPattern(pattern) {
-  if (!pattern || pattern.kind !== "cross-stitch-pattern" || pattern.schemaVersion !== 1) {
-    return { valid: false, message: "Ce fichier n'est pas un pattern exporte par l'outil 1." };
-  }
-
-  if (!pattern.project || typeof pattern.project.name !== "string" || pattern.project.name.trim().length === 0) {
-    return { valid: false, message: "Nom de projet manquant." };
-  }
-
-  if (!pattern.grid || !Number.isInteger(pattern.grid.width) || !Number.isInteger(pattern.grid.height)) {
-    return { valid: false, message: "Dimensions de grille invalides." };
-  }
-
-  const expectedCells = pattern.grid.width * pattern.grid.height;
-  if (!Array.isArray(pattern.grid.cells) || pattern.grid.cells.length !== expectedCells) {
-    return { valid: false, message: "La grille ne contient pas le bon nombre de cellules." };
-  }
-
-  if (!Array.isArray(pattern.colors) || pattern.colors.length === 0) {
-    return { valid: false, message: "Liste de couleurs manquante." };
-  }
-
-  const colorCodes = new Set(pattern.colors.map((color) => color.dmc));
-  for (const cell of pattern.grid.cells) {
-    if (!Number.isInteger(cell.x) || !Number.isInteger(cell.y)) {
-      return { valid: false, message: "Une cellule a des coordonnees invalides." };
-    }
-
-    if (cell.empty === true) {
-      continue;
-    }
-
-    if (!colorCodes.has(cell.dmc)) {
-      return { valid: false, message: "Une cellule utilise une couleur absente de la palette." };
-    }
-  }
-
-  return { valid: true, message: "" };
+  try { StitchModel.validatePattern(pattern); return { valid: true, message: "" }; }
+  catch (error) { return { valid: false, message: error.message }; }
 }
 
 function validatePathsFile(data) {
-  if (!data || data.kind !== "cross-stitch-paths" || data.schemaVersion !== 1) {
-    return { valid: false, message: "Ce fichier n'est pas un export de chemins de l'outil 2." };
-  }
-
-  if (!data.project || typeof data.project.name !== "string" || data.project.name.trim().length === 0) {
-    return { valid: false, message: "Nom de projet manquant." };
-  }
-
-  const patternValidation = validateFinalPattern(data.pattern);
-  if (!patternValidation.valid) {
-    return patternValidation;
-  }
-
-  if (!Array.isArray(data.paths) || data.paths.length !== data.pattern.colors.length) {
-    return { valid: false, message: "La liste des chemins ne correspond pas aux couleurs." };
-  }
-
-  const colorCodes = new Set(data.pattern.colors.map((color) => color.dmc));
-  const pathCodes = new Set();
-  for (const path of data.paths) {
-    if (!path || !colorCodes.has(path.dmc) || pathCodes.has(path.dmc) || !Array.isArray(path.points)) {
-      return { valid: false, message: "Un chemin utilise une couleur invalide ou dupliquee." };
-    }
-    pathCodes.add(path.dmc);
-
-    const expectedKeys = new Set(
-      data.pattern.grid.cells
-        .filter((cell) => !cell.empty && cell.dmc === path.dmc)
-        .map(cellKey)
-    );
-    const pointsAreCoordinates = path.points.every((point) => (
-      Number.isInteger(point?.x) && Number.isInteger(point?.y)
-    ));
-    if (!pointsAreCoordinates) {
-      return { valid: false, message: "Un chemin contient des coordonnees invalides." };
-    }
-
-    const pointKeys = new Set(path.points.map(cellKey));
-    if (expectedKeys.size !== path.points.length || pointKeys.size !== path.points.length) {
-      return { valid: false, message: "Un chemin ne couvre pas exactement sa couleur." };
-    }
-
-    if (!path.points.every((point) => expectedKeys.has(cellKey(point)))) {
-      return { valid: false, message: "Un chemin contient une case hors couleur." };
-    }
-  }
-
-  const settingsError = window.PathSettings.validate(data);
-  return { valid: !settingsError, message: settingsError };
+  try { StitchModel.upgradePathsFile(data); return { valid: true, message: "" }; }
+  catch (error) { return { valid: false, message: error.message }; }
 }
 
 function clonePaths(paths) {
-  return Object.fromEntries(Object.entries(paths).map(([dmc, points]) => [
-    dmc,
-    points.map((point) => ({ x: point.x, y: point.y }))
-  ]));
+  return Object.fromEntries(Object.entries(paths).map(([dmc, points]) => [dmc, points.map(copyPoint)]));
 }
 
 function showPathSavedStatus() {
@@ -1798,27 +1633,24 @@ function invalidateBatchResult(dmc) {
 }
 
 function editPathConstraint(cell) {
-  if (!cell || !cellsForColor(selectedDmc).some((point) => cellKey(point) === cellKey(cell))) return;
-  const constraints = structuredClone(constraintsByDmc[selectedDmc] || {});
-  const path = currentPath();
+  if (!cell || cell.empty || cell.dmc !== selectedDmc) return;
+  const constraints = structuredClone(constraintsByDmc[selectedDmc] || {}), path = currentPath();
+  const diagonal = document.querySelector("#diagonalMode").value === "upper" ? "upper" : "lower";
+  const index = path.findIndex(p => cellKey(p) === cellKey(cell) && p.diagonal === diagonal);
   if (pathEditMode.value === "start") {
-    const updated = [copyPoint(cell), ...path.filter((point) => cellKey(point) !== cellKey(cell))];
-    const next = { ...constraints, start: copyPoint(cell), lockedPrefix: [] };
-    if (!constraintApi.satisfiesConstraints(updated, next)) {
-      alert("Ce depart separe une coupe imposee. Retire cette coupe avant de changer le depart.");
-      return;
-    }
-    pathsByDmc[selectedDmc] = updated;
-    updateConstraints(next);
-  } else {
-    const index = path.findIndex((point) => cellKey(point) === cellKey(cell));
-    if (index <= 0) return;
-    const key = [cellKey(path[index - 1]), cellKey(cell)].sort().join("|");
-    const cuts = constraints.forcedCuts || [];
-    const existing = cuts.findIndex((edge) => [cellKey(edge.from), cellKey(edge.to)].sort().join("|") === key);
-    if (existing >= 0) cuts.splice(existing, 1);
-    else cuts.push({ from: copyPoint(path[index - 1]), to: copyPoint(cell) });
-    updateConstraints({ ...constraints, forcedCuts: cuts });
+    if (diagonal !== "lower") { alert("Le depart doit etre une diagonale /, sous la croix."); return; }
+    const start = { x: cell.x, y: cell.y, diagonal: "lower",
+      direction: document.querySelector("#diagonalDirection").value === "-1" ? -1 : 1 };
+    const next = { ...constraints, start, lockedPrefix: [] };
+    const sequence = [start, ...path.filter(p => StitchModel.key(p) !== StitchModel.key(start))];
+    try {
+      pathsByDmc[selectedDmc] = StitchModel.orient(sequence, cutThreshold, next);
+      updateConstraints(next);
+    } catch (error) { alert(error.message); }
+  } else if (index >= 0) {
+    path[index].cutBefore = !path[index].cutBefore;
+    constraints.forcedCuts = path.filter(p => p.cutBefore).map(copyPoint);
+    updateConstraints(constraints);
   }
 }
 
@@ -1828,14 +1660,17 @@ lockedPrefixCount.addEventListener("change", () => {
   updateConstraints({ ...constraints, lockedPrefix: currentPath().slice(0, count).map(copyPoint), start: count ? copyPoint(currentPath()[0]) : constraints.start });
 });
 
-document.querySelector("#clearConstraintsButton").addEventListener("click", () => updateConstraints({}));
+document.querySelector("#clearConstraintsButton").addEventListener("click", () => {
+  currentPath().forEach(p => delete p.cutBefore);
+  updateConstraints({});
+});
 
 function trimConstraints() {
   const constraints = constraintsByDmc[selectedDmc];
   if (!constraints) return;
   const path = currentPath();
   constraints.lockedPrefix = (constraints.lockedPrefix || []).slice(0, path.length);
-  constraints.forcedCuts = (constraints.forcedCuts || []).filter((edge) => constraintApi.satisfiesConstraints(path, { forcedCuts: [edge] }));
+  constraints.forcedCuts = path.filter(p => p.cutBefore).map(copyPoint);
   if (!path.length) delete constraints.start;
 }
 
@@ -2351,7 +2186,7 @@ renderPathTool();
 async function restorePlannerDraft() {
   document.querySelector("main").inert = true;
   try {
-    const state = await window.PathPlannerStore.read();
+    const state = migratePlannerState(await window.PathPlannerStore.read());
     if (state) {
       if (!validateFinalPattern(state.pattern).valid) throw new Error("Brouillon de chemins invalide.");
       loadedPattern = state.pattern;
