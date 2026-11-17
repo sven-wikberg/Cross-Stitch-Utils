@@ -83,6 +83,20 @@
       </aside>
 
       <section class="workspace" aria-labelledby="progress-step-title">
+        <div class="sync-toolbar">
+          <span id="syncStateText" role="status" aria-live="polite">Sauvegarde locale</span>
+          <label class="inline-check"><input id="autoSyncToggle" type="checkbox"> Synchronisation automatique</label>
+          <button id="historyButton" class="secondary-button" type="button">Historique</button>
+        </div>
+        <div id="syncConflictPanel" class="coverage-status invalid hidden" role="alert">
+          <p id="syncConflictText"></p>
+          <button id="useRemoteButton" class="secondary-button" type="button">Charger la version GitHub</button>
+          <button id="keepLocalButton" class="secondary-button" type="button">Publier ma version locale</button>
+        </div>
+        <div id="historyPanel" class="hidden">
+          <label>Version precedente <select id="historySelect"></select></label>
+          <button id="restoreHistoryButton" class="secondary-button" type="button">Restaurer cette version</button>
+        </div>
         <div class="topbar">
           <div>
             <p id="progressStepEyebrow" class="eyebrow">Etape 1</p>
@@ -159,6 +173,12 @@
           </div>
 
           <div id="stitchStatus" class="coverage-status invalid">Charge un fichier pour commencer.</div>
+          <div class="session-toolbar">
+            <button id="sessionModeButton" class="secondary-button" type="button">Mode session</button>
+            <button id="fullscreenButton" class="secondary-button" type="button">Plein ecran</button>
+            <label class="inline-check"><input id="markUntilToggle" type="checkbox"> Marquer jusqu'a la case cliquee</label>
+            <span id="nextCutText" role="status"></span>
+          </div>
 
           <div class="pattern-viewer">
             <div class="pattern-canvas-wrap">
@@ -172,6 +192,8 @@
                 <div id="stitchColorStatus" class="coverage-status invalid">Selectionne une couleur.</div>
                 <div class="actions split-actions">
                   <button id="undoStitchButton" class="secondary-button" type="button">Reculer</button>
+                  <button id="undoActionButton" class="secondary-button" type="button" title="Annuler la derniere action">Annuler</button>
+                  <button id="redoActionButton" class="secondary-button" type="button" title="Retablir la derniere action">Retablir</button>
                   <button id="resetColorProgressButton" class="secondary-button" type="button">Remettre a zero</button>
                 </div>
                 <button id="nextStitchButton" class="primary-button" type="button">Point suivant</button>
@@ -193,6 +215,8 @@
 
     <script src="data/builtin-progress.js"></script>
     <script src="src/github-sync.js"></script>
+    <script src="src/progress-store.js"></script>
+    <script src="src/path-settings.js"></script>
     <script src="src/stitch-progress.js"></script>
   </body>
 </html>

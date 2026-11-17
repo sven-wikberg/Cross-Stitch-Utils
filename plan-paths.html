@@ -65,6 +65,9 @@
             <div class="algorithm-group">
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="secondary-button" type="button">Recherche approfondie</button>
+              <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
+              <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
+              <div id="batchResults" class="batch-results"></div>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
                 Temps sans amelioration
@@ -180,6 +183,19 @@
                   <button id="clearPathButton" class="secondary-button" type="button">Vider</button>
                 </div>
                 <button id="savePathAndNextButton" class="primary-button" type="button">Enregistrer et couleur suivante</button>
+                <fieldset id="pathConstraints" class="path-constraints">
+                  <legend>Contraintes</legend>
+                  <label for="pathEditMode">Mode</label>
+                  <select id="pathEditMode">
+                    <option value="draw">Tracer le chemin</option>
+                    <option value="start">Choisir le depart</option>
+                    <option value="cut">Coupe avant la case</option>
+                  </select>
+                  <label for="lockedPrefixCount">Premiers points verrouilles</label>
+                  <input id="lockedPrefixCount" type="number" min="0" step="1" value="0">
+                  <p id="constraintsStatus" class="compact-status"></p>
+                  <button id="clearConstraintsButton" class="secondary-button" type="button">Retirer les contraintes</button>
+                </fieldset>
               </div>
             </div>
           </div>
@@ -219,6 +235,8 @@
     </main>
 
     <script src="src/path-optimizer-worker.js"></script>
+    <script src="src/path-planner-store.js"></script>
+    <script src="src/path-settings.js"></script>
     <script src="src/path-planner.js"></script>
   </body>
 </html>

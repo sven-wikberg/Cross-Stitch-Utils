@@ -71,7 +71,30 @@ const DEFAULT_STITCH_ZOOM = 1;
 const MIN_STITCH_ZOOM = 0.5;
 const MAX_STITCH_ZOOM = 4;
 const STITCH_ZOOM_STEP = 0.25;
-const REALISTIC_JUMP_THRESHOLD = 15;
+const REALISTIC_JUMP_THRESHOLD = 10;
+const progressStore = window.StitchProgressStore;
+const syncStateText = document.querySelector("#syncStateText");
+const autoSyncToggle = document.querySelector("#autoSyncToggle");
+const syncConflictPanel = document.querySelector("#syncConflictPanel");
+const undoActionButton = document.querySelector("#undoActionButton");
+const redoActionButton = document.querySelector("#redoActionButton");
+const markUntilToggle = document.querySelector("#markUntilToggle");
+let localSaveQueue = Promise.resolve();
+let patternIds = new WeakMap();
+let storedPatternIds = new Set();
+let remoteSha = null;
+let lastSyncedFingerprint = "";
+let lastSyncedAt = null;
+let latestLocalState = null;
+let localSaveError = null;
+let localSavePending = 0;
+let conflictRemote = null;
+let sessionMode = false;
+let undoActions = [];
+let redoActions = [];
+let viewPosition = { left: 0, top: 0 };
+let restoringSession = false;
+autoSyncToggle.checked = localStorage.getItem("cross-stitch-auto-sync") === "true";
 
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -126,18 +149,57 @@ function loadStoredProgressState() {
 }
 
 function saveProgressState() {
+  localSavePending++;
   if (!loadedPaths) {
+    latestLocalState = null;
     localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
+    localSaveQueue = localSaveQueue.catch(() => {}).then(async () => {
+      await progressStore.write("active", null);
+      latestLocalState = null;
+      localSaveError = null;
+      renderSyncState();
+    }).catch(error => { localSaveError = error.message; renderSyncState(); }).finally(() => { localSavePending--; });
     return;
   }
+  const paths = loadedPaths;
+  const snapshot = { kind: "cross-stitch-progress-state", schemaVersion: 2, savedAt: new Date().toISOString(),
+    stitchedByDmc: normalizeStitchedState(paths, stitchedByDmc), selectedDmc, zoom: stitchZoom, followCurrentPoint,
+    sessionMode, viewPosition: { ...viewPosition }, undoActions: structuredClone(undoActions), redoActions: structuredClone(redoActions) };
+  localSaveQueue = localSaveQueue.catch(() => {}).then(async () => {
+    let id = patternIds.get(paths);
+    if (!id) { id = await progressStore.identify(paths); patternIds.set(paths, id); }
+    if (!storedPatternIds.has(id)) { await progressStore.write(`pattern:${id}`, paths); storedPatternIds.add(id); }
+    snapshot.patternId = id;
+    await progressStore.write("active", { ...snapshot, remoteSha, lastSyncedFingerprint, lastSyncedAt });
+    latestLocalState = snapshot;
+    localSaveError = null;
+    localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
+    renderSyncState();
+  }).catch(error => { localSaveError = error.message; renderSyncState(); throw error; }).finally(() => { localSavePending--; });
+  localSaveQueue.catch(() => {});
+}
 
-  localStorage.setItem(STITCH_PROGRESS_STORAGE_KEY, JSON.stringify({
-    pathsFile: loadedPaths,
-    stitchedByDmc,
-    selectedDmc,
-    zoom: stitchZoom,
-    followCurrentPoint
-  }));
+function renderSyncState() {
+  const dirty = progressStore.fingerprint(latestLocalState) !== lastSyncedFingerprint;
+  syncStateText.textContent = localSaveError ? `Sauvegarde locale impossible : ${localSaveError}`
+    : !navigator.onLine ? "Hors ligne, progression locale conservee"
+    : githubSyncInProgress ? "Synchronisation en cours..."
+    : !syncConflictPanel.classList.contains("hidden") ? "Deux versions a comparer"
+    : dirty ? "Modifications locales a synchroniser"
+    : lastSyncedAt ? `Synchronise le ${new Date(lastSyncedAt).toLocaleString("fr-CH")}` : "Sauvegarde locale";
+}
+
+function changeStitchCount(dmc, count) {
+  const before = stitchedCountForDmc(dmc);
+  const after = Math.min(pathForDmc(dmc)?.points.length || 0, Math.max(0, count));
+  if (before === after) return;
+  undoActions.push({ dmc, before, after });
+  undoActions = undoActions.slice(-100);
+  redoActions = [];
+  stitchedByDmc[dmc] = after;
+  stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
+  saveProgressState();
+  renderProgressTool();
 }
 
 function normalizeStitchZoom(value) {
@@ -184,6 +246,11 @@ function renderProgressTool() {
   renderStitchView();
   renderZoomControls();
   renderProgressMetrics();
+  document.body.classList.toggle("session-mode", sessionMode && activeProgressStep === "stitch");
+  document.querySelector("#sessionModeButton").textContent = sessionMode ? "Quitter la session" : "Mode session";
+  undoActionButton.disabled = undoActions.length === 0;
+  redoActionButton.disabled = redoActions.length === 0;
+  renderCutNotice();
 }
 
 function renderLoadedPaths() {
@@ -309,7 +376,7 @@ function renderStitchView() {
     pattern.grid.height,
     availableGridWidth(stitchCanvas) - GRID_RULER_SIZE
   );
-  const cellSize = Math.max(2, Math.round(baseCellSize * stitchZoom));
+  const cellSize = Math.max(2, Math.round((sessionMode ? Math.max(22, baseCellSize) : baseCellSize) * stitchZoom));
   const selectedColor = colorByDmc.get(selectedDmc);
   stitchColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
@@ -364,7 +431,7 @@ function renderZoomControls() {
 
 function centerCurrentPointIfNeeded(cellSize) {
   const path = pathForDmc(selectedDmc);
-  if (!followCurrentPoint || !path) {
+  if (restoringSession || (!followCurrentPoint && !sessionMode) || !path) {
     return;
   }
 
@@ -405,7 +472,7 @@ function drawStitchProgress(context, cellSize) {
 
   if (path.points.length > 1) {
     path.points.forEach((point, index) => {
-      if (index === 0) {
+      if (index === 0 || (sessionMode && index >= stitchedCount + 8)) {
         return;
       }
 
@@ -415,8 +482,15 @@ function drawStitchProgress(context, cellSize) {
   }
 
   path.points.forEach((point, index) => {
-    if (index >= stitchedCount) {
+    if (index >= stitchedCount && (!sessionMode || index < stitchedCount + 8)) {
       drawCircle(context, point, cellSize, "#ffffff", "#222426", 0.32);
+      if (sessionMode && cellSize >= 14) {
+        const center = pointCenter(point, cellSize);
+        context.fillStyle = "#222426";
+        context.font = "bold 11px sans-serif";
+        context.textAlign = "center";
+        context.fillText(String(index - stitchedCount + 1), center.x, center.y - cellSize * 0.35);
+      }
     }
   });
 
@@ -457,7 +531,21 @@ function pointCenter(point, cellSize) {
 }
 
 function isCutJump(fromPoint, toPoint) {
-  return threadDistance(fromPoint, toPoint) > REALISTIC_JUMP_THRESHOLD;
+  const cuts = pathForDmc(selectedDmc)?.forcedCuts || [];
+  return cuts.some(edge => (cellKey(edge.from) === cellKey(fromPoint) && cellKey(edge.to) === cellKey(toPoint))
+    || (cellKey(edge.to) === cellKey(fromPoint) && cellKey(edge.from) === cellKey(toPoint)))
+    || threadDistance(fromPoint, toPoint) > (loadedPaths?.settings?.cutThreshold || REALISTIC_JUMP_THRESHOLD);
+}
+
+function renderCutNotice() {
+  const path = pathForDmc(selectedDmc);
+  const count = stitchedCountForDmc(selectedDmc);
+  let next = -1;
+  if (path) for (let i = Math.max(1, count); i < path.points.length; i++) {
+    if (isCutJump(path.points[i - 1], path.points[i])) { next = i; break; }
+  }
+  document.querySelector("#nextCutText").textContent = !path ? "" : next === count && count > 0 ? "Couper le fil avant le prochain point"
+    : next >= 0 ? `Prochaine coupe dans ${next - count} point(s)` : "Aucune coupe restante";
 }
 
 function threadDistance(a, b) {
@@ -543,6 +631,10 @@ function renderCompletedColorList() {
 }
 
 function renderStitchControls() {
+  pathsJsonFileInput.disabled = githubSyncInProgress;
+  progressSaveFileInput.disabled = githubSyncInProgress;
+  resetProgressToolButton.disabled = githubSyncInProgress;
+  loadBuiltinProgressButton.disabled = githubSyncInProgress;
   if (!loadedPaths || !selectedDmc) {
     stitchColorStatus.className = "coverage-status invalid";
     stitchColorStatus.textContent = "Selectionne une couleur.";
@@ -621,7 +713,13 @@ async function readSelectedProgressSave(file) {
 }
 
 function applyProgressSave(progressSave) {
+  undoActions = [];
+  redoActions = [];
   loadedPaths = progressSave.pathsFile;
+  stitchZoom = normalizeStitchZoom(progressSave.zoom) || DEFAULT_STITCH_ZOOM;
+  followCurrentPoint = Boolean(progressSave.followCurrentPoint);
+  sessionMode = Boolean(progressSave.sessionMode);
+  viewPosition = progressSave.viewPosition || { left: 0, top: 0 };
   stitchedByDmc = normalizeStitchedState(loadedPaths, progressSave.stitchedByDmc);
   selectedDmc = pathForDmc(progressSave.selectedDmc)
     ? progressSave.selectedDmc
@@ -655,10 +753,13 @@ function validatePathsFile(data) {
   }
 
   const colorCodes = new Set(data.pattern.colors.map((color) => color.dmc));
+  const pathCodes = new Set();
   for (const path of data.paths) {
-    if (!colorCodes.has(path.dmc) || !Array.isArray(path.points)) {
+    if (!path || !colorCodes.has(path.dmc) || pathCodes.has(path.dmc) || !Array.isArray(path.points)) {
       return { valid: false, message: "Un chemin utilise une couleur invalide." };
     }
+    pathCodes.add(path.dmc);
+    if (!path.points.every(point => Number.isInteger(point?.x) && Number.isInteger(point?.y))) return { valid: false, message: "Coordonnees de chemin invalides." };
 
     const expectedKeys = new Set(
       data.pattern.grid.cells
@@ -676,7 +777,8 @@ function validatePathsFile(data) {
     }
   }
 
-  return { valid: true, message: "" };
+  const settingsError = window.PathSettings.validate(data);
+  return { valid: !settingsError, message: settingsError };
 }
 
 function validateProgressSave(data) {
@@ -896,7 +998,7 @@ function buildProgressSave() {
     savedAt: new Date().toISOString(),
     pathsFile: loadedPaths,
     stitchedByDmc: normalizeStitchedState(loadedPaths, stitchedByDmc),
-    selectedDmc
+    selectedDmc, zoom: stitchZoom, followCurrentPoint, sessionMode, viewPosition
   };
 }
 
@@ -940,7 +1042,21 @@ async function loadBuiltinProgressFromGithub() {
   if (!githubSync) {
     throw new Error("La synchronisation GitHub n'est pas disponible.");
   }
-  const content = await githubSync.loadFile(readGithubToken());
+  const token = readGithubToken();
+  const remote = await githubSync.loadState(token);
+  if (remote) {
+    const paths = await githubSync.loadPattern(remote.data.patternId, token);
+    if (await progressStore.identify(paths) !== remote.data.patternId) throw new Error("Le pattern distant a ete modifie.");
+    const save = progressStore.unpack(remote.data, paths);
+    const valid = validateProgressSave(save);
+    if (!valid.valid) throw new Error(valid.message);
+    remoteSha = remote.sha;
+    lastSyncedFingerprint = progressStore.fingerprint(remote.data);
+    lastSyncedAt = remote.data.savedAt;
+    return save;
+  }
+  const content = await githubSync.loadFile(token);
+  remoteSha = null;
   return parseBuiltinProgressFile(content);
 }
 
@@ -957,10 +1073,18 @@ async function saveBuiltinProgressToGithub() {
     throw new Error("Connecte GitHub avant de synchroniser.");
   }
 
-  const progressSave = buildProgressSave();
-  await githubSync.saveFile(buildBuiltinProgressFile(progressSave), token);
-  builtinProgressSave = progressSave;
-  window.BUILTIN_STITCH_PROGRESS = progressSave;
+  saveProgressState();
+  await localSaveQueue;
+  const snapshot = structuredClone(latestLocalState);
+  delete snapshot.undoActions;
+  delete snapshot.redoActions;
+  const paths = loadedPaths;
+  const saved = await githubSync.saveState(snapshot, paths, token, remoteSha);
+  remoteSha = saved.sha;
+  lastSyncedFingerprint = progressStore.fingerprint(snapshot);
+  lastSyncedAt = snapshot.savedAt;
+  builtinProgressSave = progressStore.unpack(snapshot, paths);
+  saveProgressState();
 }
 
 function safeFilePart(value) {
@@ -991,6 +1115,8 @@ pathsJsonFileInput.addEventListener("change", async () => {
 
   try {
     loadedPaths = await readSelectedPaths(file);
+    undoActions = []; redoActions = []; sessionMode = false;
+    viewPosition = { left: 0, top: 0 };
     stitchedByDmc = {};
     selectedDmc = loadedPaths.paths[0]?.dmc || null;
     progressSaveFileInput.value = "";
@@ -1001,12 +1127,6 @@ pathsJsonFileInput.addEventListener("change", async () => {
     goToProgressStep("stitch");
     showProgressSavedStatus();
   } catch (error) {
-    loadedPaths = null;
-    stitchedByDmc = {};
-    selectedDmc = null;
-    stitchProgress.load = false;
-    stitchProgress.stitch = false;
-    localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
     progressLoadError.textContent = error.message;
     progressLoadError.hidden = false;
     renderProgressTool();
@@ -1023,12 +1143,6 @@ progressSaveFileInput.addEventListener("change", async () => {
     const progressSave = await readSelectedProgressSave(file);
     applyProgressSave(progressSave);
   } catch (error) {
-    loadedPaths = null;
-    stitchedByDmc = {};
-    selectedDmc = null;
-    stitchProgress.load = false;
-    stitchProgress.stitch = false;
-    localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
     progressLoadError.textContent = error.message;
     progressLoadError.hidden = false;
     renderProgressTool();
@@ -1036,6 +1150,9 @@ progressSaveFileInput.addEventListener("change", async () => {
 });
 
 loadBuiltinProgressButton.addEventListener("click", async () => {
+  await localSaveQueue.catch(() => {});
+  if (loadedPaths && (localSaveError || progressStore.fingerprint(latestLocalState) !== lastSyncedFingerprint)
+      && !confirm("Remplacer la progression locale par la sauvegarde GitHub ?")) return;
   const bundledProgressSave = builtinProgressSave;
   githubSyncInProgress = true;
   builtinProgressMessage = "Chargement de la sauvegarde GitHub...";
@@ -1045,12 +1162,14 @@ loadBuiltinProgressButton.addEventListener("click", async () => {
     builtinProgressSave = await loadBuiltinProgressFromGithub();
     window.BUILTIN_STITCH_PROGRESS = builtinProgressSave;
     builtinProgressMessage = "Derniere sauvegarde GitHub chargee.";
+    syncConflictPanel.classList.add("hidden");
+    conflictRemote = null;
     githubSyncInProgress = false;
     applyProgressSave(builtinProgressSave);
   } catch (error) {
     const fallbackValidation = validateProgressSave(bundledProgressSave);
     githubSyncInProgress = false;
-    if (fallbackValidation.valid) {
+    if (!loadedPaths && fallbackValidation.valid && confirm(`GitHub est indisponible. Ouvrir l'ancienne sauvegarde incluse (${bundledProgressSave.savedAt || "date inconnue"}) ?`)) {
       builtinProgressSave = bundledProgressSave;
       builtinProgressMessage = `GitHub indisponible. Sauvegarde incluse chargee: ${error.message}`;
       applyProgressSave(bundledProgressSave);
@@ -1101,7 +1220,7 @@ downloadProgressSaveButton.addEventListener("click", () => {
 });
 
 writeBuiltinProgressButton.addEventListener("click", async () => {
-  if (!loadedPaths) {
+  if (!loadedPaths || githubSyncInProgress) {
     return;
   }
 
@@ -1111,10 +1230,17 @@ writeBuiltinProgressButton.addEventListener("click", async () => {
   try {
     await saveBuiltinProgressToGithub();
     builtinProgressMessage = "Sauvegarde GitHub a jour.";
-    writeBuiltinProgressStatus.textContent = "Progression synchronisee. Le deploiement du site va se mettre a jour.";
+    writeBuiltinProgressStatus.textContent = "Progression synchronisee sur GitHub.";
     showProgressSavedStatus();
   } catch (error) {
     writeBuiltinProgressStatus.textContent = error.message;
+    if (error.status === 409) {
+      conflictRemote = error.remote || await githubSync.loadState(readGithubToken()).catch(() => null);
+      syncConflictPanel.classList.remove("hidden");
+      const total = counts => Object.values(counts || {}).reduce((sum, count) => sum + (Number(count) || 0), 0);
+      const samePattern = conflictRemote?.data.patternId === latestLocalState?.patternId;
+      document.querySelector("#syncConflictText").textContent = `Version GitHub : ${conflictRemote?.data.savedAt ? new Date(conflictRemote.data.savedAt).toLocaleString("fr-CH") : "modifiee"}. ${samePattern ? `GitHub : ${total(conflictRemote.data.stitchedByDmc)} points. Ce PC : ${total(stitchedByDmc)} points.` : "Les deux versions concernent des projets differents."} La progression locale est conservee.`;
+    }
     if (activeProgressStep === "load") {
       builtinProgressMessage = error.message;
       renderBuiltinProgressControls();
@@ -1122,6 +1248,7 @@ writeBuiltinProgressButton.addEventListener("click", async () => {
   } finally {
     githubSyncInProgress = false;
     renderStitchControls();
+    renderSyncState();
   }
 });
 
@@ -1175,10 +1302,7 @@ undoStitchButton.addEventListener("click", () => {
     return;
   }
 
-  stitchedByDmc[selectedDmc] = Math.max(stitchedCountForDmc(selectedDmc) - 1, 0);
-  stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
-  saveProgressState();
-  renderProgressTool();
+  changeStitchCount(selectedDmc, stitchedCountForDmc(selectedDmc) - 1);
 });
 
 resetColorProgressButton.addEventListener("click", () => {
@@ -1186,16 +1310,13 @@ resetColorProgressButton.addEventListener("click", () => {
     return;
   }
 
-  stitchedByDmc[selectedDmc] = 0;
-  stitchProgress.stitch = false;
-  saveProgressState();
-  renderProgressTool();
+  if (confirm(`Remettre DMC ${selectedDmc} a zero ?`)) changeStitchCount(selectedDmc, 0);
 });
 
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-  if (isTypingTarget || activeProgressStep !== "stitch" || event.code !== "Space") {
+  if (event.repeat || isTypingTarget || target instanceof HTMLSelectElement || target.closest("button, a") || activeProgressStep !== "stitch" || event.code !== "Space") {
     return;
   }
 
@@ -1236,10 +1357,7 @@ function advanceSelectedColor() {
     return;
   }
 
-  stitchedByDmc[selectedDmc] = stitched + 1;
-  stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
-  saveProgressState();
-  renderProgressTool();
+  changeStitchCount(selectedDmc, stitched + 1);
   showProgressSavedStatus();
 }
 
@@ -1262,6 +1380,7 @@ window.addEventListener("resize", () => {
 });
 
 resetProgressToolButton.addEventListener("click", () => {
+  if (loadedPaths && !confirm("Fermer le projet local ? La sauvegarde GitHub reste disponible.")) return;
   loadedPaths = null;
   selectedDmc = null;
   stitchedByDmc = {};
@@ -1275,7 +1394,112 @@ resetProgressToolButton.addEventListener("click", () => {
   progressSaveFileInput.value = "";
   progressLoadError.hidden = true;
   localStorage.removeItem(STITCH_PROGRESS_STORAGE_KEY);
+  undoActions = [];
+  redoActions = [];
+  saveProgressState();
   renderProgressTool();
 });
 
+undoActionButton.addEventListener("click", () => {
+  const action = undoActions.pop();
+  if (!action) return;
+  redoActions.push(action); selectedDmc = action.dmc; stitchedByDmc[action.dmc] = action.before;
+  stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
+  saveProgressState(); renderProgressTool();
+});
+redoActionButton.addEventListener("click", () => {
+  const action = redoActions.pop();
+  if (!action) return;
+  undoActions.push(action); selectedDmc = action.dmc; stitchedByDmc[action.dmc] = action.after;
+  stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
+  saveProgressState(); renderProgressTool();
+});
+stitchCanvas.addEventListener("click", event => {
+  if (!markUntilToggle.checked || !loadedPaths) return;
+  const rect = stitchCanvas.getBoundingClientRect();
+  const size = (stitchCanvas.width - GRID_RULER_SIZE) / loadedPaths.pattern.grid.width;
+  const x = Math.floor(((event.clientX - rect.left) * stitchCanvas.width / rect.width - GRID_RULER_SIZE) / size);
+  const y = Math.floor(((event.clientY - rect.top) * stitchCanvas.height / rect.height - GRID_RULER_SIZE) / size);
+  const index = pathForDmc(selectedDmc)?.points.findIndex(p => p.x === x && p.y === y) ?? -1;
+  if (index >= 0) changeStitchCount(selectedDmc, index + 1);
+});
+document.querySelector("#sessionModeButton").addEventListener("click", () => {
+  sessionMode = !sessionMode; renderProgressTool(); saveProgressState();
+});
+document.querySelector("#fullscreenButton").addEventListener("click", async () => {
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+  catch { syncStateText.textContent = "Le plein ecran n'est pas disponible dans ce navigateur."; }
+});
+let viewSaveTimer;
+stitchCanvas.parentElement.addEventListener("scroll", () => {
+  if (restoringSession) return;
+  viewPosition = { left: stitchCanvas.parentElement.scrollLeft, top: stitchCanvas.parentElement.scrollTop };
+  clearTimeout(viewSaveTimer); viewSaveTimer = setTimeout(saveProgressState, 400);
+});
+autoSyncToggle.addEventListener("change", () => localStorage.setItem("cross-stitch-auto-sync", String(autoSyncToggle.checked)));
+setInterval(() => {
+  if (autoSyncToggle.checked && navigator.onLine && loadedPaths && readGithubToken() && !githubSyncInProgress
+      && syncConflictPanel.classList.contains("hidden") && progressStore.fingerprint(latestLocalState) !== lastSyncedFingerprint) writeBuiltinProgressButton.click();
+}, 30000);
+window.addEventListener("online", renderSyncState);
+window.addEventListener("offline", renderSyncState);
+window.addEventListener("beforeunload", event => {
+  if (localSavePending || localSaveError || (loadedPaths && readGithubToken() && progressStore.fingerprint(latestLocalState) !== lastSyncedFingerprint)) { event.preventDefault(); event.returnValue = ""; }
+});
+document.querySelector("#useRemoteButton").addEventListener("click", () => {
+  syncConflictPanel.classList.add("hidden"); loadBuiltinProgressButton.click();
+});
+document.querySelector("#keepLocalButton").addEventListener("click", () => {
+  if (!confirm("Remplacer la version GitHub par ta version locale ? L'ancienne version restera dans l'historique.")) return;
+  remoteSha = conflictRemote?.sha || null; syncConflictPanel.classList.add("hidden"); writeBuiltinProgressButton.click();
+});
+document.querySelector("#historyButton").addEventListener("click", async () => {
+  const panel = document.querySelector("#historyPanel");
+  if (!panel.classList.contains("hidden")) { panel.classList.add("hidden"); return; }
+  try {
+    const entries = await githubSync.history(readGithubToken());
+    const select = document.querySelector("#historySelect"); select.replaceChildren();
+    entries.forEach(entry => { const option = document.createElement("option"); option.value = entry.sha;
+      option.textContent = new Date(entry.commit.author.date).toLocaleString("fr-CH"); select.append(option); });
+    panel.classList.remove("hidden");
+    document.querySelector("#restoreHistoryButton").disabled = !entries.length;
+  } catch (error) { syncStateText.textContent = error.message; }
+});
+document.querySelector("#restoreHistoryButton").addEventListener("click", async () => {
+  if (!confirm("Restaurer cette progression ? Elle sera locale jusqu'a la prochaine synchronisation.")) return;
+  try {
+    const latest = await githubSync.loadState(readGithubToken());
+    const old = await githubSync.loadState(readGithubToken(), document.querySelector("#historySelect").value);
+    const paths = await githubSync.loadPattern(old.data.patternId, readGithubToken());
+    if (await progressStore.identify(paths) !== old.data.patternId) throw new Error("Le pattern distant a ete modifie.");
+    const save = progressStore.unpack(old.data, paths);
+    const valid = validateProgressSave(save); if (!valid.valid) throw new Error(valid.message);
+    remoteSha = latest?.sha || null;
+    lastSyncedFingerprint = progressStore.fingerprint(latest?.data);
+    lastSyncedAt = latest?.data.savedAt || null;
+    applyProgressSave(save);
+    document.querySelector("#historyPanel").classList.add("hidden");
+  } catch (error) { syncStateText.textContent = error.message; }
+});
+async function restoreLocalSession() {
+  document.querySelector("main").inert = true;
+  try {
+    const state = await progressStore.read("active");
+    if (state) {
+      const paths = await progressStore.read(`pattern:${state.patternId}`);
+      const save = progressStore.unpack(state, paths);
+      if (!validateProgressSave(save).valid) throw new Error("Sauvegarde locale invalide.");
+      patternIds.set(paths, state.patternId); storedPatternIds.add(state.patternId);
+      remoteSha = state.remoteSha || null; lastSyncedFingerprint = state.lastSyncedFingerprint || ""; lastSyncedAt = state.lastSyncedAt;
+      restoringSession = true;
+      applyProgressSave(save);
+      undoActions = state.undoActions || []; redoActions = state.redoActions || [];
+      saveProgressState();
+      const savedView = state.viewPosition || { left: 0, top: 0 };
+      requestAnimationFrame(() => { stitchCanvas.parentElement.scrollTo(savedView.left, savedView.top); restoringSession = false; });
+    } else if (loadedPaths) { activeProgressStep = "stitch"; saveProgressState(); }
+  } catch (error) { syncStateText.textContent = `Reprise locale: ${error.message}`; }
+  finally { document.querySelector("main").inert = false; renderProgressTool(); }
+}
 renderProgressTool();
+restoreLocalSession();

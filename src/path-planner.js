@@ -96,6 +96,16 @@ let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
 let activePathOptimizerLastSavedAt = 0;
 let activePathOptimizerSnapshot = null;
+let constraintsByDmc = storedState.constraintsByDmc || {};
+let batchPlan = storedState.batchPlan || { pending: [], results: [] };
+let batchRunning = false;
+let plannerSaveQueue = Promise.resolve();
+let plannerSaveFailed = false;
+let plannerSavePending = 0;
+const constraintApi = window.createPathOptimizerApi();
+const batchOptimizeButton = document.querySelector("#batchOptimizeButton");
+const pathEditMode = document.querySelector("#pathEditMode");
+const lockedPrefixCount = document.querySelector("#lockedPrefixCount");
 
 function loadStoredState() {
   const stored = localStorage.getItem(PATH_PLANNER_STORAGE_KEY);
@@ -116,7 +126,9 @@ function loadStoredState() {
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
         cutThreshold: normalizeCutThreshold(parsed.cutThreshold),
-        pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs)
+        pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs),
+        constraintsByDmc: parsed.constraintsByDmc || {},
+        batchPlan: parsed.batchPlan
       };
     }
 
@@ -127,19 +139,29 @@ function loadStoredState() {
 }
 
 function savePathPlannerState() {
-  if (!loadedPattern) {
-    localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
-    return;
-  }
-
-  localStorage.setItem(PATH_PLANNER_STORAGE_KEY, JSON.stringify({
+  const snapshot = loadedPattern ? structuredClone({
     pattern: loadedPattern,
     pathsByDmc,
     bestPathsByDmc,
     selectedDmc,
     cutThreshold,
-    pathStagnationLimitMs
-  }));
+    pathStagnationLimitMs,
+    constraintsByDmc,
+    batchPlan,
+    pathOptimizationBaselinesByDmc
+  }) : null;
+  plannerSavePending++;
+  plannerSaveQueue = plannerSaveQueue.catch(() => {}).then(async () => {
+    await window.PathPlannerStore.write(snapshot);
+    localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
+    plannerSaveFailed = false;
+    pathSaveStatus.textContent = "Enregistre localement";
+  }).catch(error => {
+    plannerSaveFailed = true;
+    pathSaveStatus.textContent = "Sauvegarde impossible";
+    pathSaveStatus.title = error.message;
+  }).finally(() => { plannerSavePending--; });
+  return plannerSaveQueue;
 }
 
 function normalizeCutThreshold(value) {
@@ -196,6 +218,7 @@ function renderPathTool() {
   renderPatternGrid();
   renderPathExport();
   renderPathMetrics();
+  renderPlanningOptions();
 }
 
 function renderLoadedPattern() {
@@ -503,7 +526,7 @@ function pathPerformanceMetrics(path) {
     const jump = threadDistance(path[index - 1], point);
     distance += jump;
 
-    if (isCutDistance(jump)) {
+    if (isCutJump(path[index - 1], point)) {
       cuts += 1;
       realisticScore += realisticCutPenalty();
     } else {
@@ -901,7 +924,10 @@ function realisticStepCost(fromPoint, toPoint) {
 }
 
 function isCutJump(fromPoint, toPoint) {
-  return isCutDistance(threadDistance(fromPoint, toPoint));
+  return isCutDistance(threadDistance(fromPoint, toPoint)) || (constraintsByDmc[selectedDmc]?.forcedCuts || []).some((edge) => (
+    (cellKey(edge.from) === cellKey(fromPoint) && cellKey(edge.to) === cellKey(toPoint))
+    || (cellKey(edge.to) === cellKey(fromPoint) && cellKey(edge.from) === cellKey(toPoint))
+  ));
 }
 
 function isCutDistance(distance) {
@@ -919,7 +945,7 @@ function rememberBestPath(dmc, candidatePath) {
   }
 
   const candidateDistance = pathRealisticScore(candidatePath);
-  const currentBest = Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : null;
+  const currentBest = Array.isArray(bestPathsByDmc[dmc]) && constraintApi.satisfiesConstraints(bestPathsByDmc[dmc], constraintsByDmc[dmc]) ? bestPathsByDmc[dmc] : null;
   const bestDistance = currentBest ? pathRealisticScore(currentBest) : Number.POSITIVE_INFINITY;
   const improved = !currentBest || comparePathPerformance(candidatePath, currentBest) < 0;
 
@@ -1420,6 +1446,7 @@ function addCellsToCurrentPath(cells) {
   if (!changed) {
     return false;
   }
+  invalidateBatchResult(selectedDmc);
 
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
@@ -1521,9 +1548,12 @@ function buildPathExport() {
       name: loadedPattern.project.name
     },
     pattern: loadedPattern,
+    settings: { cutThreshold },
     paths: loadedPattern.colors.map((color) => ({
       dmc: color.dmc,
       symbol: color.symbol || null,
+      constraints: constraintsByDmc[color.dmc] || {},
+      forcedCuts: constraintsByDmc[color.dmc]?.forcedCuts || [],
       points: (pathsByDmc[color.dmc] || []).map((point, index) => ({
         order: index + 1,
         x: point.x,
@@ -1587,6 +1617,10 @@ async function readSelectedPathInput(file) {
   if (pathsValidation.valid) {
     return {
       pattern: parsed.pattern,
+      cutThreshold: normalizeCutThreshold(parsed.settings?.cutThreshold),
+      constraintsByDmc: Object.fromEntries(parsed.paths.map((path) => [path.dmc, {
+        ...(path.constraints || {}), forcedCuts: path.forcedCuts || path.constraints?.forcedCuts || []
+      }])),
       pathsByDmc: Object.fromEntries(parsed.paths.map((path) => [
         path.dmc,
         path.points.map((point) => ({ x: point.x, y: point.y }))
@@ -1693,7 +1727,8 @@ function validatePathsFile(data) {
     }
   }
 
-  return { valid: true, message: "" };
+  const settingsError = window.PathSettings.validate(data);
+  return { valid: !settingsError, message: settingsError };
 }
 
 function clonePaths(paths) {
@@ -1704,10 +1739,104 @@ function clonePaths(paths) {
 }
 
 function showPathSavedStatus() {
-  pathSaveStatus.textContent = "Enregistre";
-  window.setTimeout(() => {
-    pathSaveStatus.textContent = "Brouillon";
-  }, 1400);
+  if (!plannerSaveFailed) pathSaveStatus.textContent = plannerSavePending ? "Enregistrement..." : "Enregistre localement";
+}
+
+function renderPlanningOptions() {
+  batchOptimizeButton.disabled = !loadedPattern || pathAlgorithmRunning;
+  batchOptimizeButton.textContent = batchPlan.pending.length ? "Reprendre les couleurs restantes" : "Optimiser toutes les couleurs";
+  document.querySelector("#batchStatus").textContent = batchPlan.pending.length || batchPlan.results.length
+    ? `${batchPlan.results.length} terminees - ${batchPlan.pending.length} restantes${batchRunning ? " - calcul en cours" : ""}` : "";
+  const results = document.querySelector("#batchResults");
+  results.replaceChildren();
+  batchPlan.results.forEach((result) => {
+    const row = document.createElement("p");
+    row.textContent = `DMC ${result.dmc} : ${Number.isFinite(result.initial) ? formatMetric(result.initial) : "-"} > ${formatMetric(result.score)} (${result.cuts} coupes)`;
+    results.appendChild(row);
+  });
+  document.querySelector("#pathConstraints").disabled = pathAlgorithmRunning;
+  const constraints = constraintsByDmc[selectedDmc] || {};
+  lockedPrefixCount.max = String(currentPath().length);
+  lockedPrefixCount.value = String(constraints.lockedPrefix?.length || 0);
+  document.querySelector("#constraintsStatus").textContent = `${constraints.start ? `Depart : ${constraints.start.x + 1}, ${constraints.start.y + 1}` : "Depart libre"} - ${constraints.forcedCuts?.length || 0} coupes imposees`;
+}
+
+function runNextBatchColor() {
+  if (!batchRunning || pathAlgorithmRunning || !batchPlan.pending.length) return;
+  selectedDmc = batchPlan.pending[0];
+  activePathStep = "paths";
+  renderPathTool();
+  startAdvancedPathSearch();
+  if (!pathAlgorithmRunning) {
+    batchRunning = false;
+    renderPlanningOptions();
+  }
+}
+
+batchOptimizeButton.addEventListener("click", () => {
+  if (!loadedPattern || pathAlgorithmRunning) return;
+  if (!batchPlan.pending.length) batchPlan = { pending: loadedPattern.colors.map((color) => color.dmc), results: [] };
+  batchRunning = true;
+  savePathPlannerState();
+  runNextBatchColor();
+});
+
+function updateConstraints(constraints) {
+  constraintsByDmc[selectedDmc] = constraints;
+  delete bestPathsByDmc[selectedDmc];
+  delete pathOptimizationBaselinesByDmc[selectedDmc];
+  invalidateBatchResult(selectedDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+}
+
+function invalidateBatchResult(dmc) {
+  if (!batchPlan.results.some(result => result.dmc === dmc)) return;
+  batchPlan.results = batchPlan.results.filter(result => result.dmc !== dmc);
+  if (!batchPlan.pending.includes(dmc)) batchPlan.pending.push(dmc);
+}
+
+function editPathConstraint(cell) {
+  if (!cell || !cellsForColor(selectedDmc).some((point) => cellKey(point) === cellKey(cell))) return;
+  const constraints = structuredClone(constraintsByDmc[selectedDmc] || {});
+  const path = currentPath();
+  if (pathEditMode.value === "start") {
+    const updated = [copyPoint(cell), ...path.filter((point) => cellKey(point) !== cellKey(cell))];
+    const next = { ...constraints, start: copyPoint(cell), lockedPrefix: [] };
+    if (!constraintApi.satisfiesConstraints(updated, next)) {
+      alert("Ce depart separe une coupe imposee. Retire cette coupe avant de changer le depart.");
+      return;
+    }
+    pathsByDmc[selectedDmc] = updated;
+    updateConstraints(next);
+  } else {
+    const index = path.findIndex((point) => cellKey(point) === cellKey(cell));
+    if (index <= 0) return;
+    const key = [cellKey(path[index - 1]), cellKey(cell)].sort().join("|");
+    const cuts = constraints.forcedCuts || [];
+    const existing = cuts.findIndex((edge) => [cellKey(edge.from), cellKey(edge.to)].sort().join("|") === key);
+    if (existing >= 0) cuts.splice(existing, 1);
+    else cuts.push({ from: copyPoint(path[index - 1]), to: copyPoint(cell) });
+    updateConstraints({ ...constraints, forcedCuts: cuts });
+  }
+}
+
+lockedPrefixCount.addEventListener("change", () => {
+  const count = Math.min(currentPath().length, Math.max(0, Math.floor(Number(lockedPrefixCount.value) || 0)));
+  const constraints = constraintsByDmc[selectedDmc] || {};
+  updateConstraints({ ...constraints, lockedPrefix: currentPath().slice(0, count).map(copyPoint), start: count ? copyPoint(currentPath()[0]) : constraints.start });
+});
+
+document.querySelector("#clearConstraintsButton").addEventListener("click", () => updateConstraints({}));
+
+function trimConstraints() {
+  const constraints = constraintsByDmc[selectedDmc];
+  if (!constraints) return;
+  const path = currentPath();
+  constraints.lockedPrefix = (constraints.lockedPrefix || []).slice(0, path.length);
+  constraints.forcedCuts = (constraints.forcedCuts || []).filter((edge) => constraintApi.satisfiesConstraints(path, { forcedCuts: [edge] }));
+  if (!path.length) delete constraints.start;
 }
 
 patternJsonFileInput.addEventListener("change", async () => {
@@ -1724,6 +1853,10 @@ patternJsonFileInput.addEventListener("change", async () => {
     const imported = await readSelectedPathInput(file);
     loadedPattern = imported.pattern;
     pathsByDmc = imported.pathsByDmc;
+    constraintsByDmc = imported.constraintsByDmc || {};
+    cutThreshold = imported.cutThreshold || DEFAULT_CUT_THRESHOLD;
+    batchPlan = { pending: [], results: [] };
+    batchRunning = false;
     bestPathsByDmc = clonePaths(pathsByDmc);
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathOptimizationBaselinesByDmc = {};
@@ -1735,14 +1868,6 @@ patternJsonFileInput.addEventListener("change", async () => {
     goToPathStep("paths");
     showPathSavedStatus();
   } catch (error) {
-    loadedPattern = null;
-    selectedDmc = null;
-    pathsByDmc = {};
-    bestPathsByDmc = {};
-    pathProgress.load = false;
-    pathProgress.paths = false;
-    pathProgress.export = false;
-    localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
     loadError.textContent = error.message;
     loadError.hidden = false;
     renderPathTool();
@@ -1750,7 +1875,12 @@ patternJsonFileInput.addEventListener("change", async () => {
 });
 
 patternCanvas.addEventListener("pointerdown", (event) => {
-  if (!loadedPattern || !selectedDmc) {
+  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
+    return;
+  }
+
+  if (pathEditMode.value !== "draw") {
+    editPathConstraint(cellFromCanvasEvent(event));
     return;
   }
 
@@ -1924,7 +2054,8 @@ function startAdvancedPathSearch() {
     points: cellsForColor(dmc).map(copyPoint),
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
-    stagnationLimitMs: pathStagnationLimitMs
+    stagnationLimitMs: pathStagnationLimitMs,
+    constraints: constraintsByDmc[dmc] || {}
   });
 }
 
@@ -1932,7 +2063,8 @@ function bestCompletePathForColor(dmc) {
   const candidates = [
     Array.isArray(pathsByDmc[dmc]) ? pathsByDmc[dmc] : [],
     Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : []
-  ].filter((path) => isCompletePathForColor(loadedPattern, { [dmc]: path }, dmc));
+  ].filter((path) => isCompletePathForColor(loadedPattern, { [dmc]: path }, dmc)
+    && constraintApi.satisfiesConstraints(path, constraintsByDmc[dmc]));
 
   if (candidates.length === 0) {
     return [];
@@ -1969,6 +2101,7 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
 }
 
 function finishAdvancedPathSearch(label, snapshot, completed) {
+  const finishedDmc = activePathOptimizerDmc;
   const finalSnapshot = snapshot || activePathOptimizerSnapshot;
   if (activePathOptimizerWorker) {
     activePathOptimizerWorker.terminate();
@@ -1995,6 +2128,18 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
   );
   updateAlgorithmLiveMetrics(finalSnapshot);
   activePathOptimizerSnapshot = null;
+  if (batchRunning) {
+    if (completed) {
+      batchPlan.pending = batchPlan.pending.filter((dmc) => dmc !== finishedDmc);
+      batchPlan.results.push({ dmc: finishedDmc, initial: finalSnapshot?.initialMetrics?.score, score: metrics.realisticScore, cuts: metrics.cuts });
+      if (batchPlan.pending.length) setTimeout(runNextBatchColor, 50);
+      else batchRunning = false;
+    } else {
+      batchRunning = false;
+    }
+    savePathPlannerState();
+    renderPlanningOptions();
+  }
   showPathSavedStatus();
 }
 
@@ -2068,6 +2213,7 @@ function nextFrame() {
 }
 
 optimizedPathButton.addEventListener("click", () => {
+  batchRunning = false;
   startAdvancedPathSearch();
 });
 
@@ -2086,6 +2232,7 @@ cutThresholdInput.addEventListener("change", () => {
   const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
   cutThreshold = normalized;
   pathOptimizationBaselinesByDmc = {};
+  batchPlan = { pending: [], results: [] };
   cutThresholdInput.value = String(cutThreshold);
   savePathPlannerState();
   renderPathTool();
@@ -2093,7 +2240,9 @@ cutThresholdInput.addEventListener("change", () => {
 });
 
 undoPathPointButton.addEventListener("click", () => {
+  invalidateBatchResult(selectedDmc);
   currentPath().pop();
+  trimConstraints();
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
   savePathPlannerState();
@@ -2101,6 +2250,8 @@ undoPathPointButton.addEventListener("click", () => {
 });
 
 clearPathButton.addEventListener("click", () => {
+  invalidateBatchResult(selectedDmc);
+  delete constraintsByDmc[selectedDmc];
   pathsByDmc[selectedDmc] = [];
   delete bestPathsByDmc[selectedDmc];
   pathProgress.paths = false;
@@ -2178,6 +2329,9 @@ resetPathToolButton.addEventListener("click", () => {
   selectedDmc = null;
   pathsByDmc = {};
   bestPathsByDmc = {};
+  constraintsByDmc = {};
+  batchPlan = { pending: [], results: [] };
+  batchRunning = false;
   cutThreshold = DEFAULT_CUT_THRESHOLD;
   pathStagnationLimitMs = DEFAULT_PATH_STAGNATION_LIMIT;
   pathOptimizationBaselinesByDmc = {};
@@ -2189,7 +2343,32 @@ resetPathToolButton.addEventListener("click", () => {
   patternJsonFileInput.value = "";
   loadError.hidden = true;
   localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
+  savePathPlannerState();
   renderPathTool();
 });
 
 renderPathTool();
+async function restorePlannerDraft() {
+  document.querySelector("main").inert = true;
+  try {
+    const state = await window.PathPlannerStore.read();
+    if (state) {
+      if (!validateFinalPattern(state.pattern).valid) throw new Error("Brouillon de chemins invalide.");
+      loadedPattern = state.pattern;
+      pathsByDmc = state.pathsByDmc || {};
+      bestPathsByDmc = state.bestPathsByDmc || {};
+      selectedDmc = state.selectedDmc || loadedPattern.colors[0]?.dmc;
+      cutThreshold = normalizeCutThreshold(state.cutThreshold) || DEFAULT_CUT_THRESHOLD;
+      pathStagnationLimitMs = normalizePathStagnationLimit(state.pathStagnationLimitMs) || DEFAULT_PATH_STAGNATION_LIMIT;
+      constraintsByDmc = state.constraintsByDmc || {};
+      batchPlan = state.batchPlan || { pending: [], results: [] };
+      pathOptimizationBaselinesByDmc = state.pathOptimizationBaselinesByDmc || {};
+      pathProgress = { load: true, paths: areAllColorPathsComplete(loadedPattern, pathsByDmc), export: false };
+    } else if (loadedPattern) savePathPlannerState();
+  } catch (error) { pathSaveStatus.textContent = error.message; }
+  finally { document.querySelector("main").inert = false; renderPathTool(); }
+}
+window.addEventListener("beforeunload", event => {
+  if (plannerSavePending || plannerSaveFailed) { event.preventDefault(); event.returnValue = ""; }
+});
+restorePlannerDraft();

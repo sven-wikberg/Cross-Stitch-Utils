@@ -132,6 +132,14 @@ let activeStep = "project";
 let pastedPartImage = null;
 let assignmentGroupIndex = 0;
 let selectedReviewCellKey = null;
+const sourceImages = new Map();
+let reviewRenderVersion = 0;
+let groupEditorVersion = 0;
+let editingGroupId = null;
+let selectedSplitKeys = new Set();
+let splitPage = 0;
+let lastGroupEdit = null;
+const GROUP_PAGE_SIZE = 80;
 migrateInlinePartImagesToStore();
 
 const stepLabels = {
@@ -370,7 +378,8 @@ function serializeDraftGroup(group, gridWidth) {
     (group.cellKeys || []).map((key) => cellKeyToIndex(key, gridWidth)),
     group.dmc || null,
     group.isEmpty ? 1 : 0,
-    group.symbol || null
+    group.symbol || null,
+    group.id
   ];
 }
 
@@ -384,10 +393,10 @@ function hydrateDraftGroups(storedGroups, gridWidth) {
       return storedGroup;
     }
 
-    const [signature, sampleMean, tolerance, cellIndexes, dmc, isEmpty, symbol] = storedGroup;
+    const [signature, sampleMean, tolerance, cellIndexes, dmc, isEmpty, symbol, id] = storedGroup;
     const cellKeys = (cellIndexes || []).map((cellIndex) => cellIndexToKey(cellIndex, gridWidth));
     return {
-      id: `group-${index + 1}`,
+      id: id || `group-${index + 1}`,
       signature: signature || "",
       sampleMean: sampleMean || sampleMeanFromSignature(signature),
       tolerance,
@@ -695,6 +704,7 @@ function renderGroups() {
 function renderAssignments() {
   const groups = pattern.symbolGroups || [];
   const hasGroups = groups.length > 0;
+  document.querySelector("#groupEditor").classList.toggle("hidden", !hasGroups);
   emptyAssignmentsMessage.hidden = hasGroups;
   assignmentReview.classList.toggle("empty", !hasGroups);
   applyAssignmentsButton.disabled = !hasGroups;
@@ -756,6 +766,7 @@ function renderAssignments() {
   nextAssignmentButton.disabled = assignmentGroupIndex === groups.length - 1;
 
   renderAssignmentsStatus();
+  renderGroupEditor();
 }
 
 function updateAssignmentCurrentState(group) {
@@ -813,6 +824,7 @@ function renderReview() {
 
 function renderReviewGrid(finalPattern, ready) {
   const context = reviewPatternCanvas.getContext("2d");
+  const version = ++reviewRenderVersion;
 
   if (!ready || finalPattern.grid.width <= 0 || finalPattern.grid.height <= 0) {
     reviewPatternCanvas.width = 1;
@@ -821,7 +833,7 @@ function renderReviewGrid(finalPattern, ready) {
     return;
   }
 
-  const cellSize = reviewGridCellSize(finalPattern.grid.width, finalPattern.grid.height);
+  const cellSize = reviewGridCellSize(finalPattern.grid.width, finalPattern.grid.height) * Number(document.querySelector("#reviewZoom").value) / 100;
   const colorByDmc = new Map(finalPattern.colors.map((color) => [color.dmc, color]));
   reviewPatternCanvas.width = finalPattern.grid.width * cellSize;
   reviewPatternCanvas.height = finalPattern.grid.height * cellSize;
@@ -841,6 +853,21 @@ function renderReviewGrid(finalPattern, ready) {
   drawReviewGridLines(context, finalPattern.grid.width, finalPattern.grid.height, cellSize);
   drawReviewColorHighlight(context, cellSize, ready);
   drawReviewSelection(context, cellSize, ready);
+  const opacity = Number(document.querySelector("#reviewSourceOpacity").value) / 100;
+  if (opacity > 0) {
+    document.querySelector("#reviewSourceStatus").textContent = "Chargement des images...";
+    Promise.all(pattern.parts.map(async part => ({ part, image: await sourceImageForPart(part) }))).then(images => {
+      if (version !== reviewRenderVersion) return;
+      context.save();
+      context.globalAlpha = opacity;
+      context.imageSmoothingEnabled = false;
+      images.forEach(({ part, image }) => context.drawImage(image, part.startX * cellSize, part.startY * cellSize, part.width * cellSize, part.height * cellSize));
+      context.restore();
+      drawReviewGridLines(context, finalPattern.grid.width, finalPattern.grid.height, cellSize);
+      drawReviewSelection(context, cellSize, ready);
+      document.querySelector("#reviewSourceStatus").textContent = "";
+    }).catch(error => { if (version === reviewRenderVersion) document.querySelector("#reviewSourceStatus").textContent = error.message; });
+  } else document.querySelector("#reviewSourceStatus").textContent = "";
 }
 
 function drawReviewColorHighlight(context, cellSize, ready) {
@@ -1250,6 +1277,7 @@ function openImageDatabase() {
 }
 
 async function writePartImage(partId, dataUrl) {
+  sourceImages.delete(partId);
   const database = await openImageDatabase();
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
@@ -1796,6 +1824,8 @@ generateGroupsButton.addEventListener("click", () => {
 
   pattern.groupingTolerance = Number(groupingToleranceSelect.value);
   pattern.symbolGroups = generateSymbolGroups(pattern);
+  pattern.pendingAssignmentCellKeys = null;
+  lastGroupEdit = null;
   progress.groups = true;
   progress.assignments = false;
   assignmentGroupIndex = 0;
@@ -1946,7 +1976,9 @@ function classifyCurrentGroup({ dmc, isEmpty }) {
     return;
   }
 
+  markAssignmentCellsDirty(group.cellKeys);
   group.dmc = dmc;
+  lastGroupEdit = null;
   group.isEmpty = isEmpty;
   group.symbol = null;
   progress.assignments = false;
@@ -2130,9 +2162,12 @@ function findGroupById(groupId) {
 
 function applyGroupAssignmentsToCells() {
   const cellsByKey = new Map(pattern.grid.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
+  const pending = Array.isArray(pattern.pendingAssignmentCellKeys) ? new Set(pattern.pendingAssignmentCellKeys) : null;
+  lastGroupEdit = null;
 
   pattern.symbolGroups.forEach((group) => {
     group.cellKeys.forEach((key) => {
+      if (pending && !pending.has(key)) return;
       const cell = cellsByKey.get(key);
       if (!cell) {
         return;
@@ -2151,6 +2186,7 @@ function applyGroupAssignmentsToCells() {
       cell.empty = false;
     });
   });
+  pattern.pendingAssignmentCellKeys = [];
 }
 
 function buildFinalPattern() {
@@ -2257,6 +2293,135 @@ function loadImage(dataUrl) {
     image.src = dataUrl;
   });
 }
+
+function sourceImageForPart(part) {
+  if (!sourceImages.has(part.id)) {
+    const pending = readPartImage(part).then(data => {
+      if (!data) throw new Error(`Image source manquante : ${part.name}`);
+      return loadImage(data);
+    }).catch(error => { sourceImages.delete(part.id); throw error; });
+    sourceImages.set(part.id, pending);
+  }
+  return sourceImages.get(part.id);
+}
+
+async function renderGroupEditor() {
+  const group = pattern.symbolGroups[assignmentGroupIndex];
+  if (!group) return;
+  if (editingGroupId !== group.id) { editingGroupId = group.id; selectedSplitKeys.clear(); splitPage = 0; }
+  const target = document.querySelector("#mergeTarget");
+  const oldTarget = target.value;
+  target.replaceChildren();
+  pattern.symbolGroups.filter(candidate => candidate.id !== group.id).forEach(candidate => {
+    const option = document.createElement("option");
+    option.value = candidate.id;
+    option.textContent = `${candidate.id} - ${candidate.cellCount} cases - ${candidate.isEmpty ? "Vide" : candidate.dmc ? `DMC ${candidate.dmc}` : "Non classe"}`;
+    target.appendChild(option);
+  });
+  if ([...target.options].some(option => option.value === oldTarget)) target.value = oldTarget;
+  document.querySelector("#mergeGroupButton").disabled = !target.options.length;
+  document.querySelector("#undoGroupEditButton").disabled = !lastGroupEdit;
+  if (!document.querySelector("#groupEditor").open) return;
+  const version = ++groupEditorVersion;
+  splitPage = Math.min(splitPage, Math.max(0, Math.ceil(group.cellCount / GROUP_PAGE_SIZE) - 1));
+  const keys = group.cellKeys.slice(splitPage * GROUP_PAGE_SIZE, (splitPage + 1) * GROUP_PAGE_SIZE);
+  const container = document.querySelector("#splitCellGrid");
+  container.replaceChildren();
+  document.querySelector("#previousCellPage").disabled = splitPage === 0;
+  document.querySelector("#nextCellPage").disabled = (splitPage + 1) * GROUP_PAGE_SIZE >= group.cellCount;
+  updateSplitSelection();
+  const cells = new Map(pattern.grid.cells.map(cell => [reviewCellKey(cell), cell]));
+  for (const key of keys) {
+    const cell = cells.get(key);
+    if (!cell) continue;
+    const label = document.createElement("label");
+    label.className = "split-cell";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedSplitKeys.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedSplitKeys.add(key); else selectedSplitKeys.delete(key);
+      updateSplitSelection();
+    });
+    const caption = document.createElement("span");
+    caption.textContent = `${cell.x + 1}, ${cell.y + 1}`;
+    const canvas = document.createElement("canvas");
+    canvas.width = 48; canvas.height = 48;
+    label.append(checkbox, canvas, caption);
+    container.appendChild(label);
+    const part = pattern.parts.find(candidate => candidate.id === cell.partId);
+    if (!part) continue;
+    sourceImageForPart(part).then(image => {
+      if (version !== groupEditorVersion) return;
+      const width = image.naturalWidth / part.width;
+      const height = image.naturalHeight / part.height;
+      const context = canvas.getContext("2d");
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, (cell.x - part.startX) * width, (cell.y - part.startY) * height, width, height, 0, 0, 48, 48);
+    }).catch(error => { if (version === groupEditorVersion) document.querySelector("#groupEditStatus").textContent = error.message; });
+  }
+}
+
+function updateSplitSelection() {
+  const group = pattern.symbolGroups[assignmentGroupIndex];
+  document.querySelector("#cellPageStatus").textContent = `Page ${splitPage + 1} / ${Math.max(1, Math.ceil(group.cellCount / GROUP_PAGE_SIZE))} - ${selectedSplitKeys.size} selectionnees`;
+  document.querySelector("#splitGroupButton").disabled = !selectedSplitKeys.size || selectedSplitKeys.size === group.cellCount;
+}
+
+function markAssignmentCellsDirty(keys) {
+  if (!Array.isArray(pattern.pendingAssignmentCellKeys) && areAssignmentsApplied(pattern)) pattern.pendingAssignmentCellKeys = [];
+  if (Array.isArray(pattern.pendingAssignmentCellKeys)) pattern.pendingAssignmentCellKeys = [...new Set([...pattern.pendingAssignmentCellKeys, ...keys])];
+}
+
+function commitGroupEdit(groups, selectedId, changedKeys) {
+  lastGroupEdit = { groups: structuredClone(pattern.symbolGroups), index: assignmentGroupIndex, assignments: progress.assignments,
+    pendingKeys: pattern.pendingAssignmentCellKeys ? [...pattern.pendingAssignmentCellKeys] : null };
+  markAssignmentCellsDirty(changedKeys);
+  pattern.symbolGroups = groups;
+  assignmentGroupIndex = Math.max(0, groups.findIndex(group => group.id === selectedId));
+  editingGroupId = null;
+  progress.assignments = false;
+  trySaveDraft();
+  render();
+}
+
+document.querySelector("#groupEditor").addEventListener("toggle", renderGroupEditor);
+document.querySelector("#previousCellPage").addEventListener("click", () => { splitPage--; renderGroupEditor(); });
+document.querySelector("#nextCellPage").addEventListener("click", () => { splitPage++; renderGroupEditor(); });
+document.querySelector("#mergeGroupButton").addEventListener("click", () => {
+  const group = pattern.symbolGroups[assignmentGroupIndex];
+  const target = document.querySelector("#mergeTarget").value;
+  const targetGroup = findGroupById(target);
+  if (!group || !targetGroup) return;
+  if (!confirm(`Fusionner ${group.id} dans ${target} ? L'association ${targetGroup.isEmpty ? "Vide" : targetGroup.dmc ? `DMC ${targetGroup.dmc}` : "Non classe"} du groupe cible sera conservee.`)) return;
+  commitGroupEdit(window.GroupOperations.merge(pattern.symbolGroups, group.id, target), target, group.cellKeys);
+});
+document.querySelector("#splitGroupButton").addEventListener("click", () => {
+  const group = pattern.symbolGroups[assignmentGroupIndex];
+  try {
+    const groups = window.GroupOperations.split(pattern.symbolGroups, group.id, selectedSplitKeys);
+    const added = groups.find(candidate => !pattern.symbolGroups.some(old => old.id === candidate.id));
+    commitGroupEdit(groups, added.id, added.cellKeys);
+  } catch (error) { document.querySelector("#groupEditStatus").textContent = error.message; }
+});
+document.querySelector("#undoGroupEditButton").addEventListener("click", () => {
+  if (!lastGroupEdit) return;
+  pattern.symbolGroups = lastGroupEdit.groups;
+  assignmentGroupIndex = lastGroupEdit.index;
+  progress.assignments = lastGroupEdit.assignments;
+  pattern.pendingAssignmentCellKeys = lastGroupEdit.pendingKeys;
+  lastGroupEdit = null;
+  editingGroupId = null;
+  trySaveDraft(); render();
+});
+document.querySelector("#reviewSourceOpacity").addEventListener("input", event => {
+  document.querySelector("#reviewOpacityText").textContent = `${event.target.value}%`;
+  renderReview();
+});
+document.querySelector("#reviewZoom").addEventListener("input", event => {
+  document.querySelector("#reviewZoomText").textContent = `${event.target.value}%`;
+  renderReview();
+});
 
 function sampleCellImage(image, sx, sy, sw, sh) {
   const size = 16;
@@ -2404,6 +2569,9 @@ stepButtons.forEach((button) => {
 });
 
 resetButton.addEventListener("click", () => {
+  sourceImages.clear();
+  lastGroupEdit = null;
+  editingGroupId = null;
   pattern = structuredClone(defaultPattern);
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(PROGRESS_STORAGE_KEY);

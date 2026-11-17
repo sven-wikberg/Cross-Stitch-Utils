@@ -11,6 +11,10 @@
         ? options.points.map((point) => ({ x: point.x, y: point.y }))
         : [];
       const pointCount = points.length;
+      const constraints = options.constraints || {};
+      const hasConstraints = Boolean(constraints.start || constraints.lockedPrefix?.length || constraints.forcedCuts?.length);
+      const matches = (route) => !hasConstraints || satisfiesConstraints(route.map((index) => points[index]), constraints);
+      const forcedPairs = new Set((constraints.forcedCuts || []).map((edge) => pairKey(edge.from, edge.to)));
       const cutThreshold = Math.max(1, Number(options.cutThreshold) || 10);
       const cutPenalty = cutThreshold * 3;
       const stagnationLimitMs = Math.max(1000, Number(options.stagnationLimitMs) || 60000);
@@ -29,6 +33,7 @@
 
       if (pointCount <= 1) {
         const route = pointCount === 1 ? [0] : [];
+        if (!matches(route)) throw new Error("Contraintes incompatibles avec les points.");
         const metrics = metricsForRoute(route, null, pointCount, cutThreshold, cutPenalty);
         return {
           route,
@@ -60,8 +65,8 @@
           return { score: 0, distance: 0, cuts: 0 };
         }
 
-        const distance = distances[first * pointCount + second];
-        const cut = distance > cutThreshold;
+        const distance = distances(first, second);
+        const cut = distance > cutThreshold || (forcedPairs.size > 0 && forcedPairs.has(pairKey(points[first], points[second])));
         return {
           score: cut ? cutPenalty : distance,
           distance,
@@ -74,12 +79,14 @@
         distances,
         pointCount,
         cutThreshold,
-        cutPenalty
+        cutPenalty,
+        edgeValues
       );
 
-      const seeds = buildSeedRoutes(points, candidateLists, distances, options.initialPath, random);
+      const seeds = buildSeedRoutes(points, candidateLists, distances, options.initialPath, random, reportSetup)
+        .map(route => matches(route) ? route : constrainSeed(route, points, constraints));
       const rankedSeeds = seeds
-        .filter((route) => isCompleteRoute(route, pointCount))
+        .filter((route) => isCompleteRoute(route, pointCount) && matches(route))
         .map((route) => ({ route, metrics: routeMetrics(route) }))
         .sort((first, second) => compareMetrics(first.metrics, second.metrics));
 
@@ -94,6 +101,7 @@
       emitProgress("Meilleur point de depart", true);
 
       const consider = (route, phase) => {
+        if (!matches(route)) return false;
         if (!isCompleteRoute(route, pointCount)) {
           throw new Error(`Chemin invalide apres: ${phase}.`);
         }
@@ -118,7 +126,7 @@
         let localPass = 0;
 
         const reconnected = reconnectCutChains(route, edgeValues, routeMetrics, random);
-        if (compareMetrics(routeMetrics(reconnected), routeMetrics(route)) < 0) {
+        if (matches(reconnected) && compareMetrics(routeMetrics(reconnected), routeMetrics(route)) < 0) {
           route = reconnected;
           consider(route, `${phase} - chaines reconnectees`);
         }
@@ -145,7 +153,7 @@
 
           if (!expired() && localPass % 3 === 0) {
             const chainCandidate = reconnectCutChains(route, edgeValues, routeMetrics, random);
-            if (compareMetrics(routeMetrics(chainCandidate), routeMetrics(route)) < 0) {
+            if (matches(chainCandidate) && compareMetrics(routeMetrics(chainCandidate), routeMetrics(route)) < 0) {
               route = chainCandidate;
               routeChanged = true;
               consider(route, `${phase} - coupes`);
@@ -168,8 +176,9 @@
           ? rankedSeeds[seedCursor++ % rankedSeeds.length].route
           : bestRoute;
         const strength = 2 + (restarts % 5);
-        const perturbed = perturbRoute(baseRoute, random, strength);
-        const candidate = localSearch(perturbed, `Relance ${restarts}`, 8 + strength);
+        const lockedCount = constraints.lockedPrefix?.length || (constraints.start ? 1 : 0);
+        const perturbed = baseRoute.slice(0, lockedCount).concat(perturbRoute(baseRoute.slice(lockedCount), random, strength));
+        const candidate = localSearch(matches(perturbed) ? perturbed : baseRoute, `Relance ${restarts}`, 8 + strength);
         consider(candidate, `Relance ${restarts} terminee`);
       }
 
@@ -221,6 +230,10 @@
             }
 
             reverseRange(route, left + 1, right, positions);
+            if (!matches(route)) {
+              reverseRange(route, left + 1, right, positions);
+              continue;
+            }
             changed = true;
             accepted += 1;
             if (accepted >= route.length * 3) {
@@ -245,7 +258,8 @@
               [getEdgeValues(route[end], route[end + 1])],
               [getEdgeValues(route[0], route[end + 1])]
             );
-            if (isImprovingDelta(prefixDelta) && (!bestMove || compareDelta(prefixDelta, bestMove.delta) < 0)) {
+            const prefixValid = !hasConstraints || (isImprovingDelta(prefixDelta) && matches(route.slice(0, end + 1).reverse().concat(route.slice(end + 1))));
+            if (prefixValid && isImprovingDelta(prefixDelta) && (!bestMove || compareDelta(prefixDelta, bestMove.delta) < 0)) {
               bestMove = { type: "prefix", end, delta: prefixDelta };
             }
 
@@ -253,7 +267,8 @@
               [getEdgeValues(route[end - 1], route[end])],
               [getEdgeValues(route[end - 1], route[route.length - 1])]
             );
-            if (isImprovingDelta(suffixDelta) && (!bestMove || compareDelta(suffixDelta, bestMove.delta) < 0)) {
+            const suffixValid = !hasConstraints || (isImprovingDelta(suffixDelta) && matches(route.slice(0, end).concat(route.slice(end).reverse())));
+            if (suffixValid && isImprovingDelta(suffixDelta) && (!bestMove || compareDelta(suffixDelta, bestMove.delta) < 0)) {
               bestMove = { type: "suffix", start: end, delta: suffixDelta };
             }
           }
@@ -322,6 +337,12 @@
                       ]
                     );
                     if (isImprovingDelta(delta)) {
+                      if (hasConstraints) {
+                        const trial = route.filter((point) => !blockSet.has(point));
+                        const at = targetBefore === null ? -1 : trial.indexOf(targetBefore);
+                        trial.splice(at + 1, 0, ...(reverse ? block.slice().reverse() : block));
+                        if (!matches(trial)) continue;
+                      }
                       bestMove = { block, blockSet, targetBefore, reverse };
                       break searchMoves;
                     }
@@ -408,6 +429,8 @@
 
     function buildDistanceMatrix(points, onRow) {
       const count = points.length;
+      // Large colors use on-demand distances instead of a quadratic allocation.
+      if (count > 4000) return (first, second) => Math.hypot(points[first].x - points[second].x, points[first].y - points[second].y);
       const distances = new Float32Array(count * count);
       for (let first = 0; first < count; first += 1) {
         onRow(first);
@@ -420,7 +443,7 @@
           distances[second * count + first] = distance;
         }
       }
-      return distances;
+      return (first, second) => distances[first * count + second];
     }
 
     function buildCandidateLists(points, distances, limit, onRow) {
@@ -465,14 +488,14 @@
           if (candidate === undefined || candidate === index) {
             return;
           }
-          nearby.push({ index: candidate, distance: distances[index * count + candidate] });
+          nearby.push({ index: candidate, distance: distances(index, candidate) });
         }
       }
 
       return lists;
     }
 
-    function buildSeedRoutes(points, candidateLists, distances, initialPath, random) {
+    function buildSeedRoutes(points, candidateLists, distances, initialPath, random, reportSetup) {
       const count = points.length;
       const seeds = [];
       const coordinateIndex = new Map(points.map((point, index) => [`${point.x},${point.y}`, index]));
@@ -490,6 +513,7 @@
 
       const starts = seedStartPoints(points, random);
       starts.forEach((start, index) => {
+        reportSetup(`Chemins de depart ${index + 1} / ${starts.length}`);
         seeds.push(nearestNeighborSeed(start, count, candidateLists, distances, random, index % 3 === 0 ? 3 : 1));
       });
 
@@ -569,8 +593,8 @@
         const end = route[route.length - 1];
         let best = null;
         components.forEach((component, index) => {
-          const normalDistance = distances[end * points.length + component[0]];
-          const reverseDistance = distances[end * points.length + component[component.length - 1]];
+          const normalDistance = distances(end, component[0]);
+          const reverseDistance = distances(end, component[component.length - 1]);
           const candidate = reverseDistance < normalDistance
             ? { index, reverse: true, distance: reverseDistance }
             : { index, reverse: false, distance: normalDistance };
@@ -632,7 +656,7 @@
         const fallback = [];
         for (let candidate = 0; candidate < count; candidate += 1) {
           if (remaining[candidate]) {
-            fallback.push({ candidate, distance: distances[current * count + candidate] });
+            fallback.push({ candidate, distance: distances(current, candidate) });
           }
         }
         fallback.sort((first, second) => first.distance - second.distance || first.candidate - second.candidate);
@@ -728,16 +752,16 @@
       return result;
     }
 
-    function metricsForRoute(route, distances, count, cutThreshold, cutPenalty) {
+    function metricsForRoute(route, distances, count, cutThreshold, cutPenalty, edgeValues) {
       let score = 0;
       let distance = 0;
       let cuts = 0;
       for (let index = 1; index < route.length; index += 1) {
         const jump = distances
-          ? distances[route[index - 1] * count + route[index]]
+          ? distances(route[index - 1], route[index])
           : 0;
         distance += jump;
-        if (jump > cutThreshold) {
+        if (edgeValues ? edgeValues(route[index - 1], route[index]).cuts > 0 : jump > cutThreshold) {
           cuts += 1;
           score += cutPenalty;
         } else {
@@ -870,7 +894,59 @@
         : Date.now();
     }
 
-    return { optimizePath };
+    function pointKey(point) { return `${point.x},${point.y}`; }
+
+    function constrainSeed(route, points, constraints) {
+      const ids = new Map(points.map((point, index) => [pointKey(point), index]));
+      const prefix = constraints.lockedPrefix || [];
+      const edges = (constraints.forcedCuts || []).concat(prefix.slice(1).map((point, index) => ({ from: prefix[index], to: point })));
+      const adjacent = new Map();
+      for (const edge of edges) {
+        const a = ids.get(pointKey(edge.from)), b = ids.get(pointKey(edge.to));
+        if (a === undefined || b === undefined || a === b) return [];
+        if (!adjacent.has(a)) adjacent.set(a, new Set());
+        if (!adjacent.has(b)) adjacent.set(b, new Set());
+        adjacent.get(a).add(b); adjacent.get(b).add(a);
+        if (adjacent.get(a).size > 2 || adjacent.get(b).size > 2) return [];
+      }
+      const seen = new Set();
+      const chains = [];
+      for (const index of route) {
+        if (seen.has(index) || adjacent.get(index)?.size === 2) continue;
+        const chain = [];
+        let current = index;
+        while (current !== undefined && !seen.has(current)) {
+          chain.push(current); seen.add(current);
+          current = [...(adjacent.get(current) || [])].find(next => !seen.has(next));
+        }
+        chains.push(chain);
+      }
+      if (seen.size !== points.length) return [];
+      const start = constraints.start || prefix[0];
+      if (start) {
+        const startId = ids.get(pointKey(start));
+        const at = chains.findIndex(chain => chain[0] === startId || chain[chain.length - 1] === startId);
+        if (at < 0) return [];
+        const first = chains.splice(at, 1)[0];
+        if (first[0] !== startId) first.reverse();
+        chains.unshift(first);
+      }
+      return chains.flat();
+    }
+
+    function pairKey(first, second) {
+      return [pointKey(first), pointKey(second)].sort().join("|");
+    }
+
+    function satisfiesConstraints(path, constraints = {}) {
+      const keys = path.map(pointKey);
+      if (constraints.start && keys[0] !== pointKey(constraints.start)) return false;
+      if ((constraints.lockedPrefix || []).some((point, index) => keys[index] !== pointKey(point))) return false;
+      const edges = new Set(path.slice(1).map((point, index) => pairKey(path[index], point)));
+      return (constraints.forcedCuts || []).every((edge) => edges.has(pairKey(edge.from, edge.to)));
+    }
+
+    return { optimizePath, satisfiesConstraints };
   }
 
   function pathOptimizerWorkerMain() {
@@ -880,13 +956,14 @@
         return;
       }
 
-      const { runId, points, initialPath, cutThreshold, stagnationLimitMs } = event.data;
+      const { runId, points, initialPath, cutThreshold, stagnationLimitMs, constraints } = event.data;
       try {
         const result = optimizer.optimizePath({
           points,
           initialPath,
           cutThreshold,
           stagnationLimitMs,
+          constraints,
           onProgress(snapshot) {
             self.postMessage({
               type: "progress",

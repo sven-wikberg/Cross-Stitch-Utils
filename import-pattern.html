@@ -422,6 +422,24 @@
             <p id="emptyAssignmentsMessage" class="empty-message">Aucun groupe a associer.</p>
           </div>
 
+          <details id="groupEditor" class="group-editor">
+            <summary>Corriger les groupes</summary>
+            <div class="group-editor-toolbar">
+              <label for="mergeTarget">Fusionner dans</label>
+              <select id="mergeTarget"></select>
+              <button id="mergeGroupButton" class="secondary-button" type="button">Fusionner</button>
+              <button id="undoGroupEditButton" class="secondary-button" type="button" disabled>Annuler la correction</button>
+            </div>
+            <div id="splitCellGrid" class="split-cell-grid"></div>
+            <div class="group-editor-toolbar">
+              <button id="previousCellPage" class="secondary-button" type="button">Precedent</button>
+              <span id="cellPageStatus" role="status"></span>
+              <button id="nextCellPage" class="secondary-button" type="button">Suivant</button>
+              <button id="splitGroupButton" class="primary-button" type="button" disabled>Separer la selection</button>
+            </div>
+            <p id="groupEditStatus" class="compact-status" role="status"></p>
+          </details>
+
           <div class="actions split-actions">
             <button id="backToGroupsButton" class="secondary-button" type="button">Retour</button>
             <button id="applyAssignmentsButton" class="primary-button" type="button">Appliquer a la grille</button>
@@ -438,6 +456,15 @@
           </div>
 
           <div id="reviewStatus" class="coverage-status invalid">Applique les associations avant la verification.</div>
+          <div class="review-toolbar">
+            <label for="reviewSourceOpacity">Image source <output id="reviewOpacityText">0%</output>
+              <input id="reviewSourceOpacity" type="range" min="0" max="100" step="5" value="0">
+            </label>
+            <label for="reviewZoom">Zoom <output id="reviewZoomText">100%</output>
+              <input id="reviewZoom" type="range" min="50" max="400" step="25" value="100">
+            </label>
+            <span id="reviewSourceStatus" class="compact-status" role="status"></span>
+          </div>
 
           <div class="pattern-viewer review-viewer">
             <div class="pattern-canvas-wrap">
@@ -505,6 +532,7 @@
     </main>
 
     <script src="data/dmc-colors.js"></script>
+    <script src="src/group-operations.js"></script>
     <script src="src/app.js"></script>
   </body>
 </html>
