@@ -185,11 +185,20 @@ async function run() {
     await planner.locator("#lockedPrefixCount").fill("2");
     await planner.locator("#lockedPrefixCount").dispatchEvent("change");
     const lockedDiagonals = await planner.evaluate(() => currentPath().slice(0, 2));
-    await planner.evaluate(() => { pathStagnationLimitMs = 1000; });
+    await planner.evaluate(() => {
+      pathStagnationLimitMs = 1000;
+      window.manualOrientationCalls = 0;
+      const orient = StitchModel.orient;
+      StitchModel.orient = (...args) => { window.manualOrientationCalls++; return orient(...args); };
+    });
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => pathAlgorithmRunning);
     await planner.locator("#stopPathAlgorithmButton").click();
     assert.equal(await planner.evaluate(() => batchPlan.pending.length), 2);
+    assert.ok(await planner.evaluate(() => window.manualOrientationCalls > 0), "Stopping manually also finalizes the directions");
+    assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
+      - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7));
+    assert.deepEqual(await planner.evaluate(() => currentPath().slice(0, 2)), lockedDiagonals);
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();
     await planner.waitForFunction(() => !document.querySelector("main").inert);
@@ -215,6 +224,9 @@ async function run() {
     assert.equal(await planner.locator("#metricZoneReturns").innerText(), "0");
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(bestPathsByDmc[selectedDmc]).zoneReturns), 0);
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).cutTravel > 0));
+    assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
+      - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7),
+    "A completed worker result already has optimal directions for its order");
 
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();

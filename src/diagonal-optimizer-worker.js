@@ -1,6 +1,77 @@
 (function (root) {
   "use strict";
   function createDiagonalOptimizer(model) {
+    // Each summary keeps the best cost for all four endpoint-direction pairs.
+    // A range tree reuses unchanged pieces when testing a new order.
+    function createOrderEvaluator(chunks, threshold, constraints, zones) {
+      const fixed = new Map((constraints.lockedPrefix || []).map(p => [model.key(p), p.direction]));
+      if (constraints.start) fixed.set(model.key(constraints.start), constraints.start.direction);
+      const cuts = new Set((constraints.forcedCuts || []).map(model.key));
+      function join(a, b) {
+        if (!a) return b;
+        if (!b) return a;
+        const c00 = model.cost(a.last[0], b.first[0], threshold, true);
+        const c01 = model.cost(a.last[0], b.first[1], threshold, true);
+        const c10 = model.cost(a.last[1], b.first[0], threshold, true);
+        const c11 = model.cost(a.last[1], b.first[1], threshold, true);
+        const t00 = Math.min(a.m[0] + c00, a.m[1] + c10);
+        const t01 = Math.min(a.m[0] + c01, a.m[1] + c11);
+        const t10 = Math.min(a.m[2] + c00, a.m[3] + c10);
+        const t11 = Math.min(a.m[2] + c01, a.m[3] + c11);
+        return { first: a.first, last: b.last,
+          m: [Math.min(t00 + b.m[0], t01 + b.m[2]), Math.min(t00 + b.m[1], t01 + b.m[3]),
+            Math.min(t10 + b.m[0], t11 + b.m[2]), Math.min(t10 + b.m[1], t11 + b.m[3])],
+          firstZone: a.firstZone, lastZone: b.lastZone,
+          visits: a.visits + b.visits - (a.lastZone === b.firstZone ? 1 : 0) };
+      }
+      function summarize(points) {
+        let summary = null;
+        for (const p of points) {
+          const id = model.key(p), direction = fixed.get(id);
+          const variants = [1, -1].map(d => ({ ...model.copy(p), direction: d,
+            ...(cuts.has(id) ? { cutBefore: true } : {}) }));
+          const zone = zones.byCell.get(model.cellKey(p));
+          summary = join(summary, { first: variants, last: variants,
+            m: [direction === -1 ? Infinity : 0, Infinity, Infinity, direction === 1 ? Infinity : 0],
+            firstZone: zone, lastZone: zone, visits: 1 });
+        }
+        return summary;
+      }
+      const leaves = chunks.map(summarize), count = leaves.length;
+      let size = 1;
+      while (size < count) size *= 2;
+      const tree = new Array(size * 2).fill(null);
+      for (let i = 0; i < count; i++) tree[size + i] = leaves[i];
+      for (let i = size - 1; i > 0; i--) tree[i] = join(tree[i * 2], tree[i * 2 + 1]);
+      function range(start, end) {
+        let left = null, right = null;
+        for (start += size, end += size; start < end; start >>= 1, end >>= 1) {
+          if (start & 1) left = join(left, tree[start++]);
+          if (end & 1) right = join(tree[--end], right);
+        }
+        return join(left, right);
+      }
+      const measure = summary => ({ score: summary ? Math.min(...summary.m) : 0, zoneVisits: summary?.visits || 0 });
+      function evaluateMove(i, j) {
+        if (i === j || i === j + 1) return measure(tree[1]);
+        const ranges = j < i ? [[0, j + 1], [i, i + 1], [j + 1, i], [i + 1, count]]
+          : [[0, i], [i + 1, j + 1], [i, i + 1], [j + 1, count]];
+        return measure(ranges.reduce((summary, [start, end]) => join(summary, range(start, end)), null));
+      }
+      function move(i, j) {
+        const [leaf] = leaves.splice(i, 1);
+        leaves.splice(j >= i ? j : j + 1, 0, leaf);
+        let start = size + Math.min(i, j + 1), end = size + Math.max(i, j) + 1;
+        for (let k = start; k < end; k++) tree[k] = leaves[k - size];
+        while (start > 1) {
+          start >>= 1; end = (end + 1) >> 1;
+          for (let k = start; k < end; k++) tree[k] = join(tree[k * 2], tree[k * 2 + 1]);
+        }
+      }
+      return { current: () => measure(tree[1]), evaluateMove, move };
+    }
+    const improvesOrder = (candidate, current) => Number.isFinite(candidate.score)
+      && (candidate.zoneVisits - current.zoneVisits || candidate.score - current.score) < -1e-8;
     function optimizePath(options, report = () => {}) {
       const cells = options.points || [], threshold = options.cutThreshold || 10;
       const originalConstraints = options.constraints || {};
@@ -49,6 +120,7 @@
       if (!best) throw new Error("Impossible de construire un chemin respectant les contraintes.");
       emit(true);
       if (!cells.length) return { path: [], metrics: bestMetrics, initialMetrics };
+      consider(orient(best));
 
       const cellIndex = new Map(cells.map((p, i) => [model.cellKey(p), i]));
       const indexedZones = zones.zones.map(zone => ({ ...zone, indices: zone.cells.map(p => cellIndex.get(model.cellKey(p))) }));
@@ -171,7 +243,8 @@
         const positions = new Map();
         const updatePositions = () => blocks.forEach((block, index) => positions.set(block.id, index));
         updatePositions();
-        const edge = (a, b) => a && b ? stepCost(a.points.at(-1), b.points[0]) : 0;
+        const evaluator = createOrderEvaluator(blocks.map(block => block.points), threshold, constraints, zones);
+        let current = evaluator.current();
         let accepted = 0;
         phase = "Optimisation des liaisons entre zones";
         for (let attempt = 0; attempt < Math.max(2000, blocks.length * 50) && !expired(); attempt++) {
@@ -183,19 +256,17 @@
           if (Math.random() < 0.5) j--;
           if (attempt % 64 === 0) j = fixedBlocks - 1;
           if (j < fixedBlocks - 1 || j === i || j === i - 1) continue;
-          const before = blocks[i - 1], after = blocks[i + 1], left = blocks[j], right = blocks[j + 1];
-          const delta = edge(before, after) + edge(left, block) + edge(block, right)
-            - edge(before, block) - edge(block, after) - edge(left, right);
-          if (delta < -1e-8) {
+          const candidate = evaluator.evaluateMove(i, j);
+          if (improvesOrder(candidate, current)) {
+            evaluator.move(i, j); current = evaluator.current();
             blocks.splice(i, 1); blocks.splice(j >= i ? j : j + 1, 0, block);
             updatePositions(); accepted++;
-            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(blocks.flatMap(b => b.points));
+            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(orient(blocks.flatMap(b => b.points)));
           }
           if (attempt % 128 === 0) emit();
         }
         const route = blocks.flatMap(block => block.points);
-        consider(route);
-        if (!expired()) consider(orient(route));
+        consider(orient(route));
       }
 
       function improve(input) {
@@ -203,6 +274,8 @@
         const positions = new Map();
         const updatePositions = () => { for (let i = 0; i < route.length; i++) positions.set(model.key(route[i]), i); };
         updatePositions();
+        const evaluator = createOrderEvaluator(route.map(point => [point]), threshold, constraints, zones);
+        let current = evaluator.current();
         let attempts = 0, accepted = 0;
         const maxAttempts = Math.max(2000, route.length * 20);
         while (attempts++ < maxAttempts && !expired()) {
@@ -217,27 +290,20 @@
           if (attempts % 64 === 0) j = fixedLength - 1;
           if (j < fixedLength - 1 || j === i || j === i - 1
               || (p.diagonal === "lower" ? j >= mate : j < mate)) continue;
-          const before = route[i - 1], after = route[i + 1], left = route[j], right = route[j + 1];
+          const left = route[j], right = route[j + 1];
           const zoneId = zones.byCell.get(model.cellKey(p));
           if ((!left || zones.byCell.get(model.cellKey(left)) !== zoneId)
               && (!right || zones.byCell.get(model.cellKey(right)) !== zoneId)) continue;
-          const oldCost = stepCost(before, p) + stepCost(p, after) + stepCost(left, right);
-          let chosen, delta = -1e-8;
-          for (const direction of [1, -1]) {
-            const candidate = { ...p, direction };
-            const gain = stepCost(before, after) + stepCost(left, candidate)
-              + stepCost(candidate, right) - oldCost;
-            if (gain < delta) { delta = gain; chosen = candidate; }
-          }
-          if (chosen) {
-            route.splice(i, 1); route.splice(j >= i ? j : j + 1, 0, chosen);
+          const candidate = evaluator.evaluateMove(i, j);
+          if (improvesOrder(candidate, current)) {
+            evaluator.move(i, j); current = evaluator.current();
+            route.splice(i, 1); route.splice(j >= i ? j : j + 1, 0, p);
             updatePositions(); accepted++;
-            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(route);
+            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(orient(route));
           }
           if (attempts % 256 === 0) emit();
         }
-        consider(route);
-        if (!expired()) consider(orient(route));
+        consider(orient(route));
       }
       improveZoneOrder(best);
       phase = "Recherche des transitions au dos";
@@ -248,11 +314,13 @@
         if (!expired()) improveZoneOrder(best);
         restarts++; phase = "Recherche entre zones voisines"; emit();
       }
+      phase = "Derniere optimisation des sens"; emit(true);
+      consider(orient(best));
       phase = "Recherche terminee"; emit(true);
       return { path: best, metrics: bestMetrics, initialMetrics, elapsedMs: performance.now() - started,
         lastImprovementMs: performance.now() - lastImprovement, stagnationLimitMs: limit, improvements, restarts, progress: 100, phase };
     }
-    return { optimizePath, satisfiesConstraints: model.satisfiesConstraints };
+    return { optimizePath, createOrderEvaluator, improvesOrder, satisfiesConstraints: model.satisfiesConstraints };
   }
   function workerMain(createModel, createOptimizer) {
     self.onmessage = event => {

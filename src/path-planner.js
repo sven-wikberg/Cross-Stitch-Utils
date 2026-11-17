@@ -1990,6 +1990,19 @@ function stopAdvancedPathSearch() {
     return;
   }
 
+  activePathOptimizerWorker.terminate();
+  const dmc = activePathOptimizerDmc;
+  const path = bestCompletePathForColor(dmc);
+  if (path.length) {
+    try {
+      const oriented = StitchModel.orient(path, cutThreshold, constraintsByDmc[dmc] || {}, true);
+      applyAdvancedPathSnapshot(dmc, { ...activePathOptimizerSnapshot, path: oriented,
+        metrics: pathPerformanceMetrics(oriented, dmc), phase: "Derniere optimisation des sens" });
+    } catch (error) {
+      finishAdvancedPathSearch(`Recherche arretee, meilleur chemin conserve. Verification des sens: ${error.message}`, null, false);
+      return;
+    }
+  }
   finishAdvancedPathSearch("Recherche arretee, meilleur chemin conserve", null, false);
 }
 
