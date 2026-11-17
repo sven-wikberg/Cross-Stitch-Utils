@@ -181,6 +181,7 @@ async function run() {
     await importer.locator("#groupEditor summary").click();
     await importer.locator("#splitCellGrid input").nth(1).check();
     await importer.locator("#splitGroupButton").click();
+    await importer.locator("#assignmentPreviewWrap img").waitFor({ state: "visible" });
     assert.deepEqual(await importer.evaluate(() => pattern.symbolGroups.map(g => [g.cellCount, g.dmc])), [[2, "321"], [1, null]]);
     await importer.locator("#mergeTarget").selectOption("group-1");
     await importer.locator("#mergeGroupButton").click();

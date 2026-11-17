@@ -737,6 +737,22 @@ function renderAssignments() {
     assignmentPreviewWrap.appendChild(preview);
   } else {
     assignmentPreviewWrap.innerHTML = '<span class="symbol-preview-empty">A regenerer</span>';
+    const key = group.cellKeys[0];
+    const cell = pattern.grid.cells.find(candidate => reviewCellKey(candidate) === key);
+    const part = pattern.parts.find(candidate => candidate.id === cell?.partId);
+    if (cell && part) sourceImageForPart(part).then(image => {
+      if (pattern.symbolGroups[assignmentGroupIndex] !== group) return;
+      const width = image.naturalWidth / part.width;
+      const height = image.naturalHeight / part.height;
+      group.previewDataUrl = createCellPreview(image, (cell.x - part.startX) * width, (cell.y - part.startY) * height, width, height);
+      const preview = document.createElement("img");
+      preview.className = "symbol-preview large";
+      preview.alt = `Apercu ${group.id}`;
+      preview.src = group.previewDataUrl;
+      assignmentPreviewWrap.replaceChildren(preview);
+    }).catch(() => {
+      if (pattern.symbolGroups[assignmentGroupIndex] === group) assignmentPreviewWrap.textContent = "Image source indisponible";
+    });
   }
 
   assignmentChoices.innerHTML = "";
