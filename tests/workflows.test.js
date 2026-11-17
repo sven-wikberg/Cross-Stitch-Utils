@@ -250,6 +250,15 @@ async function run() {
     assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
       - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7),
     "A completed worker result already has optimal directions for its order");
+    assert.ok(await planner.evaluate(() => {
+      const old = { pattern: loadedPattern, pathSchemaVersion: 2, pathObjectiveVersion: 1,
+        pathsByDmc, bestPathsByDmc, constraintsByDmc, selectedDmc,
+        pathOptimizationBaselinesByDmc: { [selectedDmc]: 123 }, batchPlan: { pending: [selectedDmc], results: [] } };
+      const migrated = migratePlannerState(old);
+      return migrated.pathsByDmc === old.pathsByDmc && migrated.bestPathsByDmc === old.bestPathsByDmc
+        && migrated.constraintsByDmc === old.constraintsByDmc && migrated.selectedDmc === old.selectedDmc
+        && Object.keys(migrated.pathOptimizationBaselinesByDmc).length === 0 && migrated.batchPlan.pending.length === 0;
+    }), "Changing the zone definition retains paths and constraints, resetting only obsolete search statistics");
 
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();

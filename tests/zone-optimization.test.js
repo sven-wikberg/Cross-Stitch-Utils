@@ -76,4 +76,9 @@ for (const order of [[0, 3, 1, 4, 2, 5], [0, 5, 1, 4, 2, 3], [0, 1, 2, 3, 4, 5]]
   }
 }
 assert.ok(boundaryRegression, "Fixture demonstrates the cost of ignoring neighboring zones");
+const connected = Array.from({ length: 600 }, (_, i) => ({ x: i % 30, y: Math.floor(i / 30) }));
+const oneIsland = optimizer.optimizePath({ points: connected, stagnationLimitMs: 1 });
+assert.equal(oneIsland.zone.total, 1, "A large connected island receives one timer, not a timer per spatial bucket");
+assert.equal(oneIsland.zone.completed, 1);
+assert.equal(model.validateRoute(oneIsland.path, connected), "");
 console.log("zone optimization passed: sequential zones, identical timers, boundary costs, progress, locked prefix, final orientation");

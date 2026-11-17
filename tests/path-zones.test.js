@@ -58,9 +58,14 @@ assert.equal(new Set(suffixVisits).size, suffixVisits.length, "No new back-and-f
 assert.equal(locked.metrics.zoneReturns, 2, "Only the returns required by the locked prefix remain");
 
 const connected = Array.from({ length: 30 * 20 }, (_, i) => ({ x: i % 30, y: Math.floor(i / 30) }));
-const compact = model.createZones(connected);
-assert.equal(compact.zones.length, 6);
-assert.ok(compact.zones.every(z => z.cells.length <= 100 && z.maxX - z.minX <= 10 && z.maxY - z.minY <= 10));
+const natural = model.createZones(connected);
+assert.equal(natural.zones.length, 1, "One connected shape is not split at ten-cell boundaries");
+assert.equal(natural.zones[0].cells.length, 600);
+assert.equal(natural.zones[0].maxX, 30);
+assert.equal(natural.zones[0].maxY, 20);
+const diagonal = model.createZones(Array.from({ length: 35 }, (_, i) => ({ x: i, y: i })));
+assert.equal(diagonal.zones.length, 1, "Corner contacts connect an island across every ten-cell boundary");
 const split = model.createZones([{ x: 0, y: 0 }, { x: 5, y: 5 }]);
-assert.equal(split.zones.length, 2, "Disconnected patches in the same tile stay separate");
-console.log("zone tests passed: compact patches, no returns, neighboring zones after cuts, locked prefix, cut distance");
+assert.equal(split.zones.length, 2, "Nearby disconnected patches stay separate even below the cut threshold");
+assert.equal(model.createZones([{ x: 9, y: 9 }, { x: 10, y: 10 }, { x: 12, y: 10 }]).zones.length, 2);
+console.log("zone tests passed: natural islands, no size limit, side/corner adjacency, no gap merging, locked prefix, cut distance");

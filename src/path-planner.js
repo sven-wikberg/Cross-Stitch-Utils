@@ -80,7 +80,7 @@ const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const DEFAULT_CUT_THRESHOLD = 10;
 const DEFAULT_PATH_STAGNATION_LIMIT = 60000;
-const PATH_OBJECTIVE_VERSION = 1;
+const PATH_OBJECTIVE_VERSION = 2;
 const pathZoneCache = new WeakMap();
 
 let storedState = migratePlannerState(loadStoredState());

@@ -68,7 +68,7 @@ Le pattern de l'outil 1 reste en version 1, avec une couleur par case. Les chemi
 
 Deux contraintes sont obligatoires, meme en presence d'une coupe : la diagonale / precede la diagonale \\ de sa case; le trou de sortie d'une diagonale ne peut pas etre le trou d'entree de la suivante. Les croix peuvent etre entrelacees dans le chemin. Les traits pleins representent l'endroit, les traits fins pointilles le dos, et les coupes sont rouges. La diagonale courante a une entree carree et une sortie flechee; les coins sont aussi nommes dans son statut.
 
-Le moteur construit des zones compactes : composantes adjacentes (diagonales comprises) a l'interieur des reperes de 10 x 10 cases. Il termine les diagonales d'une zone avant de la quitter et choisit la prochaine zone selon la distance reelle entre trous, meme si une coupe est necessaire. Les ameliorations locales restent dans leur zone. Un debut verrouille est toujours conserve, meme s'il imposait deja des retours : seule la suite libre est regroupee.
+Le moteur construit des zones naturelles : toutes les cases d'une couleur reliees par un cote ou un coin appartiennent au meme ilot, sans limite de taille et sans decoupage aux reperes des dizaines. Deux ilots qui ne se touchent pas restent separes, meme si leur ecart est inferieur a la distance de coupe. Il termine les diagonales d'une zone avant de la quitter et choisit la prochaine zone selon la distance reelle entre trous, meme si une coupe est necessaire. Les ameliorations locales restent dans leur zone. Un debut verrouille est toujours conserve, meme s'il imposait deja des retours : seule la suite libre est regroupee. Un index spatial accelere la recherche dans les grands ilots sans les subdiviser.
 
 Le meilleur chemin est choisi d'abord selon le nombre de retours de zone, puis selon le score distance + effort des coupes. Le score peut donc augmenter si cela supprime des allers-retours. La memoire du meilleur chemin et l'affichage utilisent exactement le meme critere que le Worker. Les anciens chemins restent charges, mais les anciens scores initiaux et bilans de calcul sont remis a zero une seule fois lors du changement de critere. La progression de l'outil 3 n'est pas modifiee.
 
@@ -94,6 +94,7 @@ node tests/stitch-model.test.js
 node tests/path-zones.test.js
 node tests/path-orientation.test.js
 node tests/zone-optimization.test.js
+node tests/spatial-candidates.test.js
 node tests/workflows.test.js
 node tests/session-view.test.js
 ```

@@ -1,6 +1,53 @@
 (function (root) {
   "use strict";
   function createDiagonalOptimizer(model) {
+    // Buckets never define islands. Candidate costs must include the physical hole distance.
+    function createSpatialCandidates(indices, pointAt) {
+      const size = 8, bins = new Map(), binByIndex = new Map();
+      for (const i of indices) {
+        const point = pointAt(i), bx = Math.floor(point.x / size), by = Math.floor(point.y / size), key = `${bx},${by}`;
+        if (!bins.has(key)) bins.set(key, { key, indices: new Set(), minX: bx * size, minY: by * size,
+          maxX: (bx + 1) * size, maxY: (by + 1) * size });
+        const bin = bins.get(key); bin.indices.add(i); binByIndex.set(i, bin);
+      }
+      function remove(i) {
+        const bin = binByIndex.get(i);
+        if (!bin) return;
+        bin.indices.delete(i); binByIndex.delete(i);
+        if (!bin.indices.size) bins.delete(bin.key);
+      }
+      function nearest(previous, candidateAt) {
+        const end = previous ? model.holes(previous).end : null, visited = new Set();
+        let selected = null;
+        function visit(bin) {
+          if (!bin || visited.has(bin.key)) return;
+          visited.add(bin.key);
+          if (end && selected) {
+            const dx = Math.max(bin.minX - end.x, 0, end.x - bin.maxX);
+            const dy = Math.max(bin.minY - end.y, 0, end.y - bin.maxY);
+            if (dx * dx + dy * dy > selected.value * selected.value) return;
+          }
+          for (const i of bin.indices) {
+            const candidate = candidateAt(i);
+            if (candidate && (!selected || candidate.value < selected.value)) selected = candidate;
+          }
+        }
+        if (end) {
+          const bx = Math.floor(end.x / size), by = Math.floor(end.y / size);
+          for (let radius = 0; radius <= 4; radius++) {
+            for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+              if (!radius || Math.abs(dx) === radius || Math.abs(dy) === radius) visit(bins.get(`${bx + dx},${by + dy}`));
+            }
+            const outside = Math.min(end.x - (bx - radius) * size, (bx + radius + 1) * size - end.x,
+              end.y - (by - radius) * size, (by + radius + 1) * size - end.y);
+            if (selected && selected.value <= outside) return selected;
+          }
+        }
+        for (const bin of bins.values()) visit(bin);
+        return selected;
+      }
+      return { nearest, remove, get remaining() { return binByIndex.size; } };
+    }
     // Each summary keeps the best cost for all four endpoint-direction pairs.
     // A range tree reuses unchanged pieces when testing a new order.
     function createOrderEvaluator(chunks, threshold, constraints, zones) {
@@ -153,7 +200,8 @@
       function greedy() {
         const state = new Uint8Array(cells.length), route = prefix.map(model.copy);
         for (const p of prefix) state[cellIndex.get(model.cellKey(p))] = p.diagonal === "lower" ? 1 : 2;
-        const pendingZones = new Set(indexedZones.filter(zone => zone.indices.some(i => state[i] !== 2)).map(zone => zone.id));
+        const remaining = indexedZones.map(zone => createSpatialCandidates(zone.indices.filter(i => state[i] !== 2), i => cells[i]));
+        const pendingZones = new Set(indexedZones.filter(zone => remaining[zone.id].remaining).map(zone => zone.id));
         let previous = route.at(-1), currentZone = previous ? zones.byCell.get(model.cellKey(previous)) : null;
         function candidateAt(i, geometric = false) {
           if (state[i] === 2) return null;
@@ -179,15 +227,14 @@
               const dy = Math.max(zone.minY - end.y, 0, end.y - zone.maxY);
               if (dx * dx + dy * dy > chosen.value * chosen.value) continue;
             }
-            for (const i of zone.indices) {
-              const candidate = candidateAt(i, true);
-              if (candidate && (!chosen || candidate.value < chosen.value)) chosen = { ...candidate, zoneId: id };
-            }
+            const candidate = remaining[id].nearest(previous, i => candidateAt(i, true));
+            if (candidate && (!chosen || candidate.value < chosen.value)) chosen = { ...candidate, zoneId: id };
           }
           return chosen;
         }
         function append(candidate) {
           route.push(candidate.point); state[candidate.i]++; previous = candidate.point;
+          if (state[candidate.i] === 2) remaining[zones.byCell.get(model.cellKey(candidate.point))].remove(candidate.i);
         }
         if (!previous && cells.length) {
           const start = best[0] || cells[0];
@@ -201,13 +248,8 @@
             if (!next) throw new Error("Aucune zone accessible.");
             currentZone = next.zoneId; append(next);
           }
-          const zone = indexedZones[currentZone];
-          while (zone.indices.some(i => state[i] !== 2)) {
-            let selected = null;
-            for (const i of zone.indices) {
-              const candidate = candidateAt(i);
-              if (candidate && (!selected || candidate.value < selected.value)) selected = candidate;
-            }
+          while (remaining[currentZone].remaining) {
+            const selected = remaining[currentZone].nearest(previous, candidateAt);
             if (!selected) throw new Error("Aucune transition de fil valide.");
             append(selected);
             if (route.length % 128 === 0) emit();
@@ -315,7 +357,7 @@
           }
         }
         function replace(range, points) {
-          route.splice(range.start, points.length, ...points);
+          points.forEach((point, i) => { route[range.start + i] = point; });
           evaluator.replace(range.start, points.map(point => [point]));
           updatePositions(range.start, range.end); current = evaluator.current();
         }
@@ -323,25 +365,26 @@
           for (const range of job.freeRanges) replace(range, best.slice(range.start, range.end));
         }
         function restart(range) {
-          const pending = route.slice(range.start, range.end), ids = new Set(pending.map(model.key));
+          const points = route.slice(range.start, range.end), ids = new Set(points.map(model.key));
+          const pending = createSpatialCandidates(points.map((_, i) => i), i => points[i]);
           const done = new Set(), sequence = [];
           let previous = route[range.start - 1];
-          while (pending.length) {
-            const candidates = [];
-            for (let i = 0; i < pending.length; i++) {
-              const point = pending[i], lower = `${model.cellKey(point)}:lower`;
-              if (point.diagonal === "upper" && ids.has(lower) && !done.has(lower)) continue;
+          while (pending.remaining) {
+            const chosen = pending.nearest(previous, i => {
+              const point = points[i], lower = `${model.cellKey(point)}:lower`;
+              if (point.diagonal === "upper" && ids.has(lower) && !done.has(lower)) return null;
+              let candidate = null;
               for (const direction of [1, -1]) {
-                const oriented = { ...point, direction }, value = stepCost(previous, oriented);
-                if (Number.isFinite(value)) candidates.push({ i, point: oriented,
-                  value: value + Math.random() * (restarts % 3 ? 0.3 : threshold * 0.5) });
+                const oriented = { ...point, direction };
+                const value = stepCost(previous, oriented) + Math.random() * (restarts % 3 ? 0.3 : threshold * 0.5);
+                if (Number.isFinite(value) && (!candidate || value < candidate.value)) candidate = { i, point: oriented, value };
               }
-            }
-            candidates.sort((a, b) => a.value - b.value);
-            const chosen = candidates[0];
+              return candidate;
+            });
             if (!chosen) return;
             sequence.push(chosen.point); done.add(model.key(chosen.point));
-            pending.splice(chosen.i, 1); previous = chosen.point;
+            pending.remove(chosen.i); previous = chosen.point;
+            if (sequence.length % 128 === 0) { emit(); if (expired()) return; }
           }
           replace(range, sequence);
         }
@@ -361,8 +404,13 @@
               publish(); restore(job); restarts++; restart(range);
             }
             const i = range.start + Math.floor(Math.random() * length);
-            const j = range.start - 1 + Math.floor(Math.random() * (length + 1));
+            let j = range.start - 1 + Math.floor(Math.random() * (length + 1));
             const p = route[i], mate = positions.get(`${model.cellKey(p)}:${p.diagonal === "lower" ? "upper" : "lower"}`);
+            if (length > 200 && attempts % 10) {
+              const x = p.x + Math.floor(Math.random() * 7) - 3, y = p.y + Math.floor(Math.random() * 7) - 3;
+              const target = positions.get(`${x},${y}:${Math.random() < 0.5 ? "lower" : "upper"}`);
+              if (target !== undefined && target >= range.start && target < range.end) j = target - (Math.random() < 0.5 ? 1 : 0);
+            }
             if (j !== i && j !== i - 1 && (p.diagonal === "lower" ? j < mate : j >= mate)) {
               const candidate = evaluator.evaluateMove(i, j);
               if (improvesOrder(candidate, current)) {
@@ -391,7 +439,7 @@
       return { path: best, metrics: bestMetrics, initialMetrics, stage, zone: zoneSnapshot(performance.now()), elapsedMs: performance.now() - started,
         lastImprovementMs: performance.now() - lastImprovement, stagnationLimitMs: limit, improvements, restarts, progress: 100, phase };
     }
-    return { optimizePath, createOrderEvaluator, improvesOrder, satisfiesConstraints: model.satisfiesConstraints };
+    return { optimizePath, createOrderEvaluator, createSpatialCandidates, improvesOrder, satisfiesConstraints: model.satisfiesConstraints };
   }
   function workerMain(createModel, createOptimizer) {
     self.onmessage = event => {

@@ -34,14 +34,13 @@
     function compareZoneMetrics(a, b) {
       return a.zoneReturns - b.zoneReturns || a.score - b.score || a.cuts - b.cuts || a.distance - b.distance;
     }
-    function createZones(cells, size = 10) {
-      if (!Number.isInteger(size) || size < 1) throw new Error("Taille de zone invalide.");
+    function createZones(cells) {
       const byCell = new Map(), available = new Map(cells.map(p => [cellKey(p), p])), zones = [];
       const ordered = [...cells].sort((a, b) => a.y - b.y || a.x - b.x);
-      // Connected patches inside the existing ten-cell grid stay compact, even in huge islands.
+      // Eight-connected components: touching sides or corners belong to the same island.
       for (const seed of ordered) {
         if (byCell.has(cellKey(seed))) continue;
-        const id = zones.length, tileX = Math.floor(seed.x / size), tileY = Math.floor(seed.y / size);
+        const id = zones.length;
         const zone = { id, cells: [], minX: seed.x, maxX: seed.x + 1, minY: seed.y, maxY: seed.y + 1 };
         const pending = [seed]; byCell.set(cellKey(seed), id);
         while (pending.length) {
@@ -51,7 +50,7 @@
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
             if (!dx && !dy) continue;
             const x = cell.x + dx, y = cell.y + dy, k = `${x},${y}`;
-            if (Math.floor(x / size) !== tileX || Math.floor(y / size) !== tileY || byCell.has(k)) continue;
+            if (byCell.has(k)) continue;
             const neighbor = available.get(k);
             if (neighbor) { byCell.set(k, id); pending.push(neighbor); }
           }
@@ -72,7 +71,7 @@
         }
         return { ...result, zoneReturns, visitedZones: visited.size, zoneCount: zones.length };
       }
-      return { size, byCell, zones, measure };
+      return { byCell, zones, measure };
     }
     function validateRoute(path, cells, complete = true) {
       if (!Array.isArray(path)) return "Chemin absent.";
