@@ -15,21 +15,64 @@
       const end = holes(a).end, start = holes(b).start;
       return Math.hypot(end.x - start.x, end.y - start.y);
     }
-    function cost(a, b, threshold = 10) {
+    function cost(a, b, threshold = 10, includeCutDistance = false) {
       if (!a || !b) return 0;
       const d = distance(a, b);
       if (d === 0) return Infinity;
-      return b.cutBefore || d > threshold ? threshold * 3 : d;
+      return b.cutBefore || d > threshold ? threshold * 3 + (includeCutDistance ? d : 0) : d;
     }
-    function metrics(path, threshold = 10) {
-      let distanceTotal = 0, score = 0, cuts = 0;
+    function metrics(path, threshold = 10, includeCutDistance = false) {
+      let distanceTotal = 0, score = 0, cuts = 0, cutTravel = 0;
       for (let i = 1; i < path.length; i++) {
         const d = distance(path[i - 1], path[i]);
         distanceTotal += d;
-        if (path[i].cutBefore || d > threshold) cuts++;
-        score += cost(path[i - 1], path[i], threshold);
+        if (path[i].cutBefore || d > threshold) { cuts++; cutTravel += d; }
+        score += cost(path[i - 1], path[i], threshold, includeCutDistance);
       }
-      return { distance: distanceTotal, score, realisticScore: score, cuts, frontDistance: path.length * Math.SQRT2 };
+      return { distance: distanceTotal, score, realisticScore: score, cuts, cutTravel, frontDistance: path.length * Math.SQRT2 };
+    }
+    function compareZoneMetrics(a, b) {
+      return a.zoneReturns - b.zoneReturns || a.score - b.score || a.cuts - b.cuts || a.distance - b.distance;
+    }
+    function createZones(cells, size = 10) {
+      if (!Number.isInteger(size) || size < 1) throw new Error("Taille de zone invalide.");
+      const byCell = new Map(), available = new Map(cells.map(p => [cellKey(p), p])), zones = [];
+      const ordered = [...cells].sort((a, b) => a.y - b.y || a.x - b.x);
+      // Connected patches inside the existing ten-cell grid stay compact, even in huge islands.
+      for (const seed of ordered) {
+        if (byCell.has(cellKey(seed))) continue;
+        const id = zones.length, tileX = Math.floor(seed.x / size), tileY = Math.floor(seed.y / size);
+        const zone = { id, cells: [], minX: seed.x, maxX: seed.x + 1, minY: seed.y, maxY: seed.y + 1 };
+        const pending = [seed]; byCell.set(cellKey(seed), id);
+        while (pending.length) {
+          const cell = pending.pop(); zone.cells.push(cell);
+          zone.minX = Math.min(zone.minX, cell.x); zone.maxX = Math.max(zone.maxX, cell.x + 1);
+          zone.minY = Math.min(zone.minY, cell.y); zone.maxY = Math.max(zone.maxY, cell.y + 1);
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const x = cell.x + dx, y = cell.y + dy, k = `${x},${y}`;
+            if (Math.floor(x / size) !== tileX || Math.floor(y / size) !== tileY || byCell.has(k)) continue;
+            const neighbor = available.get(k);
+            if (neighbor) { byCell.set(k, id); pending.push(neighbor); }
+          }
+        }
+        zone.cells.sort((a, b) => a.y - b.y || a.x - b.x);
+        zones.push(zone);
+      }
+      function measure(path, threshold = 10) {
+        const result = metrics(path, threshold, true), visited = new Set();
+        let previous, zoneReturns = 0;
+        for (const point of path) {
+          const id = byCell.get(cellKey(point));
+          if (id === undefined) continue;
+          if (id !== previous) {
+            if (visited.has(id)) zoneReturns++;
+            visited.add(id); previous = id;
+          }
+        }
+        return { ...result, zoneReturns, visitedZones: visited.size, zoneCount: zones.length };
+      }
+      return { size, byCell, zones, measure };
     }
     function validateRoute(path, cells, complete = true) {
       if (!Array.isArray(path)) return "Chemin absent.";
@@ -58,7 +101,7 @@
       return (constraints?.forcedCuts || []).every(p => cuts.has(key(p)));
     }
     // For a fixed order, dynamic programming finds the best of both sewing directions.
-    function orient(sequence, threshold = 10, constraints = {}) {
+    function orient(sequence, threshold = 10, constraints = {}, includeCutDistance = false) {
       if (!sequence.length) return [];
       const cutKeys = new Set((constraints.forcedCuts || []).map(key));
       const path = sequence.map(p => ({ ...copy(p), cutBefore: p.cutBefore || cutKeys.has(key(p)) || undefined }));
@@ -73,7 +116,7 @@
           if (fixed && (key(fixed) !== key(path[i]) || fixed.direction !== direction)) continue;
           if (!i) { current[d] = 0; continue; }
           for (let before = 0; before < 2; before++) {
-            const score = previous[before] + cost({ ...path[i - 1], direction: before ? -1 : 1 }, { ...path[i], direction }, threshold);
+            const score = previous[before] + cost({ ...path[i - 1], direction: before ? -1 : 1 }, { ...path[i], direction }, threshold, includeCutDistance);
             if (score < current[d]) { current[d] = score; parents[i * 2 + d] = before; }
           }
         }
@@ -173,7 +216,7 @@
       const complete = [...cells.values()].filter(bits => bits === 3).length;
       return { cells, complete, partial: cells.size - complete };
     }
-    return { cellKey, key, copy, holes, sameHole, distance, cost, metrics, validateRoute, satisfiesConstraints,
+    return { cellKey, key, copy, holes, sameHole, distance, cost, metrics, createZones, compareZoneMetrics, validateRoute, satisfiesConstraints,
       orient, expandCells, validatePattern, upgradePathsFile, upgradeProgressSave, completion };
   }
   root.createStitchModel = createStitchModel;

@@ -62,17 +62,18 @@ for (let run = 0; run < 6; run++) {
   const initial = model.expandCells(cells);
   initial[8].cutBefore = true;
   const constraints = run % 2 ? {} : { start: initial[0], lockedPrefix: initial.slice(0, 3), forcedCuts: [initial[8]] };
-  let snapshots = 0, score = Infinity;
+  let snapshots = 0, previousMetrics;
   const result = optimizer.optimizePath({ points: cells, initialPath: initial, constraints, stagnationLimitMs: 50 }, snapshot => {
     if (!snapshot.path) return;
     assert.equal(model.validateRoute(snapshot.path, cells), "");
     assert.ok(model.satisfiesConstraints(snapshot.path, constraints));
-    assert.ok(snapshot.metrics.score <= score + 1e-7);
-    score = snapshot.metrics.score; snapshots++;
+    if (previousMetrics) assert.ok(model.compareZoneMetrics(snapshot.metrics, previousMetrics) <= 1e-7);
+    previousMetrics = snapshot.metrics; snapshots++;
   });
   assert.ok(snapshots > 0);
   assert.equal(model.validateRoute(result.path, cells), "");
-  assert.ok(result.metrics.score <= result.initialMetrics.score + 1e-7);
+  assert.ok(model.compareZoneMetrics(result.metrics, result.initialMetrics) <= 1e-7);
+  assert.ok(result.path.find(p => model.key(p) === model.key(initial[8])).cutBefore, "Explicit cuts remain attached to their diagonal");
 }
 
 // Check the user's immutable repository save, without writing to it.

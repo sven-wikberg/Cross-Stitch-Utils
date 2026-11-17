@@ -3,10 +3,16 @@
   function createDiagonalOptimizer(model) {
     function optimizePath(options, report = () => {}) {
       const cells = options.points || [], threshold = options.cutThreshold || 10;
-      const constraints = options.constraints || {}, prefix = constraints.lockedPrefix?.length
+      const originalConstraints = options.constraints || {};
+      const forcedCuts = new Map([...(originalConstraints.forcedCuts || []),
+        ...(options.initialPath || []).filter(p => p.cutBefore)].map(p => [model.key(p), model.copy(p)]));
+      const constraints = { ...originalConstraints, forcedCuts: [...forcedCuts.values()] }, prefix = constraints.lockedPrefix?.length
         ? constraints.lockedPrefix.map(model.copy) : constraints.start ? [model.copy(constraints.start)] : [];
       const cuts = new Set((constraints.forcedCuts || []).map(model.key));
       const fixedLength = prefix.length;
+      const zones = model.createZones(cells);
+      const stepCost = (a, b) => model.cost(a, b, threshold, true);
+      const orient = sequence => model.orient(sequence, threshold, constraints, true);
       const started = performance.now(), limit = Math.max(10, options.stagnationLimitMs || 60000);
       let lastImprovement = started, lastReport = 0, improvements = 0, restarts = 0, best, bestMetrics, initialMetrics;
       let changed = false, phase = "Construction des diagonales";
@@ -22,9 +28,8 @@
       }
       function consider(path) {
         if (model.validateRoute(path, cells) || !model.satisfiesConstraints(path, constraints)) return false;
-        const metrics = model.metrics(path, threshold);
-        if (!best || metrics.score < bestMetrics.score - 1e-8
-            || (Math.abs(metrics.score - bestMetrics.score) < 1e-8 && metrics.distance < bestMetrics.distance - 1e-8)) {
+        const metrics = zones.measure(path, threshold);
+        if (!best || model.compareZoneMetrics(metrics, bestMetrics) < -1e-8) {
           if (best) improvements++;
           best = path.map(model.copy); bestMetrics = metrics; initialMetrics ||= metrics;
           changed = true; lastImprovement = performance.now();
@@ -37,7 +42,7 @@
         const sequence = [...prefix, ...order.flatMap(cell => ["lower", "upper"].map(diagonal => ({
           x: cell.x, y: cell.y, diagonal, direction: 1
         }))).filter(p => !prefixIds.has(model.key(p)))];
-        return model.orient(sequence, threshold, constraints);
+        return orient(sequence);
       }
       if (options.initialPath?.length) consider(options.initialPath);
       if (!best) consider(makeSeed(cells));
@@ -45,29 +50,8 @@
       emit(true);
       if (!cells.length) return { path: [], metrics: bestMetrics, initialMetrics };
 
-      // Danish-style runs stitch lower legs first, then return along the upper legs.
-      for (const axis of ["y", "x"]) {
-        if (expired()) break;
-        const other = axis === "y" ? "x" : "y", groups = new Map();
-        for (const cell of cells) {
-          if (!groups.has(cell[axis])) groups.set(cell[axis], []);
-          groups.get(cell[axis]).push(cell);
-        }
-        const sequence = [...prefix];
-        for (const [, group] of [...groups].sort((a, b) => a[0] - b[0])) {
-          group.sort((a, b) => a[other] - b[other]);
-          for (const diagonal of ["lower", "upper"]) {
-            const order = diagonal === "lower" ? group : [...group].reverse();
-            for (const cell of order) {
-              const action = { x: cell.x, y: cell.y, diagonal, direction: 1 };
-              if (!prefixIds.has(model.key(action))) sequence.push(action);
-            }
-          }
-        }
-        consider(model.orient(sequence, threshold, constraints));
-      }
-
       const cellIndex = new Map(cells.map((p, i) => [model.cellKey(p), i]));
+      const indexedZones = zones.zones.map(zone => ({ ...zone, indices: zone.cells.map(p => cellIndex.get(model.cellKey(p))) }));
       function nearCells(x, y, radius = 3) {
         const found = [];
         for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
@@ -76,41 +60,144 @@
         }
         return found;
       }
-      function greedy() {
-        const state = new Uint8Array(cells.length);
-        const route = prefix.map(model.copy);
+      function greedy(interruptible = true) {
+        const state = new Uint8Array(cells.length), route = prefix.map(model.copy);
         for (const p of prefix) state[cellIndex.get(model.cellKey(p))] = p.diagonal === "lower" ? 1 : 2;
-        let previous = route.at(-1);
-        if (!previous) {
-          const start = cells[(restarts * 7919) % cells.length];
-          previous = { x: start.x, y: start.y, diagonal: "lower", direction: restarts % 2 ? -1 : 1 };
-          if (cuts.has(model.key(previous))) previous.cutBefore = true;
-          route.push(previous); state[cellIndex.get(model.cellKey(previous))] = 1;
+        const pendingZones = new Set(indexedZones.filter(zone => zone.indices.some(i => state[i] !== 2)).map(zone => zone.id));
+        let previous = route.at(-1), currentZone = previous ? zones.byCell.get(model.cellKey(previous)) : null;
+        function candidateAt(i, geometric = false) {
+          if (state[i] === 2) return null;
+          const cell = cells[i], diagonal = state[i] ? "upper" : "lower";
+          let chosen = null;
+          for (const direction of [1, -1]) {
+            const point = { x: cell.x, y: cell.y, diagonal, direction };
+            if (cuts.has(model.key(point))) point.cutBefore = true;
+            const distance = previous ? model.distance(previous, point) : 0;
+            if (previous && distance === 0) continue;
+            const value = geometric ? distance : stepCost(previous, point) + (restarts ? Math.random() * 0.18 : 0);
+            if (!chosen || value < chosen.value) chosen = { point, i, value };
+          }
+          return chosen;
         }
-        while (route.length < cells.length * 2) {
-          const end = model.holes(previous).end;
-          let selected = null, selectedIndex = -1, selectedCost = Infinity;
-          function visit(i) {
-            if (state[i] === 2) return;
-            const cell = cells[i], diagonal = state[i] ? "upper" : "lower";
-            const candidate = { x: cell.x, y: cell.y, diagonal, direction: 1 };
-            if (cuts.has(model.key(candidate))) candidate.cutBefore = true;
-            for (const direction of [1, -1]) {
-              candidate.direction = direction;
-              const score = model.cost(previous, candidate, threshold);
-              // Randomized ties give genuinely different, still legal, starting routes.
-              const tie = restarts ? Math.random() * 0.18 : 0;
-              if (score + tie < selectedCost) { selectedCost = score + tie; selected = model.copy(candidate); selectedIndex = i; }
+        function nearestZone() {
+          const end = previous ? model.holes(previous).end : null;
+          let chosen = null;
+          for (const id of pendingZones) {
+            const zone = indexedZones[id];
+            if (end && chosen) {
+              const dx = Math.max(zone.minX - end.x, 0, end.x - zone.maxX);
+              const dy = Math.max(zone.minY - end.y, 0, end.y - zone.maxY);
+              if (dx * dx + dy * dy > chosen.value * chosen.value) continue;
+            }
+            for (const i of zone.indices) {
+              const candidate = candidateAt(i, true);
+              if (candidate && (!chosen || candidate.value < chosen.value)) chosen = { ...candidate, zoneId: id };
             }
           }
-          nearCells(end.x, end.y).forEach(visit);
-          if (!selected) for (let i = 0; i < cells.length; i++) visit(i);
-          if (!selected) throw new Error("Aucune transition de fil valide.");
-          route.push(selected); state[selectedIndex]++; previous = selected;
-          if (route.length % 512 === 0) { emit(); if (expired()) return null; }
+          return chosen;
         }
-        return model.orient(route, threshold, constraints);
+        function append(candidate) {
+          route.push(candidate.point); state[candidate.i]++; previous = candidate.point;
+        }
+        if (!previous && cells.length) {
+          const start = restarts ? cells[(restarts * 7919) % cells.length] : best[0] || cells[0];
+          const i = cellIndex.get(model.cellKey(start));
+          append(candidateAt(i)); currentZone = zones.byCell.get(model.cellKey(start));
+        }
+        while (pendingZones.size) {
+          if (!pendingZones.has(currentZone)) {
+            // The next zone is chosen by real hole distance, even when the thread is cut.
+            const next = nearestZone();
+            if (!next) throw new Error("Aucune zone accessible.");
+            currentZone = next.zoneId; append(next);
+          }
+          const zone = indexedZones[currentZone];
+          while (zone.indices.some(i => state[i] !== 2)) {
+            let selected = null;
+            for (const i of zone.indices) {
+              const candidate = candidateAt(i);
+              if (candidate && (!selected || candidate.value < selected.value)) selected = candidate;
+            }
+            if (!selected) throw new Error("Aucune transition de fil valide.");
+            append(selected);
+            if (route.length % 128 === 0) { emit(); if (interruptible && expired()) return null; }
+          }
+          pendingZones.delete(currentZone);
+          phase = `Zones terminees : ${indexedZones.length - pendingZones.size} / ${indexedZones.length}`;
+          emit();
+          if (interruptible && expired()) return null;
+        }
+        return orient(route);
       }
+      phase = "Regroupement des zones voisines";
+      consider(greedy(false));
+      emit(true);
+
+      const zoneBins = new Map(), zoneNeighbors = new Map();
+      for (const zone of indexedZones) {
+        zone.center = { x: (zone.minX + zone.maxX) / 2, y: (zone.minY + zone.maxY) / 2 };
+        const bin = `${Math.floor(zone.center.x / 10)},${Math.floor(zone.center.y / 10)}`;
+        if (!zoneBins.has(bin)) zoneBins.set(bin, []);
+        zoneBins.get(bin).push(zone.id);
+      }
+      function neighboringZoneIds(id) {
+        if (zoneNeighbors.has(id)) return zoneNeighbors.get(id);
+        const center = indexedZones[id].center, bx = Math.floor(center.x / 10), by = Math.floor(center.y / 10);
+        const candidates = new Set();
+        let stopAt = 7;
+        for (let radius = 0; radius <= stopAt; radius++) {
+          for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+            if (radius && Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+            for (const other of zoneBins.get(`${bx + dx},${by + dy}`) || []) if (other !== id) candidates.add(other);
+          }
+          if (candidates.size >= 24) stopAt = Math.min(stopAt, radius + 1);
+        }
+        if (!candidates.size) for (const zone of indexedZones) if (zone.id !== id) candidates.add(zone.id);
+        const distance = other => Math.hypot(indexedZones[other].center.x - center.x, indexedZones[other].center.y - center.y);
+        const nearest = [...candidates].sort((a, b) => distance(a) - distance(b)).slice(0, 24);
+        zoneNeighbors.set(id, nearest);
+        return nearest;
+      }
+      function improveZoneOrder(input) {
+        const blocks = [];
+        input.forEach((point, index) => {
+          const id = zones.byCell.get(model.cellKey(point));
+          if (blocks.at(-1)?.id !== id) blocks.push({ id, points: [], locked: false });
+          blocks.at(-1).points.push(point);
+          if (index < fixedLength) blocks.at(-1).locked = true;
+        });
+        if (blocks.length < 3) return;
+        const fixedBlocks = blocks.findLastIndex(block => block.locked) + 1;
+        const positions = new Map();
+        const updatePositions = () => blocks.forEach((block, index) => positions.set(block.id, index));
+        updatePositions();
+        const edge = (a, b) => a && b ? stepCost(a.points.at(-1), b.points[0]) : 0;
+        let accepted = 0;
+        phase = "Optimisation des liaisons entre zones";
+        for (let attempt = 0; attempt < Math.max(2000, blocks.length * 50) && !expired(); attempt++) {
+          const i = fixedBlocks + Math.floor(Math.random() * (blocks.length - fixedBlocks));
+          if (i >= blocks.length) break;
+          const block = blocks[i], neighbors = neighboringZoneIds(block.id);
+          if (!neighbors.length) break;
+          let j = positions.get(neighbors[Math.floor(Math.random() * neighbors.length)]);
+          if (Math.random() < 0.5) j--;
+          if (attempt % 64 === 0) j = fixedBlocks - 1;
+          if (j < fixedBlocks - 1 || j === i || j === i - 1) continue;
+          const before = blocks[i - 1], after = blocks[i + 1], left = blocks[j], right = blocks[j + 1];
+          const delta = edge(before, after) + edge(left, block) + edge(block, right)
+            - edge(before, block) - edge(block, after) - edge(left, right);
+          if (delta < -1e-8) {
+            blocks.splice(i, 1); blocks.splice(j >= i ? j : j + 1, 0, block);
+            updatePositions(); accepted++;
+            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(blocks.flatMap(b => b.points));
+          }
+          if (attempt % 128 === 0) emit();
+        }
+        const route = blocks.flatMap(block => block.points);
+        consider(route);
+        if (!expired()) consider(orient(route));
+      }
+
       function improve(input) {
         let route = input.map(model.copy);
         const positions = new Map();
@@ -123,19 +210,23 @@
           if (i >= route.length) break;
           const p = route[i], mate = positions.get(`${model.cellKey(p)}:${p.diagonal === "lower" ? "upper" : "lower"}`);
           const nearby = nearCells(p.x, p.y, 2);
-          const targetCell = cells[nearby[Math.floor(Math.random() * nearby.length)]];
+          const sameZone = nearby.filter(k => zones.byCell.get(model.cellKey(cells[k])) === zones.byCell.get(model.cellKey(p)));
+          const targetCell = cells[sameZone[Math.floor(Math.random() * sameZone.length)]];
           let j = positions.get(`${model.cellKey(targetCell)}:${Math.random() < 0.5 ? "lower" : "upper"}`);
           if (Math.random() < 0.5) j--;
           if (attempts % 64 === 0) j = fixedLength - 1;
           if (j < fixedLength - 1 || j === i || j === i - 1
               || (p.diagonal === "lower" ? j >= mate : j < mate)) continue;
           const before = route[i - 1], after = route[i + 1], left = route[j], right = route[j + 1];
-          const oldCost = model.cost(before, p, threshold) + model.cost(p, after, threshold) + model.cost(left, right, threshold);
+          const zoneId = zones.byCell.get(model.cellKey(p));
+          if ((!left || zones.byCell.get(model.cellKey(left)) !== zoneId)
+              && (!right || zones.byCell.get(model.cellKey(right)) !== zoneId)) continue;
+          const oldCost = stepCost(before, p) + stepCost(p, after) + stepCost(left, right);
           let chosen, delta = -1e-8;
           for (const direction of [1, -1]) {
             const candidate = { ...p, direction };
-            const gain = model.cost(before, after, threshold) + model.cost(left, candidate, threshold)
-              + model.cost(candidate, right, threshold) - oldCost;
+            const gain = stepCost(before, after) + stepCost(left, candidate)
+              + stepCost(candidate, right) - oldCost;
             if (gain < delta) { delta = gain; chosen = candidate; }
           }
           if (chosen) {
@@ -146,14 +237,16 @@
           if (attempts % 256 === 0) emit();
         }
         consider(route);
-        if (!expired()) consider(model.orient(route, threshold, constraints));
+        if (!expired()) consider(orient(route));
       }
+      improveZoneOrder(best);
       phase = "Recherche des transitions au dos";
       while (!expired()) {
         const candidate = greedy();
-        if (candidate) { consider(candidate); phase = "Optimisation des diagonales"; improve(candidate); }
+        if (candidate) { consider(candidate); phase = "Optimisation dans chaque zone"; improve(candidate); }
         if (!expired()) improve(best);
-        restarts++; phase = "Nouvelle recherche de chemin"; emit();
+        if (!expired()) improveZoneOrder(best);
+        restarts++; phase = "Recherche entre zones voisines"; emit();
       }
       phase = "Recherche terminee"; emit(true);
       return { path: best, metrics: bestMetrics, initialMetrics, elapsedMs: performance.now() - started,

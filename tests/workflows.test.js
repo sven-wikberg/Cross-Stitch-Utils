@@ -204,6 +204,18 @@ async function run() {
     await planner.evaluate(() => { pathStagnationLimitMs = 60000; renderPathTool(); });
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner.png"), fullPage: true });
 
+    const alternating = structuredClone(data);
+    alternating.paths[0].points = [0, 3, 1, 4, 2, 5].map(i => data.paths[0].points[i]);
+    await planner.locator('[data-step="load"]').click();
+    await planner.locator("#patternJsonFile").setInputFiles({ name: "alternating.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(alternating)) });
+    assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).zoneReturns > 0));
+    await planner.evaluate(() => { pathStagnationLimitMs = 80; });
+    await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => !pathAlgorithmRunning);
+    assert.equal(await planner.locator("#metricZoneReturns").innerText(), "0");
+    assert.equal(await planner.evaluate(() => pathPerformanceMetrics(bestPathsByDmc[selectedDmc]).zoneReturns), 0);
+    assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).cutTravel > 0));
+
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();
     await planner.locator("#diagonalMode").selectOption("upper");
@@ -292,6 +304,7 @@ async function run() {
       const route = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
       await planner.locator('[data-step="paths"]').click();
       await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 200; renderPathTool(); }, route.dmc);
+      const initialZoneMetrics = await planner.evaluate(() => pathPerformanceMetrics(currentPath()));
       await planner.locator("#optimizedPathButton").click();
       await planner.waitForFunction(() => !pathAlgorithmRunning, null, { timeout: 30000 });
       const result = await planner.evaluate(() => ({ count: currentPath().length,
@@ -299,10 +312,11 @@ async function run() {
         initial: pathOptimizationBaselinesByDmc[selectedDmc], feedback: pathAlgorithmDistance.textContent }));
       assert.equal(result.count, route.points.length * 2);
       assert.equal(result.error, "");
-      assert.ok(result.metrics.score <= result.initial + 0.0001);
+      assert.ok(require("../src/stitch-model.js").compareZoneMetrics(result.metrics, initialZoneMetrics) <= 0.0001);
+      assert.equal(result.metrics.zoneReturns, 0);
       assert.doesNotMatch(result.feedback, /Erreur/);
       await planner.evaluate(() => plannerSaveQueue);
-      console.log(`large diagonal worker passed (${result.count} diagonals, score ${result.metrics.score.toFixed(2)}, initial ${result.initial.toFixed(2)})`);
+      console.log(`large diagonal worker passed (${result.count} diagonals, zone returns ${initialZoneMetrics.zoneReturns} -> ${result.metrics.zoneReturns}, score ${result.metrics.score.toFixed(2)})`);
     }
     assert.deepEqual(errors, []);
     console.log("browser workflows passed: resume, undo/redo, session, batch, constraints, group editing, source overlay, responsive layout");
