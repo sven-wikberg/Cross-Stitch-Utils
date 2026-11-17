@@ -58,7 +58,7 @@ Les brouillons des outils 2 et 3 utilisent IndexedDB, avec migration du stockage
 - Outil 1 : en verification, regler l'opacite de l'image source et le zoom commun. Dans les associations, `Corriger les groupes` permet de fusionner deux groupes ou de separer les cases cochees. La couleur du groupe cible est conservee a la fusion; un groupe separe reste a classer. Les autres associations et corrections de cases sont conservees.
 - Outil 2 : `Optimiser toutes les couleurs` traite la file en arriere-plan. Arreter conserve les meilleurs chemins; reprendre continue avec la couleur interrompue. Le depart impose, les premiers points verrouilles et les coupes manuelles sont propres a chaque couleur. Une coupe imposee conserve l'adjacence de ses deux points pendant la recherche.
 - Les chemins exportent `settings.cutThreshold` et, pour chaque couleur, `forcedCuts` et `constraints`. Le score compte chaque coupe comme trois fois le seuil. Les anciens chemins sans reglage utilisent le seuil de 10 cases.
-- Outil 3 : `Mode session` met en avant les huit prochains points; `Plein ecran` est independant. `Annuler` et `Retablir` gardent les 100 dernieres actions. Le mode `Marquer jusqu'a la case cliquee` permet de corriger une portion d'un coup. Maintenir Espace ne valide pas plusieurs points.
+- Outil 3 : `Vue rapprochee` affiche la zone autour du point a broder et met en avant les huit prochains points. Elle suit automatiquement l'avancement, sans agrandir le canvas du pattern entier. `Vue d'ensemble` revient au pattern complet; `Plein ecran` est independant. `Annuler` et `Retablir` gardent les 100 dernieres actions. Le mode `Marquer jusqu'a la case cliquee` permet de corriger une portion d'un coup. Maintenir Espace ne valide pas plusieurs points.
 
 Les trois outils restent independants : aucun brouillon n'est partage entre eux. Le passage de l'un a l'autre se fait toujours par un fichier JSON explicite.
 
@@ -69,6 +69,7 @@ node tests/path-optimizer.test.js
 node tests/github-sync.test.js
 node tests/upgrades.test.js
 node tests/workflows.test.js
+node tests/session-view.test.js
 ```
 
 Les tests de parcours necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import et la reprise du gros fichier inclus au depot. Le moteur calcule les distances a la demande au-dela de 4 000 points afin d'eviter une allocation memoire quadratique.

@@ -90,6 +90,8 @@ let localSaveError = null;
 let localSavePending = 0;
 let conflictRemote = null;
 let sessionMode = false;
+let stitchView = { startX: 0, startY: 0, width: 0, height: 0, cellSize: 1 };
+let centerAfterSession = false;
 let undoActions = [];
 let redoActions = [];
 let viewPosition = { left: 0, top: 0 };
@@ -240,14 +242,15 @@ function renderProgressTool() {
   selectedProgressPanel.classList.toggle("hidden", !showProgressPanels);
   zoomPanel.classList.toggle("hidden", !showProgressPanels);
 
+  document.body.classList.toggle("session-mode", sessionMode && activeProgressStep === "stitch");
   renderLoadedPaths();
   renderBuiltinProgressControls();
   renderGithubConnectionControls();
   renderStitchView();
   renderZoomControls();
   renderProgressMetrics();
-  document.body.classList.toggle("session-mode", sessionMode && activeProgressStep === "stitch");
-  document.querySelector("#sessionModeButton").textContent = sessionMode ? "Quitter la session" : "Mode session";
+  document.querySelector("#sessionModeButton").textContent = sessionMode ? "Vue d'ensemble" : "Vue rapprochee";
+  document.querySelector("#sessionModeButton").setAttribute("aria-pressed", String(sessionMode));
   undoActionButton.disabled = undoActions.length === 0;
   redoActionButton.disabled = redoActions.length === 0;
   renderCutNotice();
@@ -377,19 +380,22 @@ function renderStitchView() {
     availableGridWidth(stitchCanvas) - GRID_RULER_SIZE
   );
   const cellSize = Math.max(2, Math.round((sessionMode ? Math.max(22, baseCellSize) : baseCellSize) * stitchZoom));
+  stitchView = visibleStitchGrid(pattern.grid, cellSize);
   const selectedColor = colorByDmc.get(selectedDmc);
   stitchColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
 
-  stitchCanvas.width = GRID_RULER_SIZE + pattern.grid.width * cellSize;
-  stitchCanvas.height = GRID_RULER_SIZE + pattern.grid.height * cellSize;
+  stitchCanvas.width = GRID_RULER_SIZE + stitchView.width * cellSize;
+  stitchCanvas.height = GRID_RULER_SIZE + stitchView.height * cellSize;
   context.clearRect(0, 0, stitchCanvas.width, stitchCanvas.height);
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
 
   const stitchedCellKeys = stitchedCellKeysForProgress();
   pattern.grid.cells.forEach((cell) => {
+    if (cell.x < stitchView.startX || cell.x >= stitchView.startX + stitchView.width
+        || cell.y < stitchView.startY || cell.y >= stitchView.startY + stitchView.height) return;
     const color = colorByDmc.get(cell.dmc);
     if (cell.empty) {
       context.fillStyle = "#ffffff";
@@ -400,19 +406,24 @@ function renderStitchView() {
     }
 
     context.fillRect(
-      GRID_RULER_SIZE + cell.x * cellSize,
-      GRID_RULER_SIZE + cell.y * cellSize,
+      GRID_RULER_SIZE + (cell.x - stitchView.startX) * cellSize,
+      GRID_RULER_SIZE + (cell.y - stitchView.startY) * cellSize,
       cellSize,
       cellSize
     );
   });
 
   if (cellSize >= 6) {
-    drawGridLines(context, pattern.grid.width, pattern.grid.height, cellSize);
+    drawGridLines(context, stitchView.width, stitchView.height, cellSize);
   }
 
-  drawGridRulers(context, pattern.grid.width, pattern.grid.height, cellSize);
+  context.save();
+  context.beginPath();
+  context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, stitchView.width * cellSize, stitchView.height * cellSize);
+  context.clip();
   drawStitchProgress(context, cellSize);
+  context.restore();
+  drawGridRulers(context, stitchView.width, stitchView.height, cellSize);
   renderStitchColorLegend();
   renderCompletedColorList();
   renderStitchControls();
@@ -421,19 +432,42 @@ function renderStitchView() {
   centerCurrentPointIfNeeded(cellSize);
 }
 
+function visibleStitchGrid(grid, cellSize) {
+  if (!sessionMode) return { startX: 0, startY: 0, width: grid.width, height: grid.height, cellSize };
+  const wrapper = stitchCanvas.parentElement;
+  const availableWidth = availableGridWidth(stitchCanvas) - GRID_RULER_SIZE;
+  const availableHeight = Math.max(160, Math.min(window.innerHeight - 150,
+    window.innerHeight - wrapper.getBoundingClientRect().top - 100));
+  const width = Math.min(grid.width, Math.max(1, Math.floor(availableWidth / cellSize)));
+  const height = Math.min(grid.height, Math.max(1, Math.floor(availableHeight / cellSize)));
+  const path = pathForDmc(selectedDmc);
+  const point = path?.points[stitchedCountForDmc(selectedDmc)] || path?.points.at(-1) || { x: 0, y: 0 };
+  return {
+    startX: Math.max(0, Math.min(grid.width - width, point.x - Math.floor(width / 2))),
+    startY: Math.max(0, Math.min(grid.height - height, point.y - Math.floor(height / 2))),
+    width, height, cellSize
+  };
+}
+
 function renderZoomControls() {
   zoomLevelText.textContent = `${Math.round(stitchZoom * 100)}%`;
   zoomOutButton.disabled = stitchZoom <= MIN_STITCH_ZOOM;
   zoomInButton.disabled = stitchZoom >= MAX_STITCH_ZOOM;
-  followCurrentPointButton.classList.toggle("selected", followCurrentPoint);
-  followCurrentPointButton.textContent = followCurrentPoint ? "Suivi actif" : "Suivre le point";
+  followCurrentPointButton.classList.toggle("selected", followCurrentPoint || sessionMode);
+  followCurrentPointButton.textContent = followCurrentPoint || sessionMode ? "Suivi actif" : "Suivre le point";
+  followCurrentPointButton.disabled = sessionMode;
 }
 
 function centerCurrentPointIfNeeded(cellSize) {
   const path = pathForDmc(selectedDmc);
-  if (restoringSession || (!followCurrentPoint && !sessionMode) || !path) {
+  if (sessionMode) {
+    stitchCanvas.parentElement.scrollTo(0, 0);
     return;
   }
+  if (restoringSession || (!followCurrentPoint && !centerAfterSession) || !path) {
+    return;
+  }
+  centerAfterSession = false;
 
   const stitchedCount = stitchedCountForDmc(selectedDmc);
   const point = path.points[stitchedCount] || path.points[path.points.length - 1];
@@ -447,8 +481,9 @@ function centerCurrentPointIfNeeded(cellSize) {
   }
 
   window.requestAnimationFrame(() => {
-    const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
-    const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
+    if (sessionMode) return;
+    const centerX = stitchCanvas.offsetLeft - wrapper.offsetLeft + GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
+    const centerY = stitchCanvas.offsetTop - wrapper.offsetTop + GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
     wrapper.scrollLeft = Math.max(0, centerX - wrapper.clientWidth / 2);
     wrapper.scrollTop = Math.max(0, centerY - wrapper.clientHeight / 2);
   });
@@ -525,8 +560,8 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1) {
 
 function pointCenter(point, cellSize) {
   return {
-    x: GRID_RULER_SIZE + (point.x + 0.5) * cellSize,
-    y: GRID_RULER_SIZE + (point.y + 0.5) * cellSize
+    x: GRID_RULER_SIZE + (point.x - stitchView.startX + 0.5) * cellSize,
+    y: GRID_RULER_SIZE + (point.y - stitchView.startY + 0.5) * cellSize
   };
 }
 
@@ -563,8 +598,7 @@ function stitchedCellKeysForProgress() {
 }
 
 function drawCircle(context, point, cellSize, fill, stroke, alpha = 1) {
-  const centerX = GRID_RULER_SIZE + (point.x + 0.5) * cellSize;
-  const centerY = GRID_RULER_SIZE + (point.y + 0.5) * cellSize;
+  const { x: centerX, y: centerY } = pointCenter(point, cellSize);
   const radius = Math.max(3, Math.floor(cellSize * 0.38));
   context.save();
   context.globalAlpha = alpha;
@@ -894,7 +928,7 @@ function drawGridLines(context, width, height, cellSize) {
   context.save();
 
   for (let x = 0; x <= width; x += 1) {
-    const isMajorLine = x % 10 === 0;
+    const isMajorLine = (x + stitchView.startX) % 10 === 0;
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
@@ -904,7 +938,7 @@ function drawGridLines(context, width, height, cellSize) {
   }
 
   for (let y = 0; y <= height; y += 1) {
-    const isMajorLine = y % 10 === 0;
+    const isMajorLine = (y + stitchView.startY) % 10 === 0;
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
     context.beginPath();
@@ -928,8 +962,8 @@ function drawGridRulers(context, width, height, cellSize) {
   context.textAlign = "center";
   context.textBaseline = "middle";
 
-  for (let x = 10; x <= width; x += 10) {
-    const position = GRID_RULER_SIZE + x * cellSize;
+  for (let x = Math.max(10, Math.ceil(stitchView.startX / 10) * 10); x <= stitchView.startX + width; x += 10) {
+    const position = GRID_RULER_SIZE + (x - stitchView.startX) * cellSize;
     context.beginPath();
     context.moveTo(position + 0.5, GRID_RULER_SIZE - 7);
     context.lineTo(position + 0.5, GRID_RULER_SIZE);
@@ -938,8 +972,8 @@ function drawGridRulers(context, width, height, cellSize) {
   }
 
   context.textAlign = "right";
-  for (let y = 10; y <= height; y += 10) {
-    const position = GRID_RULER_SIZE + y * cellSize;
+  for (let y = Math.max(10, Math.ceil(stitchView.startY / 10) * 10); y <= stitchView.startY + height; y += 10) {
+    const position = GRID_RULER_SIZE + (y - stitchView.startY) * cellSize;
     context.beginPath();
     context.moveTo(GRID_RULER_SIZE - 7, position + 0.5);
     context.lineTo(GRID_RULER_SIZE, position + 0.5);
@@ -1417,14 +1451,19 @@ redoActionButton.addEventListener("click", () => {
 stitchCanvas.addEventListener("click", event => {
   if (!markUntilToggle.checked || !loadedPaths) return;
   const rect = stitchCanvas.getBoundingClientRect();
-  const size = (stitchCanvas.width - GRID_RULER_SIZE) / loadedPaths.pattern.grid.width;
-  const x = Math.floor(((event.clientX - rect.left) * stitchCanvas.width / rect.width - GRID_RULER_SIZE) / size);
-  const y = Math.floor(((event.clientY - rect.top) * stitchCanvas.height / rect.height - GRID_RULER_SIZE) / size);
+  const size = stitchView.cellSize;
+  const localX = (event.clientX - rect.left) * stitchCanvas.width / rect.width - GRID_RULER_SIZE;
+  const localY = (event.clientY - rect.top) * stitchCanvas.height / rect.height - GRID_RULER_SIZE;
+  if (localX < 0 || localY < 0) return;
+  const x = stitchView.startX + Math.floor(localX / size);
+  const y = stitchView.startY + Math.floor(localY / size);
   const index = pathForDmc(selectedDmc)?.points.findIndex(p => p.x === x && p.y === y) ?? -1;
   if (index >= 0) changeStitchCount(selectedDmc, index + 1);
 });
 document.querySelector("#sessionModeButton").addEventListener("click", () => {
-  sessionMode = !sessionMode; renderProgressTool(); saveProgressState();
+  sessionMode = !sessionMode;
+  centerAfterSession = !sessionMode;
+  renderProgressTool(); saveProgressState();
 });
 document.querySelector("#fullscreenButton").addEventListener("click", async () => {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
@@ -1496,7 +1535,7 @@ async function restoreLocalSession() {
       undoActions = state.undoActions || []; redoActions = state.redoActions || [];
       saveProgressState();
       const savedView = state.viewPosition || { left: 0, top: 0 };
-      requestAnimationFrame(() => { stitchCanvas.parentElement.scrollTo(savedView.left, savedView.top); restoringSession = false; });
+      requestAnimationFrame(() => { stitchCanvas.parentElement.scrollTo(sessionMode ? 0 : savedView.left, sessionMode ? 0 : savedView.top); restoringSession = false; });
     } else if (loadedPaths) { activeProgressStep = "stitch"; saveProgressState(); }
   } catch (error) { syncStateText.textContent = `Reprise locale: ${error.message}`; }
   finally { document.querySelector("main").inert = false; renderProgressTool(); }
