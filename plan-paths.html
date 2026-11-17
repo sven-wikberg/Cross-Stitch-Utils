@@ -45,7 +45,7 @@
               <dd id="metricDistance">-</dd>
             </div>
             <div>
-              <dt>Score reel</dt>
+              <dt>Score total</dt>
               <dd id="metricRealisticScore">-</dd>
             </div>
             <div>
@@ -78,7 +78,7 @@
               <div id="batchResults" class="batch-results"></div>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
-                Temps sans amelioration
+                Temps sans amelioration par zone
                 <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
                   <option value="60000" selected>1 minute</option>
@@ -92,8 +92,30 @@
                 <input id="cutThresholdInput" type="number" min="1" step="1" value="10">
               </label>
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
-                <progress id="pathAlgorithmProgress" value="0" max="100"></progress>
+                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Avancement des zones"></progress>
                 <p id="pathAlgorithmDistance">Pret.</p>
+                <dl class="algorithm-live-metrics algorithm-zone-metrics">
+                  <div class="algorithm-zone-heading">
+                    <dt>Zone en cours</dt>
+                    <dd id="pathAlgorithmZone">-</dd>
+                  </div>
+                  <div>
+                    <dt>Score total</dt>
+                    <dd id="pathAlgorithmTotalScore">-</dd>
+                  </div>
+                  <div>
+                    <dt>Zones terminees</dt>
+                    <dd id="pathAlgorithmZonesDone">-</dd>
+                  </div>
+                  <div title="Score de la zone avec ses liaisons d'entree et de sortie">
+                    <dt>Zone + liaisons : avant</dt>
+                    <dd id="pathAlgorithmZoneInitial">-</dd>
+                  </div>
+                  <div title="Score de la zone avec ses liaisons d'entree et de sortie">
+                    <dt>Zone + liaisons : actuel</dt>
+                    <dd id="pathAlgorithmZoneScore">-</dd>
+                  </div>
+                </dl>
                 <dl class="algorithm-live-metrics">
                   <div>
                     <dt>Temps</dt>
@@ -108,7 +130,7 @@
                     <dd id="pathAlgorithmImprovements">-</dd>
                   </div>
                   <div>
-                    <dt>Dernier gain</dt>
+                    <dt id="pathAlgorithmClockLabel">Sans gain (zone)</dt>
                     <dd id="pathAlgorithmLastImprovement">-</dd>
                   </div>
                 </dl>

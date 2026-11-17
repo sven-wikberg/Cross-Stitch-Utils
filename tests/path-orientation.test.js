@@ -33,6 +33,9 @@ for (const threshold of [1, 10]) for (const grouped of [false, true]) for (const
     }
     const i = chunks.length - 1 - round % 2, j = fixed - 1;
     evaluator.move(i, j); chunks = relocate(chunks, i, j);
+    const replacement = chunks.slice(fixed).reverse();
+    evaluator.replace(fixed, replacement);
+    chunks.splice(fixed, replacement.length, ...replacement);
   }
 }
 
@@ -71,14 +74,14 @@ const constraints = { lockedPrefix: initial.slice(0, 2), forcedCuts: [initial[6]
 const result = createDiagonalOptimizer(trackedModel).optimizePath({ points: nearby, initialPath: initial,
   constraints, stagnationLimitMs: 10 }, snapshot => {
   phase = snapshot.phase;
-  if (phase === "Derniere optimisation des sens" && snapshot.lastImprovementMs >= snapshot.stagnationLimitMs) expiredFinalizations++;
+  if (snapshot.zone?.status === "complete" && snapshot.zone.lastImprovementMs >= snapshot.stagnationLimitMs) expiredFinalizations++;
   if (snapshot.path) {
     assert.equal(model.validateRoute(snapshot.path, nearby), "");
     assert.ok(model.satisfiesConstraints(snapshot.path, constraints));
   }
 });
 assert.equal(finalCalls, 1, "Exactly one mandatory final orientation pass");
-assert.equal(expiredFinalizations, 1, "Finalization is not skipped when the stagnation deadline expires");
+assert.equal(expiredFinalizations, 1, "The zone deadline expires before the mandatory finalization");
 close(result.metrics.score, score(result.path, 10, constraints));
 assert.deepEqual(result.path.slice(0, 2), initial.slice(0, 2));
 assert.ok(result.path.find(p => model.key(p) === model.key(initial[6])).cutBefore);

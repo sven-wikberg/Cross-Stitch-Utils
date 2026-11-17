@@ -214,13 +214,36 @@ async function run() {
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner.png"), fullPage: true });
 
     const alternating = structuredClone(data);
+    alternating.project.name = "Alternating zones";
+    alternating.pattern.project.name = "Alternating zones";
     alternating.paths[0].points = [0, 3, 1, 4, 2, 5].map(i => data.paths[0].points[i]);
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "alternating.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(alternating)) });
+    await planner.waitForFunction(() => loadedPattern?.project.name === "Alternating zones");
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).zoneReturns > 0));
-    await planner.evaluate(() => { pathStagnationLimitMs = 80; });
+    await planner.evaluate(() => {
+      pathStagnationLimitMs = 300;
+      window.zoneUpdates = [];
+      const createWorker = window.createPathOptimizerWorker;
+      window.createPathOptimizerWorker = () => {
+        const worker = createWorker();
+        worker.addEventListener("message", event => {
+          if (event.data.stage === "zones") window.zoneUpdates.push(event.data.zone);
+        });
+        return worker;
+      };
+    });
     await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.status === "running");
+    assert.match(await planner.locator("#pathAlgorithmZone").innerText(), /^\d+ \/ 2$/);
+    assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
+    assert.notEqual(await planner.locator("#pathAlgorithmZoneInitial").innerText(), "-");
+    assert.notEqual(await planner.locator("#pathAlgorithmZoneScore").innerText(), "-");
+    assert.match(await planner.locator("#pathGridStatus").innerText(), /zone \d+ \/ 2.*score total/);
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-zone-search.png"), fullPage: true });
     await planner.waitForFunction(() => !pathAlgorithmRunning);
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "2 / 2");
+    assert.deepEqual(await planner.evaluate(() => zoneUpdates.filter(z => z.status === "complete").map(z => z.index)), [1, 2]);
     assert.equal(await planner.locator("#metricZoneReturns").innerText(), "0");
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(bestPathsByDmc[selectedDmc]).zoneReturns), 0);
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).cutTravel > 0));
@@ -315,10 +338,14 @@ async function run() {
       console.log(`large real pattern restored through IndexedDB and file:// (${large.length} bytes)`);
       const route = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
       await planner.locator('[data-step="paths"]').click();
-      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 200; renderPathTool(); }, route.dmc);
+      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 15; renderPathTool(); }, route.dmc);
       const initialZoneMetrics = await planner.evaluate(() => pathPerformanceMetrics(currentPath()));
       await planner.locator("#optimizedPathButton").click();
-      await planner.waitForFunction(() => !pathAlgorithmRunning, null, { timeout: 30000 });
+      await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.completed >= 3, null, { timeout: 30000 });
+      assert.notEqual(await planner.locator("#pathAlgorithmZone").innerText(), "-");
+      assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
+      await planner.locator("#stopPathAlgorithmButton").click({ timeout: 10000 });
+      await planner.waitForFunction(() => !pathAlgorithmRunning);
       const result = await planner.evaluate(() => ({ count: currentPath().length,
         error: StitchModel.validateRoute(currentPath(), cellsForSelectedColor()), metrics: pathPerformanceMetrics(currentPath()),
         initial: pathOptimizationBaselinesByDmc[selectedDmc], feedback: pathAlgorithmDistance.textContent }));
@@ -326,6 +353,8 @@ async function run() {
       assert.equal(result.error, "");
       assert.ok(require("../src/stitch-model.js").compareZoneMetrics(result.metrics, initialZoneMetrics) <= 0.0001);
       assert.equal(result.metrics.zoneReturns, 0);
+      assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
+        - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7));
       assert.doesNotMatch(result.feedback, /Erreur/);
       await planner.evaluate(() => plannerSaveQueue);
       console.log(`large diagonal worker passed (${result.count} diagonals, zone returns ${initialZoneMetrics.zoneReturns} -> ${result.metrics.zoneReturns}, score ${result.metrics.score.toFixed(2)})`);

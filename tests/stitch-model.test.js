@@ -95,7 +95,7 @@ if (fs.existsSync(statePath)) {
   assert.equal(real.selectedDmc, state.selectedDmc);
   const largest = real.pathsFile.paths.reduce((best, p) => p.points.length > best.points.length ? p : best);
   const cells = real.pathsFile.pattern.grid.cells.filter(c => !c.empty && c.dmc === largest.dmc);
-  const result = optimizer.optimizePath({ points: cells, initialPath: largest.points, stagnationLimitMs: 100 });
+  const result = optimizer.optimizePath({ points: cells, initialPath: largest.points, stagnationLimitMs: 1 });
   assert.equal(model.validateRoute(result.path, cells), "");
   assert.deepEqual(fs.readFileSync(statePath), stateBytes);
   assert.deepEqual(fs.readFileSync(patternPath), patternBytes);

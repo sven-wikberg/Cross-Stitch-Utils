@@ -72,7 +72,13 @@ Le moteur construit des zones compactes : composantes adjacentes (diagonales com
 
 Le meilleur chemin est choisi d'abord selon le nombre de retours de zone, puis selon le score distance + effort des coupes. Le score peut donc augmenter si cela supprime des allers-retours. La memoire du meilleur chemin et l'affichage utilisent exactement le meme critere que le Worker. Les anciens chemins restent charges, mais les anciens scores initiaux et bilans de calcul sont remis a zero une seule fois lors du changement de critere. La progression de l'outil 3 n'est pas modifiee.
 
-Dans chaque zone, le moteur utilise le plus proche voisin avec precedence, des deplacements locaux de diagonales et l'optimisation exacte des deux sens pour un ordre donne (programmation dynamique). Une autre passe deplace des zones entieres pour raccourcir les liaisons et eviter des coupes inutiles, sans disperser leurs diagonales ni changer le debut verrouille. Chaque nouvel ordre teste, pour une diagonale comme pour une zone, est evalue avec ses meilleurs sens possibles sur tout le chemin, et non avec les sens precedents. Des resumes des portions inchangees evitent un recalcul complet a chaque essai. Terminer les zones peut toutefois demander davantage de coupes qu'un parcours qui y revient plusieurs fois. La longueur sur l'endroit est constante. Ce moteur heuristique ne garantit pas l'optimum global. Il fonctionne dans un Worker, affiche ses ameliorations et s'arrete apres le delai sans amelioration choisi. Une derniere passe globale sur les sens est toujours effectuee apres ce delai (sans relancer la recherche), ou sur le meilleur chemin recu lors d'un arret manuel. Les sens du debut verrouille et les coupes imposees restent proteges.
+La recherche optimise maintenant les zones une par une, dans l'ordre du chemin. Chaque zone recoit exactement le meme delai sans amelioration choisi dans l'interface : 1 minute signifie 1 minute sans nouveau meilleur score dans cette zone, puis passage a la suivante. Un gain remet son compteur a zero. Ce delai n'est pas adapte au nombre de diagonales; seules les zones entierement verrouillees sont ignorees. La duree totale peut donc etre importante sur les grands motifs.
+
+Dans la zone courante, le moteur utilise des deplacements locaux de diagonales et plusieurs departs gloutons avec precedence. Les autres zones gardent leur ordre. Chaque essai est evalue avec les meilleurs sens possibles sur tout le chemin (programmation dynamique), y compris les liaisons avec les zones voisines et les coupes : un gain seulement local ne suffit pas. Les resumes des portions inchangees sont reutilises. Seul le meilleur parcours est affiche et conserve; les essais moins bons ne le remplacent pas.
+
+Le suivi affiche la zone courante, les zones terminees, son score avant/apres avec ses liaisons d'entree et de sortie, le delai sans gain et le score total. Les scores locaux ne s'additionnent pas, car une liaison peut appartenir aux deux zones voisines. La zone active est encadree sur la grille; la barre globale avance au passage d'une zone a la suivante. Apres les zones, une passe bornee optimise leurs liaisons en deplacant des zones entieres, puis une derniere passe globale optimise toujours les sens. L'arret manuel conserve le meilleur chemin recu et finalise aussi ses sens. Les sens du debut verrouille et les coupes imposees restent proteges.
+
+Terminer les zones peut demander davantage de coupes qu'un parcours qui y revient plusieurs fois. La longueur sur l'endroit est constante. Ce moteur heuristique fonctionne dans un Worker et ne garantit pas l'optimum global. La progression de broderie et les formats des fichiers ne sont pas modifies par cette recherche.
 
 Les anciens chemins sont convertis sans changer l'ordre des cases, avec les deux diagonales de chaque ancienne case consecutives. Les sauvegardes completes passent en version 2; l'etat compact synchronise passe en version 3. `stitchedByDmc` compte alors des diagonales, jamais des croix. A la migration, chaque ancienne croix brodee devient deux diagonales brodees : la meme case reste terminee, la prochaine case reste la meme, et les compteurs d'annulation sont convertis aussi. Les croix terminees et commencees sont comptees separement dans l'interface.
 
@@ -87,6 +93,7 @@ node tests/upgrades.test.js
 node tests/stitch-model.test.js
 node tests/path-zones.test.js
 node tests/path-orientation.test.js
+node tests/zone-optimization.test.js
 node tests/workflows.test.js
 node tests/session-view.test.js
 ```

@@ -23,6 +23,12 @@ const pathAlgorithmElapsed = document.querySelector("#pathAlgorithmElapsed");
 const pathAlgorithmRestarts = document.querySelector("#pathAlgorithmRestarts");
 const pathAlgorithmImprovements = document.querySelector("#pathAlgorithmImprovements");
 const pathAlgorithmLastImprovement = document.querySelector("#pathAlgorithmLastImprovement");
+const pathAlgorithmClockLabel = document.querySelector("#pathAlgorithmClockLabel");
+const pathAlgorithmZone = document.querySelector("#pathAlgorithmZone");
+const pathAlgorithmTotalScore = document.querySelector("#pathAlgorithmTotalScore");
+const pathAlgorithmZonesDone = document.querySelector("#pathAlgorithmZonesDone");
+const pathAlgorithmZoneInitial = document.querySelector("#pathAlgorithmZoneInitial");
+const pathAlgorithmZoneScore = document.querySelector("#pathAlgorithmZoneScore");
 const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
@@ -100,6 +106,9 @@ let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
 let activePathOptimizerLastSavedAt = 0;
 let activePathOptimizerSnapshot = null;
+let optimizerGridFrame = null;
+let optimizerSnapshotFrame = null;
+let pendingOptimizerSnapshot = null;
 let constraintsByDmc = storedState.constraintsByDmc || {};
 let batchPlan = storedState.batchPlan || { pending: [], results: [] };
 let batchRunning = false;
@@ -327,11 +336,29 @@ function renderPatternGrid() {
 
   drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   drawSelectedPath(context, cellSize);
+  const zone = pathAlgorithmRunning && activePathOptimizerSnapshot?.zone;
+  if (zone?.status === "running" && zone.bounds) {
+    const { minX, minY, maxX, maxY } = zone.bounds;
+    const x = GRID_RULER_SIZE + minX * cellSize, y = GRID_RULER_SIZE + minY * cellSize;
+    context.save();
+    context.strokeStyle = "#ffffff"; context.lineWidth = 5;
+    context.strokeRect(x, y, (maxX - minX) * cellSize, (maxY - minY) * cellSize);
+    context.strokeStyle = "#007ea8"; context.lineWidth = 2;
+    context.strokeRect(x, y, (maxX - minX) * cellSize, (maxY - minY) * cellSize);
+    context.restore();
+  }
 
   renderPathColorLegend();
   renderPathBuilder();
   pathGridStatus.className = "coverage-status valid";
-  pathGridStatus.textContent = `Couleur selectionnee: DMC ${selectedDmc}.`;
+  renderPathGridStatus();
+}
+
+function renderPathGridStatus(metrics = activePathOptimizerSnapshot?.metrics) {
+  const snapshot = pathAlgorithmRunning && activePathOptimizerSnapshot;
+  pathGridStatus.textContent = snapshot && Number.isFinite(metrics?.score)
+    ? `${snapshot.phase} - DMC ${selectedDmc} - score total ${formatMetric(metrics.score)}`
+    : `Couleur selectionnee: DMC ${selectedDmc}.`;
 }
 
 function drawSelectedPath(context, cellSize) {
@@ -1871,22 +1898,28 @@ function startAdvancedPathSearch() {
     }
 
     if (message.type === "error") {
+      flushAdvancedPathSnapshot();
       finishAdvancedPathSearch(`Erreur: ${message.message}`, message, false);
       return;
     }
 
     if (message.type === "progress") {
-      applyAdvancedPathSnapshot(dmc, message);
+      // Timer-only updates must not discard a better path waiting to be rendered.
+      pendingOptimizerSnapshot = !message.path && pendingOptimizerSnapshot?.path
+        ? { ...message, path: pendingOptimizerSnapshot.path } : message;
+      if (optimizerSnapshotFrame === null) optimizerSnapshotFrame = requestAnimationFrame(flushAdvancedPathSnapshot);
       return;
     }
 
     if (message.type === "complete") {
+      clearPendingOptimizerSnapshot();
       applyAdvancedPathSnapshot(dmc, message);
       finishAdvancedPathSearch("Recherche approfondie terminee", message, true);
     }
   });
 
   worker.addEventListener("error", (event) => {
+    flushAdvancedPathSnapshot();
     finishAdvancedPathSearch(`Erreur du moteur: ${event.message || "calcul interrompu"}`, null, false);
   });
 
@@ -1899,6 +1932,18 @@ function startAdvancedPathSearch() {
     stagnationLimitMs: pathStagnationLimitMs,
     constraints: constraintsByDmc[dmc] || {}
   });
+}
+
+function clearPendingOptimizerSnapshot() {
+  if (optimizerSnapshotFrame !== null) cancelAnimationFrame(optimizerSnapshotFrame);
+  optimizerSnapshotFrame = null;
+  pendingOptimizerSnapshot = null;
+}
+
+function flushAdvancedPathSnapshot() {
+  const snapshot = pendingOptimizerSnapshot;
+  clearPendingOptimizerSnapshot();
+  if (snapshot && activePathOptimizerDmc) applyAdvancedPathSnapshot(activePathOptimizerDmc, snapshot);
 }
 
 function bestCompletePathForColor(dmc) {
@@ -1916,6 +1961,7 @@ function bestCompletePathForColor(dmc) {
 }
 
 function applyAdvancedPathSnapshot(dmc, snapshot) {
+  const previousZone = activePathOptimizerSnapshot?.zone;
   activePathOptimizerSnapshot = snapshot;
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && Number.isFinite(snapshot.initialMetrics?.score)) {
     pathOptimizationBaselinesByDmc[dmc] = snapshot.initialMetrics.score;
@@ -1926,9 +1972,9 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
     const result = rememberBestPath(dmc, snapshot.path);
     pathsByDmc[dmc] = result.path;
     pathChanged = result.improved;
+    pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   }
 
-  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
 
   if (pathChanged) {
@@ -1937,14 +1983,24 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
       activePathOptimizerLastSavedAt = snapshot.elapsedMs;
       savePathPlannerState();
     }
+  } else if (previousZone?.id !== snapshot.zone?.id || previousZone?.status !== snapshot.zone?.status) {
+    if (optimizerGridFrame === null) optimizerGridFrame = requestAnimationFrame(() => {
+      optimizerGridFrame = null;
+      renderPatternGrid();
+    });
   }
 
   showAdvancedPathFeedback(snapshot);
 }
 
 function finishAdvancedPathSearch(label, snapshot, completed) {
+  clearPendingOptimizerSnapshot();
   const finishedDmc = activePathOptimizerDmc;
   const finalSnapshot = snapshot || activePathOptimizerSnapshot;
+  if (optimizerGridFrame !== null) {
+    cancelAnimationFrame(optimizerGridFrame);
+    optimizerGridFrame = null;
+  }
   if (activePathOptimizerWorker) {
     activePathOptimizerWorker.terminate();
   }
@@ -1991,6 +2047,7 @@ function stopAdvancedPathSearch() {
   }
 
   activePathOptimizerWorker.terminate();
+  flushAdvancedPathSnapshot();
   const dmc = activePathOptimizerDmc;
   const path = bestCompletePathForColor(dmc);
   if (path.length) {
@@ -2008,7 +2065,8 @@ function stopAdvancedPathSearch() {
 
 function showAdvancedPathFeedback(snapshot) {
   const path = activePathOptimizerDmc ? pathsByDmc[activePathOptimizerDmc] || [] : [];
-  const metrics = pathPerformanceMetrics(path);
+  const metrics = snapshot.metrics || pathPerformanceMetrics(path);
+  renderPathGridStatus(metrics);
   showAlgorithmFeedback(
     snapshot.phase || "Recherche approfondie",
     snapshot.progress || 0,
@@ -2020,6 +2078,15 @@ function showAdvancedPathFeedback(snapshot) {
 }
 
 function updateAlgorithmLiveMetrics(snapshot) {
+  const zone = snapshot?.zone;
+  pathAlgorithmZone.textContent = zone?.index
+    ? `${zone.index} / ${zone.total}${!pathAlgorithmRunning && zone.status === "running" ? " (arretee)" : ""}` : "-";
+  pathAlgorithmZonesDone.textContent = zone ? `${zone.completed} / ${zone.total}` : "-";
+  pathAlgorithmTotalScore.textContent = Number.isFinite(snapshot?.metrics?.score) ? formatMetric(snapshot.metrics.score) : "-";
+  pathAlgorithmZoneInitial.textContent = Number.isFinite(zone?.initialScore) ? formatMetric(zone.initialScore) : "-";
+  pathAlgorithmZoneScore.textContent = Number.isFinite(zone?.score) ? formatMetric(zone.score) : "-";
+  pathAlgorithmClockLabel.textContent = snapshot?.stage === "links" ? "Sans gain (liaisons)"
+    : !snapshot || snapshot.stage === "zones" ? "Sans gain (zone)" : "Sans gain";
   if (!snapshot) {
     pathAlgorithmElapsed.textContent = "-";
     pathAlgorithmRestarts.textContent = "-";
@@ -2048,6 +2115,7 @@ function formatAlgorithmTime(milliseconds) {
 function showAlgorithmFeedback(phase, progress, distance, candidateDistance = null, metrics = null) {
   pathAlgorithmFeedback.classList.remove("hidden");
   pathAlgorithmProgress.value = Math.max(0, Math.min(100, Math.round(progress || 0)));
+  pathAlgorithmTotalScore.textContent = Number.isFinite(distance) ? formatMetric(distance) : "-";
   if (distance === null || distance === undefined) {
     pathAlgorithmDistance.textContent = phase;
     return;

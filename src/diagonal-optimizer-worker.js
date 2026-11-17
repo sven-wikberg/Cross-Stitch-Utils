@@ -61,14 +61,21 @@
       function move(i, j) {
         const [leaf] = leaves.splice(i, 1);
         leaves.splice(j >= i ? j : j + 1, 0, leaf);
-        let start = size + Math.min(i, j + 1), end = size + Math.max(i, j) + 1;
+        refresh(Math.min(i, j + 1), Math.max(i, j) + 1);
+      }
+      function refresh(start, end) {
+        start += size; end += size;
         for (let k = start; k < end; k++) tree[k] = leaves[k - size];
         while (start > 1) {
           start >>= 1; end = (end + 1) >> 1;
           for (let k = start; k < end; k++) tree[k] = join(tree[k * 2], tree[k * 2 + 1]);
         }
       }
-      return { current: () => measure(tree[1]), evaluateMove, move };
+      function replace(start, chunks) {
+        chunks.forEach((chunk, i) => { leaves[start + i] = summarize(chunk); });
+        refresh(start, start + chunks.length);
+      }
+      return { current: () => measure(tree[1]), evaluateMove, move, replace };
     }
     const improvesOrder = (candidate, current) => Number.isFinite(candidate.score)
       && (candidate.zoneVisits - current.zoneVisits || candidate.score - current.score) < -1e-8;
@@ -84,17 +91,35 @@
       const zones = model.createZones(cells);
       const stepCost = (a, b) => model.cost(a, b, threshold, true);
       const orient = sequence => model.orient(sequence, threshold, constraints, true);
-      const started = performance.now(), limit = Math.max(10, options.stagnationLimitMs || 60000);
+      const started = performance.now(), limit = Math.max(1, options.stagnationLimitMs || 60000);
       let lastImprovement = started, lastReport = 0, improvements = 0, restarts = 0, best, bestMetrics, initialMetrics;
       let changed = false, phase = "Construction des diagonales";
+      let stage = "preparation", activeZone = null, completedZones = 0, zoneCount = 0;
       const expired = () => performance.now() - lastImprovement >= limit;
-      function emit(force = false) {
+      function zoneScore(job) {
+        let score = 0;
+        for (const { start, end } of job.ranges) {
+          for (let i = Math.max(1, start); i <= Math.min(end, best.length - 1); i++) score += stepCost(best[i - 1], best[i]);
+        }
+        return score;
+      }
+      function zoneSnapshot(now) {
+        return { total: zoneCount, completed: completedZones, ...(activeZone ? {
+          id: activeZone.id, index: activeZone.index, bounds: activeZone.bounds,
+          initialScore: activeZone.initialScore, score: zoneScore(activeZone),
+          elapsedMs: now - activeZone.started, lastImprovementMs: now - lastImprovement,
+          status: activeZone.status
+        } : { status: stage }) };
+      }
+      const progress = () => stage === "complete" ? 100 : stage === "orient" ? 99
+        : stage === "links" ? 95 : zoneCount ? completedZones / zoneCount * 95 : 0;
+      function emit(force = false, includePath = false) {
         const now = performance.now();
         if (!force && now - lastReport < 200) return;
         lastReport = now;
-        report({ phase, ...(changed || force ? { path: best.map(model.copy) } : {}), metrics: bestMetrics,
+        report({ phase, stage, zone: zoneSnapshot(now), ...(changed || includePath ? { path: best.map(model.copy) } : {}), metrics: bestMetrics,
           initialMetrics, elapsedMs: now - started, lastImprovementMs: now - lastImprovement,
-          stagnationLimitMs: limit, progress: Math.min(99, (now - lastImprovement) / limit * 100), improvements, restarts });
+          stagnationLimitMs: limit, progress: progress(), improvements, restarts });
         changed = false;
       }
       function consider(path) {
@@ -103,7 +128,8 @@
         if (!best || model.compareZoneMetrics(metrics, bestMetrics) < -1e-8) {
           if (best) improvements++;
           best = path.map(model.copy); bestMetrics = metrics; initialMetrics ||= metrics;
-          changed = true; lastImprovement = performance.now();
+          changed = true;
+          if (stage !== "zones") lastImprovement = performance.now();
           emit(); return true;
         }
         return false;
@@ -118,21 +144,13 @@
       if (options.initialPath?.length) consider(options.initialPath);
       if (!best) consider(makeSeed(cells));
       if (!best) throw new Error("Impossible de construire un chemin respectant les contraintes.");
-      emit(true);
+      emit(true, true);
       if (!cells.length) return { path: [], metrics: bestMetrics, initialMetrics };
       consider(orient(best));
 
       const cellIndex = new Map(cells.map((p, i) => [model.cellKey(p), i]));
       const indexedZones = zones.zones.map(zone => ({ ...zone, indices: zone.cells.map(p => cellIndex.get(model.cellKey(p))) }));
-      function nearCells(x, y, radius = 3) {
-        const found = [];
-        for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
-          const i = cellIndex.get(`${Math.floor(x) + dx},${Math.floor(y) + dy}`);
-          if (i !== undefined) found.push(i);
-        }
-        return found;
-      }
-      function greedy(interruptible = true) {
+      function greedy() {
         const state = new Uint8Array(cells.length), route = prefix.map(model.copy);
         for (const p of prefix) state[cellIndex.get(model.cellKey(p))] = p.diagonal === "lower" ? 1 : 2;
         const pendingZones = new Set(indexedZones.filter(zone => zone.indices.some(i => state[i] !== 2)).map(zone => zone.id));
@@ -146,7 +164,7 @@
             if (cuts.has(model.key(point))) point.cutBefore = true;
             const distance = previous ? model.distance(previous, point) : 0;
             if (previous && distance === 0) continue;
-            const value = geometric ? distance : stepCost(previous, point) + (restarts ? Math.random() * 0.18 : 0);
+            const value = geometric ? distance : stepCost(previous, point);
             if (!chosen || value < chosen.value) chosen = { point, i, value };
           }
           return chosen;
@@ -172,7 +190,7 @@
           route.push(candidate.point); state[candidate.i]++; previous = candidate.point;
         }
         if (!previous && cells.length) {
-          const start = restarts ? cells[(restarts * 7919) % cells.length] : best[0] || cells[0];
+          const start = best[0] || cells[0];
           const i = cellIndex.get(model.cellKey(start));
           append(candidateAt(i)); currentZone = zones.byCell.get(model.cellKey(start));
         }
@@ -192,17 +210,16 @@
             }
             if (!selected) throw new Error("Aucune transition de fil valide.");
             append(selected);
-            if (route.length % 128 === 0) { emit(); if (interruptible && expired()) return null; }
+            if (route.length % 128 === 0) emit();
           }
           pendingZones.delete(currentZone);
-          phase = `Zones terminees : ${indexedZones.length - pendingZones.size} / ${indexedZones.length}`;
+          phase = `Preparation des zones : ${indexedZones.length - pendingZones.size} / ${indexedZones.length}`;
           emit();
-          if (interruptible && expired()) return null;
         }
         return orient(route);
       }
       phase = "Regroupement des zones voisines";
-      consider(greedy(false));
+      consider(greedy());
       emit(true);
 
       const zoneBins = new Map(), zoneNeighbors = new Map();
@@ -269,55 +286,109 @@
         consider(orient(route));
       }
 
-      function improve(input) {
-        let route = input.map(model.copy);
+      function improveZones() {
+        const route = best.map(model.copy), jobsById = new Map();
+        for (let start = 0; start < route.length;) {
+          const id = zones.byCell.get(model.cellKey(route[start]));
+          let end = start + 1;
+          while (end < route.length && zones.byCell.get(model.cellKey(route[end])) === id) end++;
+          if (!jobsById.has(id)) jobsById.set(id, { id, ranges: [], freeRanges: [] });
+          const job = jobsById.get(id);
+          job.ranges.push({ start, end });
+          if (end > fixedLength) job.freeRanges.push({ start: Math.max(start, fixedLength), end });
+          start = end;
+        }
+        const jobs = [...jobsById.values()].filter(job => job.freeRanges.length);
+        zoneCount = jobs.length;
         const positions = new Map();
-        const updatePositions = () => { for (let i = 0; i < route.length; i++) positions.set(model.key(route[i]), i); };
+        const updatePositions = (start = 0, end = route.length) => {
+          for (let i = start; i < end; i++) positions.set(model.key(route[i]), i);
+        };
         updatePositions();
+        // Keep the whole-route context so both neighboring links influence each local move.
         const evaluator = createOrderEvaluator(route.map(point => [point]), threshold, constraints, zones);
         let current = evaluator.current();
-        let attempts = 0, accepted = 0;
-        const maxAttempts = Math.max(2000, route.length * 20);
-        while (attempts++ < maxAttempts && !expired()) {
-          const i = fixedLength + Math.floor(Math.random() * (route.length - fixedLength));
-          if (i >= route.length) break;
-          const p = route[i], mate = positions.get(`${model.cellKey(p)}:${p.diagonal === "lower" ? "upper" : "lower"}`);
-          const nearby = nearCells(p.x, p.y, 2);
-          const sameZone = nearby.filter(k => zones.byCell.get(model.cellKey(cells[k])) === zones.byCell.get(model.cellKey(p)));
-          const targetCell = cells[sameZone[Math.floor(Math.random() * sameZone.length)]];
-          let j = positions.get(`${model.cellKey(targetCell)}:${Math.random() < 0.5 ? "lower" : "upper"}`);
-          if (Math.random() < 0.5) j--;
-          if (attempts % 64 === 0) j = fixedLength - 1;
-          if (j < fixedLength - 1 || j === i || j === i - 1
-              || (p.diagonal === "lower" ? j >= mate : j < mate)) continue;
-          const left = route[j], right = route[j + 1];
-          const zoneId = zones.byCell.get(model.cellKey(p));
-          if ((!left || zones.byCell.get(model.cellKey(left)) !== zoneId)
-              && (!right || zones.byCell.get(model.cellKey(right)) !== zoneId)) continue;
-          const candidate = evaluator.evaluateMove(i, j);
-          if (improvesOrder(candidate, current)) {
-            evaluator.move(i, j); current = evaluator.current();
-            route.splice(i, 1); route.splice(j >= i ? j : j + 1, 0, p);
-            updatePositions(); accepted++;
-            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(orient(route));
+        let bestOrder = current;
+        function publish() {
+          if (improvesOrder(current, bestOrder)) {
+            if (consider(orient(route))) bestOrder = current;
           }
-          if (attempts % 256 === 0) emit();
         }
-        consider(orient(route));
+        function replace(range, points) {
+          route.splice(range.start, points.length, ...points);
+          evaluator.replace(range.start, points.map(point => [point]));
+          updatePositions(range.start, range.end); current = evaluator.current();
+        }
+        function restore(job) {
+          for (const range of job.freeRanges) replace(range, best.slice(range.start, range.end));
+        }
+        function restart(range) {
+          const pending = route.slice(range.start, range.end), ids = new Set(pending.map(model.key));
+          const done = new Set(), sequence = [];
+          let previous = route[range.start - 1];
+          while (pending.length) {
+            const candidates = [];
+            for (let i = 0; i < pending.length; i++) {
+              const point = pending[i], lower = `${model.cellKey(point)}:lower`;
+              if (point.diagonal === "upper" && ids.has(lower) && !done.has(lower)) continue;
+              for (const direction of [1, -1]) {
+                const oriented = { ...point, direction }, value = stepCost(previous, oriented);
+                if (Number.isFinite(value)) candidates.push({ i, point: oriented,
+                  value: value + Math.random() * (restarts % 3 ? 0.3 : threshold * 0.5) });
+              }
+            }
+            candidates.sort((a, b) => a.value - b.value);
+            const chosen = candidates[0];
+            if (!chosen) return;
+            sequence.push(chosen.point); done.add(model.key(chosen.point));
+            pending.splice(chosen.i, 1); previous = chosen.point;
+          }
+          replace(range, sequence);
+        }
+        stage = "zones";
+        for (let index = 0; index < jobs.length; index++) {
+          const job = jobs[index], zone = indexedZones[job.id];
+          activeZone = { ...job, index: index + 1, started: performance.now(), status: "running",
+            bounds: { minX: zone.minX, minY: zone.minY, maxX: zone.maxX, maxY: zone.maxY } };
+          activeZone.initialScore = zoneScore(job);
+          lastImprovement = activeZone.started;
+          let zoneBestScore = bestOrder.score, attempts = 0, accepted = 0;
+          phase = `Optimisation de la zone ${index + 1} / ${jobs.length}`;
+          emit(true);
+          while (!expired()) {
+            const range = job.freeRanges[attempts % job.freeRanges.length], length = range.end - range.start;
+            if (++attempts % Math.max(200, length * 20) === 0) {
+              publish(); restore(job); restarts++; restart(range);
+            }
+            const i = range.start + Math.floor(Math.random() * length);
+            const j = range.start - 1 + Math.floor(Math.random() * (length + 1));
+            const p = route[i], mate = positions.get(`${model.cellKey(p)}:${p.diagonal === "lower" ? "upper" : "lower"}`);
+            if (j !== i && j !== i - 1 && (p.diagonal === "lower" ? j < mate : j >= mate)) {
+              const candidate = evaluator.evaluateMove(i, j);
+              if (improvesOrder(candidate, current)) {
+                evaluator.move(i, j); current = evaluator.current();
+                route.splice(i, 1); route.splice(j >= i ? j : j + 1, 0, p);
+                updatePositions(Math.min(i, j + 1), Math.max(i, j) + 1); accepted++;
+              }
+            }
+            if (current.score < zoneBestScore - 1e-8) {
+              zoneBestScore = current.score; lastImprovement = performance.now();
+            }
+            if (accepted >= 20 || performance.now() - lastReport >= 200) { publish(); accepted = 0; emit(); }
+          }
+          publish(); restore(job);
+          completedZones++; activeZone.status = "complete"; emit(true);
+        }
+        activeZone = null;
       }
+      improveZones();
+      stage = "links"; lastImprovement = performance.now();
+      phase = "Optimisation des liaisons entre zones"; emit(true);
       improveZoneOrder(best);
-      phase = "Recherche des transitions au dos";
-      while (!expired()) {
-        const candidate = greedy();
-        if (candidate) { consider(candidate); phase = "Optimisation dans chaque zone"; improve(candidate); }
-        if (!expired()) improve(best);
-        if (!expired()) improveZoneOrder(best);
-        restarts++; phase = "Recherche entre zones voisines"; emit();
-      }
-      phase = "Derniere optimisation des sens"; emit(true);
+      stage = "orient"; phase = "Derniere optimisation des sens"; emit(true);
       consider(orient(best));
-      phase = "Recherche terminee"; emit(true);
-      return { path: best, metrics: bestMetrics, initialMetrics, elapsedMs: performance.now() - started,
+      stage = "complete"; phase = "Recherche terminee"; emit(true);
+      return { path: best, metrics: bestMetrics, initialMetrics, stage, zone: zoneSnapshot(performance.now()), elapsedMs: performance.now() - started,
         lastImprovementMs: performance.now() - lastImprovement, stagnationLimitMs: limit, improvements, restarts, progress: 100, phase };
     }
     return { optimizePath, createOrderEvaluator, improvesOrder, satisfiesConstraints: model.satisfiesConstraints };
