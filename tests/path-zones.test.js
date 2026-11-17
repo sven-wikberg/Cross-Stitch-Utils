@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const model = require("../src/stitch-model.js");
-const { createDiagonalOptimizer } = require("../src/diagonal-optimizer-worker.js");
-const optimizer = createDiagonalOptimizer(model);
+const { createFastOptimizer } = require("./optimizer-test-utils.js");
+const optimizer = createFastOptimizer(model);
 const block = (x, y) => [0, 1, 2, 3].map(i => ({ x: x + i % 2, y: y + Math.floor(i / 2) }));
 const cells = [...block(0, 0), ...block(20, 0), ...block(40, 0)];
 const zones = model.createZones(cells);

@@ -3,8 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const model = require("../src/stitch-model.js");
-const { createDiagonalOptimizer } = require("../src/diagonal-optimizer-worker.js");
-const optimizer = createDiagonalOptimizer(model);
+const { createFastOptimizer } = require("./optimizer-test-utils.js");
+const optimizer = createFastOptimizer(model);
 
 function fixture(width = 4, height = 3) {
   const cells = Array.from({ length: width * height }, (_, i) => ({ x: i % width, y: Math.floor(i / width), dmc: "310", empty: false }));

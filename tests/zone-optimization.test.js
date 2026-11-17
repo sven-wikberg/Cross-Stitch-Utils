@@ -1,14 +1,14 @@
 const assert = require("node:assert/strict");
 const model = require("../src/stitch-model.js");
-const { createDiagonalOptimizer } = require("../src/diagonal-optimizer-worker.js");
-const optimizer = createDiagonalOptimizer(model);
+const { createFastOptimizer } = require("./optimizer-test-utils.js");
+const optimizer = createFastOptimizer(model);
 const cells = [{ x: 0, y: 0 }, ...Array.from({ length: 9 }, (_, i) => ({ x: 20 + i % 3, y: Math.floor(i / 3) })),
   ...Array.from({ length: 5 }, (_, i) => ({ x: 40 + i, y: 0 }))];
-const zones = model.createZones(cells), limit = 15;
+const zones = model.createZones(cells), referenceLimit = 60000;
 const initial = model.expandCells(cells);
 let latest = initial, previousMetrics, previousProgress = 0;
 const started = [], completed = [], phases = new Set();
-const result = optimizer.optimizePath({ points: cells, initialPath: initial, stagnationLimitMs: limit }, snapshot => {
+const result = optimizer.optimizePath({ points: cells, initialPath: initial, stagnationLimitMs: referenceLimit }, snapshot => {
   phases.add(snapshot.stage);
   assert.ok(snapshot.progress >= previousProgress);
   previousProgress = snapshot.progress;
@@ -21,7 +21,11 @@ const result = optimizer.optimizePath({ points: cells, initialPath: initial, sta
   if (snapshot.stage !== "zones") return;
   const zone = snapshot.zone;
   assert.equal(zone.total, 3);
-  assert.equal(snapshot.stagnationLimitMs, limit, "Same inactivity limit for small and large zones");
+  const limit = optimizer.zoneStagnationLimit(zone.unlockedDiagonals, referenceLimit);
+  assert.equal(snapshot.stagnationLimitMs, limit);
+  assert.equal(zone.stagnationLimitMs, limit);
+  assert.equal(zone.unlockedCrosses, zone.unlockedDiagonals / 2);
+  assert.equal(snapshot.referenceStagnationLimitMs, referenceLimit);
   if (zone.status === "running" && !started.includes(zone.id)) {
     started.push(zone.id);
     assert.equal(zone.index, started.length);
@@ -37,7 +41,7 @@ const result = optimizer.optimizePath({ points: cells, initialPath: initial, sta
   assert.ok(Math.abs(zone.score - withNeighbors) < 1e-7, "Displayed zone score includes both boundary links");
   if (zone.status === "complete") {
     completed.push(zone.id);
-    assert.ok(zone.lastImprovementMs >= limit, "No size-dependent early exit");
+    assert.ok(zone.lastImprovementMs >= limit, "The current zone's computed inactivity limit is enforced");
     assert.ok(zone.elapsedMs >= limit);
   }
 });
@@ -81,4 +85,4 @@ const oneIsland = optimizer.optimizePath({ points: connected, stagnationLimitMs:
 assert.equal(oneIsland.zone.total, 1, "A large connected island receives one timer, not a timer per spatial bucket");
 assert.equal(oneIsland.zone.completed, 1);
 assert.equal(model.validateRoute(oneIsland.path, connected), "");
-console.log("zone optimization passed: sequential zones, identical timers, boundary costs, progress, locked prefix, final orientation");
+console.log("zone optimization passed: sequential zones, proportional timers, boundary costs, progress, locked prefix, final orientation");

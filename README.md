@@ -72,11 +72,11 @@ Le moteur construit des zones naturelles : toutes les cases d'une couleur reliee
 
 Le meilleur chemin est choisi d'abord selon le nombre de retours de zone, puis selon le score distance + effort des coupes. Le score peut donc augmenter si cela supprime des allers-retours. La memoire du meilleur chemin et l'affichage utilisent exactement le meme critere que le Worker. Les anciens chemins restent charges, mais les anciens scores initiaux et bilans de calcul sont remis a zero une seule fois lors du changement de critere. La progression de l'outil 3 n'est pas modifiee.
 
-La recherche optimise maintenant les zones une par une, dans l'ordre du chemin. Chaque zone recoit exactement le meme delai sans amelioration choisi dans l'interface : 1 minute signifie 1 minute sans nouveau meilleur score dans cette zone, puis passage a la suivante. Un gain remet son compteur a zero. Ce delai n'est pas adapte au nombre de diagonales; seules les zones entierement verrouillees sont ignorees. La duree totale peut donc etre importante sur les grands motifs.
+La recherche optimise les zones une par une, dans l'ordre du chemin. Le temps sans amelioration est proportionnel a la partie non verrouillee : par defaut 1 minute pour 500 croix (1 000 diagonales), avec un minimum de 5 secondes et un maximum de 10 minutes par zone. La formule est `min(600000, max(5000, referenceMs * diagonalesLibres / 1000))`. Le reglage de l'interface represente le temps de reference pour 500 croix; les bornes restent fixes. Une diagonale libre compte comme une demi-croix; les zones entierement verrouillees sont ignorees. Chaque nouveau meilleur score remet le compteur de la zone a zero : ce delai n'est donc pas une duree totale maximale. L'ancien reglage par zone est remplace une seule fois par la reference d'une minute, sans effacer les chemins, contraintes ou scores initiaux.
 
 Dans la zone courante, le moteur utilise des deplacements locaux de diagonales et plusieurs departs gloutons avec precedence. Les autres zones gardent leur ordre. Chaque essai est evalue avec les meilleurs sens possibles sur tout le chemin (programmation dynamique), y compris les liaisons avec les zones voisines et les coupes : un gain seulement local ne suffit pas. Les resumes des portions inchangees sont reutilises. Seul le meilleur parcours est affiche et conserve; les essais moins bons ne le remplacent pas.
 
-Le suivi affiche la zone courante, les zones terminees, son score avant/apres avec ses liaisons d'entree et de sortie, le delai sans gain et le score total. Les scores locaux ne s'additionnent pas, car une liaison peut appartenir aux deux zones voisines. La zone active est encadree sur la grille; la barre globale avance au passage d'une zone a la suivante. Apres les zones, une passe bornee optimise leurs liaisons en deplacant des zones entieres, puis une derniere passe globale optimise toujours les sens. L'arret manuel conserve le meilleur chemin recu et finalise aussi ses sens. Les sens du debut verrouille et les coupes imposees restent proteges.
+Le suivi affiche la zone courante, les zones terminees, le nombre de croix a optimiser, le delai calcule pour cette zone, son score avant/apres avec ses liaisons d'entree et de sortie, le temps sans gain et le score total. Le bandeau au-dessus de la grille reprend aussi sa taille et son compteur sans gain face au delai. Les scores locaux ne s'additionnent pas, car une liaison peut appartenir aux deux zones voisines. La zone active est encadree sur la grille; la barre globale avance au passage d'une zone a la suivante. Apres les zones, une passe bornee optimise leurs liaisons en deplacant des zones entieres, puis une derniere passe globale optimise toujours les sens. L'arret manuel conserve le meilleur chemin recu et finalise aussi ses sens. Les sens du debut verrouille et les coupes imposees restent proteges.
 
 Terminer les zones peut demander davantage de coupes qu'un parcours qui y revient plusieurs fois. La longueur sur l'endroit est constante. Ce moteur heuristique fonctionne dans un Worker et ne garantit pas l'optimum global. La progression de broderie et les formats des fichiers ne sont pas modifies par cette recherche.
 
@@ -94,12 +94,13 @@ node tests/stitch-model.test.js
 node tests/path-zones.test.js
 node tests/path-orientation.test.js
 node tests/zone-optimization.test.js
+node tests/zone-timing.test.js
 node tests/spatial-candidates.test.js
 node tests/workflows.test.js
 node tests/session-view.test.js
 ```
 
-Les tests de parcours necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import et la reprise du gros fichier inclus au depot. Le nouveau moteur de diagonales utilise un index spatial et ne construit pas de matrice de distances quadratique.
+Les tests de parcours necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import et la reprise du gros fichier inclus au depot. Les tests unitaires du moteur utilisent une horloge controlee pour verifier les vrais delais proportionnels sans attendre plusieurs minutes; les tests navigateur utilisent l'horloge reelle. Le nouveau moteur de diagonales utilise un index spatial et ne construit pas de matrice de distances quadratique.
 
 ## Direction technique
 

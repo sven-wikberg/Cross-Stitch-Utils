@@ -29,6 +29,8 @@ const pathAlgorithmTotalScore = document.querySelector("#pathAlgorithmTotalScore
 const pathAlgorithmZonesDone = document.querySelector("#pathAlgorithmZonesDone");
 const pathAlgorithmZoneInitial = document.querySelector("#pathAlgorithmZoneInitial");
 const pathAlgorithmZoneScore = document.querySelector("#pathAlgorithmZoneScore");
+const pathAlgorithmZoneCrosses = document.querySelector("#pathAlgorithmZoneCrosses");
+const pathAlgorithmZoneLimit = document.querySelector("#pathAlgorithmZoneLimit");
 const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
@@ -81,6 +83,7 @@ const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const DEFAULT_CUT_THRESHOLD = 10;
 const DEFAULT_PATH_STAGNATION_LIMIT = 60000;
 const PATH_OBJECTIVE_VERSION = 2;
+const PATH_TIMING_VERSION = 1;
 const pathZoneCache = new WeakMap();
 
 let storedState = migratePlannerState(loadStoredState());
@@ -121,6 +124,9 @@ const pathEditMode = document.querySelector("#pathEditMode");
 const lockedPrefixCount = document.querySelector("#lockedPrefixCount");
 
 function migratePlannerState(state) {
+  if (state?.pattern && state.pathTimingVersion !== PATH_TIMING_VERSION) {
+    state = { ...state, pathTimingVersion: PATH_TIMING_VERSION, pathStagnationLimitMs: DEFAULT_PATH_STAGNATION_LIMIT };
+  }
   if (state?.pattern && state.pathObjectiveVersion !== PATH_OBJECTIVE_VERSION) {
     state = { ...state, pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
   }
@@ -154,6 +160,7 @@ function loadStoredState() {
       return {
         pathSchemaVersion: parsed.pathSchemaVersion,
         pathObjectiveVersion: parsed.pathObjectiveVersion,
+        pathTimingVersion: parsed.pathTimingVersion,
         pattern: parsed.pattern,
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
@@ -175,6 +182,7 @@ function savePathPlannerState() {
   const snapshot = loadedPattern ? structuredClone({
     pathSchemaVersion: 2,
     pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
+    pathTimingVersion: PATH_TIMING_VERSION,
     pattern: loadedPattern,
     pathsByDmc,
     bestPathsByDmc,
@@ -356,8 +364,11 @@ function renderPatternGrid() {
 
 function renderPathGridStatus(metrics = activePathOptimizerSnapshot?.metrics) {
   const snapshot = pathAlgorithmRunning && activePathOptimizerSnapshot;
+  const zone = snapshot?.zone;
+  const timing = Number.isFinite(zone?.stagnationLimitMs)
+    ? ` - ${formatMetric(zone.unlockedCrosses)} croix a optimiser - sans gain ${formatAlgorithmTime(zone.lastImprovementMs)} / ${formatAlgorithmTime(zone.stagnationLimitMs)}` : "";
   pathGridStatus.textContent = snapshot && Number.isFinite(metrics?.score)
-    ? `${snapshot.phase} - DMC ${selectedDmc} - score total ${formatMetric(metrics.score)}`
+    ? `${snapshot.phase}${timing} - DMC ${selectedDmc} - score total ${formatMetric(metrics.score)}`
     : `Couleur selectionnee: DMC ${selectedDmc}.`;
 }
 
@@ -2085,6 +2096,8 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmTotalScore.textContent = Number.isFinite(snapshot?.metrics?.score) ? formatMetric(snapshot.metrics.score) : "-";
   pathAlgorithmZoneInitial.textContent = Number.isFinite(zone?.initialScore) ? formatMetric(zone.initialScore) : "-";
   pathAlgorithmZoneScore.textContent = Number.isFinite(zone?.score) ? formatMetric(zone.score) : "-";
+  pathAlgorithmZoneCrosses.textContent = Number.isFinite(zone?.unlockedCrosses) ? formatMetric(zone.unlockedCrosses) : "-";
+  pathAlgorithmZoneLimit.textContent = Number.isFinite(zone?.stagnationLimitMs) ? formatAlgorithmTime(zone.stagnationLimitMs) : "-";
   pathAlgorithmClockLabel.textContent = snapshot?.stage === "links" ? "Sans gain (liaisons)"
     : !snapshot || snapshot.stage === "zones" ? "Sans gain (zone)" : "Sans gain";
   if (!snapshot) {

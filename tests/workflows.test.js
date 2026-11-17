@@ -186,7 +186,7 @@ async function run() {
     await planner.locator("#lockedPrefixCount").dispatchEvent("change");
     const lockedDiagonals = await planner.evaluate(() => currentPath().slice(0, 2));
     await planner.evaluate(() => {
-      pathStagnationLimitMs = 1000;
+      pathStagnationLimitMs = 60000;
       window.manualOrientationCalls = 0;
       const orient = StitchModel.orient;
       StitchModel.orient = (...args) => { window.manualOrientationCalls++; return orient(...args); };
@@ -203,9 +203,9 @@ async function run() {
     await planner.reload();
     await planner.waitForFunction(() => !document.querySelector("main").inert);
     await planner.locator('[data-step="paths"]').click();
-    await planner.evaluate(() => { pathStagnationLimitMs = 1000; });
+    await planner.evaluate(() => { pathStagnationLimitMs = 60000; });
     await planner.locator("#batchOptimizeButton").click();
-    await planner.waitForFunction(() => !batchRunning && batchPlan.results.length === 2, { timeout: 15000 });
+    await planner.waitForFunction(() => !batchRunning && batchPlan.results.length === 2, null, { timeout: 40000 });
     assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), lockedDiagonals);
     assert.equal(await planner.evaluate(() => buildPathExport().schemaVersion), 2);
     assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor())), "");
@@ -222,7 +222,7 @@ async function run() {
     await planner.waitForFunction(() => loadedPattern?.project.name === "Alternating zones");
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).zoneReturns > 0));
     await planner.evaluate(() => {
-      pathStagnationLimitMs = 300;
+      pathStagnationLimitMs = 60000;
       window.zoneUpdates = [];
       const createWorker = window.createPathOptimizerWorker;
       window.createPathOptimizerWorker = () => {
@@ -239,8 +239,16 @@ async function run() {
     assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
     assert.notEqual(await planner.locator("#pathAlgorithmZoneInitial").innerText(), "-");
     assert.notEqual(await planner.locator("#pathAlgorithmZoneScore").innerText(), "-");
+    assert.equal(await planner.locator("#pathAlgorithmZoneCrosses").innerText(), "3");
+    assert.equal(await planner.locator("#pathAlgorithmZoneLimit").innerText(), "0:05");
+    assert.match(await planner.locator("#pathAlgorithmLastImprovement").innerText(), /\/ 0:05$/);
     assert.match(await planner.locator("#pathGridStatus").innerText(), /zone \d+ \/ 2.*score total/);
+    assert.match(await planner.locator("#pathGridStatus").innerText(), /3 croix a optimiser - sans gain .* \/ 0:05/);
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-zone-search.png"), fullPage: true });
+    await planner.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await planner.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-zone-search-mobile.png"), fullPage: true });
+    await planner.setViewportSize({ width: 1600, height: 1000 });
     await planner.waitForFunction(() => !pathAlgorithmRunning);
     assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "2 / 2");
     assert.deepEqual(await planner.evaluate(() => zoneUpdates.filter(z => z.status === "complete").map(z => z.index)), [1, 2]);
@@ -259,6 +267,18 @@ async function run() {
         && migrated.constraintsByDmc === old.constraintsByDmc && migrated.selectedDmc === old.selectedDmc
         && Object.keys(migrated.pathOptimizationBaselinesByDmc).length === 0 && migrated.batchPlan.pending.length === 0;
     }), "Changing the zone definition retains paths and constraints, resetting only obsolete search statistics");
+    assert.ok(await planner.evaluate(() => {
+      const state = { pattern: loadedPattern, pathSchemaVersion: 2, pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
+        pathsByDmc, bestPathsByDmc, constraintsByDmc, pathStagnationLimitMs: 300000,
+        batchPlan, pathOptimizationBaselinesByDmc };
+      const migrated = migratePlannerState(state);
+      const custom = migratePlannerState({ ...migrated, pathStagnationLimitMs: 120000 });
+      return migrated.pathStagnationLimitMs === 60000 && migrated.pathTimingVersion === PATH_TIMING_VERSION
+        && migrated.pathsByDmc === pathsByDmc && migrated.bestPathsByDmc === bestPathsByDmc
+        && migrated.constraintsByDmc === constraintsByDmc && migrated.batchPlan === batchPlan
+        && migrated.pathOptimizationBaselinesByDmc === pathOptimizationBaselinesByDmc
+        && custom.pathStagnationLimitMs === 120000;
+    }), "Timing migration sets the new one-minute reference once, retaining paths and subsequent preferences");
 
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();
@@ -347,10 +367,14 @@ async function run() {
       console.log(`large real pattern restored through IndexedDB and file:// (${large.length} bytes)`);
       const route = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
       await planner.locator('[data-step="paths"]').click();
-      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 15; renderPathTool(); }, route.dmc);
+      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 60000; renderPathTool(); }, route.dmc);
       const initialZoneMetrics = await planner.evaluate(() => pathPerformanceMetrics(currentPath()));
       await planner.locator("#optimizedPathButton").click();
-      await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.completed >= 3, null, { timeout: 30000 });
+      await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.status === "running", null, { timeout: 30000 });
+      assert.ok(await planner.evaluate(() => {
+        const zone = activePathOptimizerSnapshot.zone;
+        return zone.stagnationLimitMs === Math.min(600000, Math.max(5000, zone.unlockedDiagonals * 60));
+      }));
       assert.notEqual(await planner.locator("#pathAlgorithmZone").innerText(), "-");
       assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
       await planner.locator("#stopPathAlgorithmButton").click({ timeout: 10000 });

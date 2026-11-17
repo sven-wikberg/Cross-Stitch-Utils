@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const model = require("../src/stitch-model.js");
-const { createDiagonalOptimizer } = require("../src/diagonal-optimizer-worker.js");
-const optimizer = createDiagonalOptimizer(model);
+const { createFastOptimizer } = require("./optimizer-test-utils.js");
+const optimizer = createFastOptimizer(model);
 const close = (actual, expected) => assert.ok(actual === expected || Math.abs(actual - expected) < 1e-7,
   `Expected ${expected}, received ${actual}`);
 const relocate = (chunks, i, j) => {
@@ -71,7 +71,7 @@ const trackedModel = { ...model, orient(...args) {
 } };
 const initial = model.expandCells(nearby);
 const constraints = { lockedPrefix: initial.slice(0, 2), forcedCuts: [initial[6]] };
-const result = createDiagonalOptimizer(trackedModel).optimizePath({ points: nearby, initialPath: initial,
+const result = createFastOptimizer(trackedModel).optimizePath({ points: nearby, initialPath: initial,
   constraints, stagnationLimitMs: 10 }, snapshot => {
   phase = snapshot.phase;
   if (snapshot.zone?.status === "complete" && snapshot.zone.lastImprovementMs >= snapshot.stagnationLimitMs) expiredFinalizations++;

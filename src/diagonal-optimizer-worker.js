@@ -1,6 +1,9 @@
 (function (root) {
   "use strict";
-  function createDiagonalOptimizer(model) {
+  function createDiagonalOptimizer(model, clock = () => performance.now()) {
+    function zoneStagnationLimit(unlockedDiagonals, referenceMs = 60000) {
+      return Math.min(600000, Math.max(5000, referenceMs * unlockedDiagonals / 1000));
+    }
     // Buckets never define islands. Candidate costs must include the physical hole distance.
     function createSpatialCandidates(indices, pointAt) {
       const size = 8, bins = new Map(), binByIndex = new Map();
@@ -138,11 +141,12 @@
       const zones = model.createZones(cells);
       const stepCost = (a, b) => model.cost(a, b, threshold, true);
       const orient = sequence => model.orient(sequence, threshold, constraints, true);
-      const started = performance.now(), limit = Math.max(1, options.stagnationLimitMs || 60000);
+      const started = clock(), referenceLimit = Math.max(1, options.stagnationLimitMs || 60000);
       let lastImprovement = started, lastReport = 0, improvements = 0, restarts = 0, best, bestMetrics, initialMetrics;
       let changed = false, phase = "Construction des diagonales";
       let stage = "preparation", activeZone = null, completedZones = 0, zoneCount = 0;
-      const expired = () => performance.now() - lastImprovement >= limit;
+      const currentLimit = () => activeZone?.stagnationLimitMs ?? referenceLimit;
+      const expired = () => clock() - lastImprovement >= currentLimit();
       function zoneScore(job) {
         let score = 0;
         for (const { start, end } of job.ranges) {
@@ -154,6 +158,8 @@
         return { total: zoneCount, completed: completedZones, ...(activeZone ? {
           id: activeZone.id, index: activeZone.index, bounds: activeZone.bounds,
           initialScore: activeZone.initialScore, score: zoneScore(activeZone),
+          crossCount: activeZone.crossCount, unlockedDiagonals: activeZone.unlockedDiagonals,
+          unlockedCrosses: activeZone.unlockedDiagonals / 2, stagnationLimitMs: activeZone.stagnationLimitMs,
           elapsedMs: now - activeZone.started, lastImprovementMs: now - lastImprovement,
           status: activeZone.status
         } : { status: stage }) };
@@ -161,12 +167,12 @@
       const progress = () => stage === "complete" ? 100 : stage === "orient" ? 99
         : stage === "links" ? 95 : zoneCount ? completedZones / zoneCount * 95 : 0;
       function emit(force = false, includePath = false) {
-        const now = performance.now();
+        const now = clock();
         if (!force && now - lastReport < 200) return;
         lastReport = now;
         report({ phase, stage, zone: zoneSnapshot(now), ...(changed || includePath ? { path: best.map(model.copy) } : {}), metrics: bestMetrics,
           initialMetrics, elapsedMs: now - started, lastImprovementMs: now - lastImprovement,
-          stagnationLimitMs: limit, progress: progress(), improvements, restarts });
+          stagnationLimitMs: currentLimit(), referenceStagnationLimitMs: referenceLimit, progress: progress(), improvements, restarts });
         changed = false;
       }
       function consider(path) {
@@ -176,7 +182,7 @@
           if (best) improvements++;
           best = path.map(model.copy); bestMetrics = metrics; initialMetrics ||= metrics;
           changed = true;
-          if (stage !== "zones") lastImprovement = performance.now();
+          if (stage !== "zones") lastImprovement = clock();
           emit(); return true;
         }
         return false;
@@ -320,7 +326,7 @@
             evaluator.move(i, j); current = evaluator.current();
             blocks.splice(i, 1); blocks.splice(j >= i ? j : j + 1, 0, block);
             updatePositions(); accepted++;
-            if (accepted % 20 === 0 || performance.now() - lastReport > 200) consider(orient(blocks.flatMap(b => b.points)));
+            if (accepted % 20 === 0 || clock() - lastReport > 200) consider(orient(blocks.flatMap(b => b.points)));
           }
           if (attempt % 128 === 0) emit();
         }
@@ -391,7 +397,10 @@
         stage = "zones";
         for (let index = 0; index < jobs.length; index++) {
           const job = jobs[index], zone = indexedZones[job.id];
-          activeZone = { ...job, index: index + 1, started: performance.now(), status: "running",
+          const unlockedDiagonals = job.freeRanges.reduce((count, range) => count + range.end - range.start, 0);
+          activeZone = { ...job, index: index + 1, started: clock(), status: "running",
+            crossCount: zone.cells.length, unlockedDiagonals,
+            stagnationLimitMs: zoneStagnationLimit(unlockedDiagonals, referenceLimit),
             bounds: { minX: zone.minX, minY: zone.minY, maxX: zone.maxX, maxY: zone.maxY } };
           activeZone.initialScore = zoneScore(job);
           lastImprovement = activeZone.started;
@@ -420,9 +429,9 @@
               }
             }
             if (current.score < zoneBestScore - 1e-8) {
-              zoneBestScore = current.score; lastImprovement = performance.now();
+              zoneBestScore = current.score; lastImprovement = clock();
             }
-            if (accepted >= 20 || performance.now() - lastReport >= 200) { publish(); accepted = 0; emit(); }
+            if (accepted >= 20 || clock() - lastReport >= 200) { publish(); accepted = 0; emit(); }
           }
           publish(); restore(job);
           completedZones++; activeZone.status = "complete"; emit(true);
@@ -430,16 +439,18 @@
         activeZone = null;
       }
       improveZones();
-      stage = "links"; lastImprovement = performance.now();
+      stage = "links"; lastImprovement = clock();
       phase = "Optimisation des liaisons entre zones"; emit(true);
       improveZoneOrder(best);
       stage = "orient"; phase = "Derniere optimisation des sens"; emit(true);
       consider(orient(best));
       stage = "complete"; phase = "Recherche terminee"; emit(true);
-      return { path: best, metrics: bestMetrics, initialMetrics, stage, zone: zoneSnapshot(performance.now()), elapsedMs: performance.now() - started,
-        lastImprovementMs: performance.now() - lastImprovement, stagnationLimitMs: limit, improvements, restarts, progress: 100, phase };
+      return { path: best, metrics: bestMetrics, initialMetrics, stage, zone: zoneSnapshot(clock()), elapsedMs: clock() - started,
+        lastImprovementMs: clock() - lastImprovement, stagnationLimitMs: currentLimit(), referenceStagnationLimitMs: referenceLimit,
+        improvements, restarts, progress: 100, phase };
     }
-    return { optimizePath, createOrderEvaluator, createSpatialCandidates, improvesOrder, satisfiesConstraints: model.satisfiesConstraints };
+    return { optimizePath, createOrderEvaluator, createSpatialCandidates, zoneStagnationLimit, improvesOrder,
+      satisfiesConstraints: model.satisfiesConstraints };
   }
   function workerMain(createModel, createOptimizer) {
     self.onmessage = event => {

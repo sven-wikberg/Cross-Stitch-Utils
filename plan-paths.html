@@ -78,7 +78,7 @@
               <div id="batchResults" class="batch-results"></div>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
-                Temps sans amelioration par zone
+                Sans amelioration pour 500 croix
                 <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
                   <option value="60000" selected>1 minute</option>
@@ -106,6 +106,14 @@
                   <div>
                     <dt>Zones terminees</dt>
                     <dd id="pathAlgorithmZonesDone">-</dd>
+                  </div>
+                  <div>
+                    <dt>Croix a optimiser</dt>
+                    <dd id="pathAlgorithmZoneCrosses">-</dd>
+                  </div>
+                  <div>
+                    <dt>Delai de la zone</dt>
+                    <dd id="pathAlgorithmZoneLimit">-</dd>
                   </div>
                   <div title="Score de la zone avec ses liaisons d'entree et de sortie">
                     <dt>Zone + liaisons : avant</dt>
