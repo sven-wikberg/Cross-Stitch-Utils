@@ -81,7 +81,7 @@ test("relay scans respect locks and a separate deadline, and report actual exami
   assert.equal(createPathVisuals(model, builder).searchPresentation({ stage: "relay" }, false).active, false);
 });
 
-test("only accepted relays shorten block inactivity by ten percent, with a two-second floor and fresh runs", () => {
+test("accepted relays shorten block inactivity by ten percent, with a two-second floor and fresh runs", () => {
   const points = require("./fixtures/combined-search.js").cutAware, budgets = [];
   const engine = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded(), (...args) => {
     const relaySearch = createRelaySearch(...args);
@@ -96,14 +96,16 @@ test("only accepted relays shorten block inactivity by ten percent, with a two-s
     assert.equal(reports[0].stagnationLimitMs, initialLimit, "each run starts with the full selected delay");
     assert.equal(reports.find(s => s.stage === "relay").stagnationLimitMs, initialLimit);
     assert.ok(result.relayImprovements >= 2, "exercise consecutive accepted relays");
-    let ordinaryGain = false;
+    let ordinaryGain = false, expected = initialLimit;
     for (let i = 0; i < reports.length; i++) {
       const current = reports[i], previous = reports[i - 1];
-      const expected = Math.max(Math.min(2000, initialLimit), initialLimit * 0.9 ** (current.relayImprovements || 0));
+      const relayGains = (current.relayImprovements || 0) - (previous?.relayImprovements || 0);
+      const normalGains = current.improvements - (previous?.improvements || 0) - relayGains;
+      if (normalGains > 0) { expected = initialLimit; ordinaryGain = true; }
+      for (let n = 0; n < relayGains; n++) expected = Math.max(Math.min(2000, initialLimit), expected * 0.9);
       close(current.stagnationLimitMs, expected);
-      if (previous && (current.relayImprovements || 0) === (previous.relayImprovements || 0)) {
-        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "attempts and ordinary gains never change the delay");
-        ordinaryGain ||= current.improvements > previous.improvements;
+      if (previous && !relayGains && !normalGains) {
+        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "attempts without global gains never change the delay");
       }
     }
     assert.ok(ordinaryGain);
@@ -111,6 +113,36 @@ test("only accepted relays shorten block inactivity by ten percent, with a two-s
     assert.ok(budgets.slice(firstBudget).every(budget => budget === Math.min(15000, Math.max(250, initialLimit))),
       "relay scans keep the initial budget even after successful relays");
     if (initialLimit === 2100) assert.equal(result.stagnationLimitMs, 2000);
+    assert.equal(model.validateRoute(result.path, points), "");
+  }
+});
+
+test("a normal global gain restores the initial delay and subsequent relays start a fresh decay cycle", () => {
+  const points = require("./fixtures/combined-search.js").timerRecovery;
+  for (const initialLimit of [10000, 2100]) {
+    const reports = [];
+    const result = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded()).optimizePath(
+      { points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
+    let reset = false, decayedAgain = false;
+    for (let i = 1; i < reports.length; i++) {
+      const previous = reports[i - 1], current = reports[i];
+      const relayGains = (current.relayImprovements || 0) - (previous.relayImprovements || 0);
+      if (!relayGains && current.improvements > previous.improvements && previous.stagnationLimitMs < initialLimit) {
+        assert.ok(current.metrics.score < previous.metrics.score);
+        assert.equal(current.stagnationLimitMs, initialLimit);
+        assert.equal(current.lastImprovementMs, 0);
+        assert.equal(current.relayImprovements, 2, "total relay history is not reset with the delay");
+        assert.deepEqual(current.lastRelayImprovement, previous.lastRelayImprovement);
+        if (initialLimit === 2100) assert.equal(previous.stagnationLimitMs, 2000, "a normal gain also recovers from the floor");
+        reset = true;
+      } else if (reset && relayGains) {
+        assert.equal(relayGains, 1);
+        close(current.stagnationLimitMs, Math.max(2000, initialLimit * 0.9));
+        assert.equal(current.relayImprovements, 3);
+        decayedAgain = true;
+      }
+    }
+    assert.ok(reset && decayedAgain, "exercise relay, normal gain, then another relay with the real optimizer");
     assert.equal(model.validateRoute(result.path, points), "");
   }
 });

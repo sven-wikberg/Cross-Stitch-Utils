@@ -7,7 +7,7 @@ const model = require("../src/stitch-model.js");
 async function run() {
   const root = path.resolve(__dirname, ".."), output = path.join(root, "exports/verification");
   await fs.mkdir(output, { recursive: true });
-  const points = require("./fixtures/combined-search.js").cutAware, keys = new Set(points.map(model.cellKey));
+  const points = require("./fixtures/combined-search.js").timerRecovery, keys = new Set(points.map(model.cellKey));
   const pattern = { kind: "cross-stitch-pattern", schemaVersion: 1, project: { name: "Relais au plateau" },
     colors: [{ dmc: "310", symbol: "A", hex: "#111111" }], grid: { width: 14, height: 12,
       cells: Array.from({ length: 168 }, (_, i) => { const x = i % 14, y = Math.floor(i / 14), filled = keys.has(`${x},${y}`);
@@ -34,7 +34,7 @@ async function run() {
           const s = e.data;
           if (s.stage === "relay" || s.stage === "search" || s.type === "complete") {
             relayReports.push({ stage: s.stage, score: s.metrics?.score, relays: s.relayImprovements || 0,
-              lastRelayImprovement: s.lastRelayImprovement, stagnationLimitMs: s.stagnationLimitMs });
+              improvements: s.improvements, lastRelayImprovement: s.lastRelayImprovement, stagnationLimitMs: s.stagnationLimitMs });
           }
         });
         return worker;
@@ -48,7 +48,19 @@ async function run() {
     assert.ok(result.score < 41);
     assert.ok(result.highlights.length > 0, JSON.stringify(result.reports));
     assert.equal(result.reports[0].stagnationLimitMs, 10000);
-    for (const report of result.reports) assert.ok(Math.abs(report.stagnationLimitMs - Math.max(2000, 10000 * 0.9 ** report.relays)) < 1e-7);
+    let expectedDelay = 10000, previousGains = 0, previousRelays = 0, restoredDelay = false, decayedAgain = false;
+    for (const report of result.reports) {
+      const relayGains = report.relays - previousRelays;
+      if (report.improvements - previousGains > relayGains) {
+        restoredDelay ||= expectedDelay < 10000;
+        expectedDelay = 10000;
+      }
+      if (restoredDelay && relayGains) decayedAgain = true;
+      for (let i = 0; i < relayGains; i++) expectedDelay = Math.max(2000, expectedDelay * 0.9);
+      assert.ok(Math.abs(report.stagnationLimitMs - expectedDelay) < 1e-7);
+      previousGains = report.improvements; previousRelays = report.relays;
+    }
+    assert.ok(restoredDelay && decayedAgain, "the live worker restores the delay after a normal gain, then restarts relay decay");
     assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "10000", "the selected starting delay stays unchanged");
     const lastRelay = result.reports.at(-1).lastRelayImprovement;
     assert.ok(lastRelay);
@@ -76,6 +88,12 @@ async function run() {
       return document.documentElement.scrollWidth <= innerWidth + 1 && heading.right <= timer.left && timer.right <= innerWidth;
     }));
     await page.screenshot({ path: path.join(output, "planner-relay-delay-mobile.png"), fullPage: true });
+    await page.evaluate(() => showAdvancedPathFeedback({ stage: "search", stagnationLimitMs: 10000,
+      lastImprovementMs: 0, relayImprovements: 2, improvements: 3 }));
+    assert.equal(await page.locator("#pathAlgorithmLastImprovement").innerText(), "0:00 / 0:10");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "10000");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("value"), "0");
+    assert.equal(await page.locator("#pathRelayImprovements").textContent(), "2");
     await page.setViewportSize({ width: 1600, height: 1100 });
     // Inspect the real relay progress presentation without changing any route or saved state.
     await page.evaluate(() => {
