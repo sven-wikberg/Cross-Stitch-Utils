@@ -67,12 +67,12 @@ for (let run = 0; run < 6; run++) {
     if (!snapshot.path) return;
     assert.equal(model.validateRoute(snapshot.path, cells), "");
     assert.ok(model.satisfiesConstraints(snapshot.path, constraints));
-    if (previousMetrics) assert.ok(model.compareZoneMetrics(snapshot.metrics, previousMetrics) <= 1e-7);
+    if (previousMetrics) assert.ok(optimizer.compareMetrics(snapshot.metrics, previousMetrics) <= 1e-7);
     previousMetrics = snapshot.metrics; snapshots++;
   });
   assert.ok(snapshots > 0);
   assert.equal(model.validateRoute(result.path, cells), "");
-  assert.ok(model.compareZoneMetrics(result.metrics, result.initialMetrics) <= 1e-7);
+  assert.ok(optimizer.compareMetrics(result.metrics, result.initialMetrics) <= 1e-7);
   assert.ok(result.path.find(p => model.key(p) === model.key(initial[8])).cutBefore, "Explicit cuts remain attached to their diagonal");
 }
 

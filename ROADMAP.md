@@ -94,13 +94,19 @@ et des formats PC/mobile/grand ecran, sans modification de la progression.
 
 ## Entretien
 
-- [ ] Retirer du code charge les anciens algorithmes sans point d'entree dans l'interface.
-- [ ] Conserver les calculs partages, les migrations et les tests utiles.
-- [ ] Garder une suite de tests de validite et une suite distincte de comparaison de qualite.
+- [x] Retirer du code charge les anciens algorithmes sans point d'entree dans l'interface.
+- [x] Conserver les calculs partages, les migrations et les tests utiles.
+- [x] Garder une suite de tests de validite et une suite distincte de comparaison de qualite.
+
+Entretien termine : anciens moteurs par cases et par zones retires, fonctions
+inaccessibles de l'outil 2 supprimees. Les tests utiles ciblent maintenant le
+moteur actif, ses orientations, son index spatial et son worker. Les anciennes
+regles de delai par zone sont remplacees par les tests du delai global actuel.
+74 tests fonctionnels, les parcours navigateur et le benchmark de qualite sont
+valides. Sauvegardes et patterns associes verifies identiques octet par octet.
 
 ## Ordre propose
 
-Recherche plus visuelle et priorites 1 a 4 terminees.
-Suite proposee : entretien cible du code, a valider separement.
+Recherche plus visuelle, priorites 1 a 4 et entretien cible du code termines.
 
 Chaque chantier doit etre valide separement avant de passer au suivant.

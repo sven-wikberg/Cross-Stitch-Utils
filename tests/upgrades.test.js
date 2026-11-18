@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
-const { createPathOptimizerApi } = require("../src/path-optimizer-worker.js");
+const model = require("../src/stitch-model.js");
+const { createFastOptimizer } = require("./optimizer-test-utils.js");
 const groups = require("../src/group-operations.js");
 const pathSettings = require("../src/path-settings.js");
 require("../src/progress-store.js");
@@ -22,23 +23,36 @@ async function run() {
   assert.deepEqual(original[0].cellKeys, ["0,0", "1,0", "2,0"]);
   assert.throws(() => groups.split(original, "group-1", original[0].cellKeys));
 
-  const optimizer = createPathOptimizerApi();
+  const optimizer = createFastOptimizer(model);
   const points = Array.from({ length: 18 }, (_, i) => ({ x: i % 6, y: Math.floor(i / 6) }));
-  const constraints = { start: points[0], lockedPrefix: points.slice(0, 3), forcedCuts: [{ from: points[5], to: points[6] }] };
+  const legacyConstraints = { start: points[0], lockedPrefix: points.slice(0, 3), forcedCuts: [{ from: points[5], to: points[6] }] };
+  const project = { name: "Migration des contraintes" };
+  const legacy = { kind: "cross-stitch-paths", schemaVersion: 1, project, settings: { cutThreshold: 10 },
+    pattern: { kind: "cross-stitch-pattern", schemaVersion: 1, project, colors: [{ dmc: "310" }],
+      grid: { width: 6, height: 3, cells: points.map(p => ({ ...p, dmc: "310", empty: false })) } },
+    paths: [{ dmc: "310", points, constraints: legacyConstraints, forcedCuts: legacyConstraints.forcedCuts }] };
+  const originalLegacy = JSON.stringify(legacy);
+  const migrated = model.upgradePathsFile(legacy).paths[0];
+  const constraints = migrated.constraints;
+  assert.equal(constraints.lockedPrefix.length, 6);
+  assert.equal(constraints.forcedCuts.length, 1);
+  assert.equal(JSON.stringify(legacy), originalLegacy);
   let snapshots = 0;
-  const result = optimizer.optimizePath({ points, initialPath: points, constraints, cutThreshold: 10, stagnationLimitMs: 1000,
-    onProgress(snapshot) {
-      if (!snapshot.route) return;
-      assert.ok(optimizer.satisfiesConstraints(snapshot.route.map(index => points[index]), constraints));
+  const result = optimizer.optimizePath({ points, initialPath: migrated.points, constraints, cutThreshold: 10, stagnationLimitMs: 1000 },
+    snapshot => {
+      if (!snapshot.path) return;
+      assert.equal(model.validateRoute(snapshot.path, points), "");
+      assert.ok(optimizer.satisfiesConstraints(snapshot.path, constraints));
       snapshots++;
-    } });
+    });
   assert.ok(snapshots > 0);
-  assert.ok(optimizer.satisfiesConstraints(result.route.map(index => points[index]), constraints));
+  assert.ok(optimizer.satisfiesConstraints(result.path, constraints));
   assert.equal(result.metrics.cuts, 1);
   assert.ok(result.metrics.score <= result.initialMetrics.score);
-  const partial = optimizer.optimizePath({ points, initialPath: points.slice(0, 7), constraints, cutThreshold: 10, stagnationLimitMs: 1000 });
-  assert.ok(optimizer.satisfiesConstraints(partial.route.map(index => points[index]), constraints));
-  assert.equal(pathSettings.validate({ settings: { cutThreshold: 12 }, paths: [{ points, constraints, forcedCuts: constraints.forcedCuts }] }), "");
+  const partial = optimizer.optimizePath({ points, initialPath: migrated.points.slice(0, 7), constraints, cutThreshold: 10, stagnationLimitMs: 1000 });
+  assert.equal(model.validateRoute(partial.path, points), "");
+  assert.ok(optimizer.satisfiesConstraints(partial.path, constraints));
+  assert.equal(pathSettings.validate({ settings: { cutThreshold: 12 }, paths: [{ points, constraints: legacyConstraints, forcedCuts: legacyConstraints.forcedCuts }] }), "");
   assert.ok(pathSettings.validate({ paths: [{ points, forcedCuts: [{ from: null }] }] }));
   assert.ok(pathSettings.validate({ settings: { cutThreshold: -1 }, paths: [] }));
 

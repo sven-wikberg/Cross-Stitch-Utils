@@ -120,7 +120,7 @@ Les icones sont distribuees localement depuis Lucide (`assets/icons/`, licences 
 
 Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les portions de blocs nouvellement construites et non modifiees, pas dans les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 
-Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le moteur actif est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. L'ancien `src/diagonal-optimizer-worker.js` et ses tests restent comme reference mais ne sont plus charges par l'outil 2. Les formats d'import/export restent inchanges.
+Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le seul moteur d'optimisation est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. Les anciens moteurs par cases et par zones, ainsi que leurs fonctions sans appel dans l'interface, ont ete retires. Les formats d'import/export restent inchanges.
 
 Les anciens chemins sont convertis sans changer l'ordre des cases, avec les deux diagonales de chaque ancienne case consecutives. Les sauvegardes completes passent en version 2; l'etat compact synchronise passe en version 3. `stitchedByDmc` compte alors des diagonales, jamais des croix. A la migration, chaque ancienne croix brodee devient deux diagonales brodees : la meme case reste terminee, la prochaine case reste la meme, et les compteurs d'annulation sont convertis aussi. Les croix terminees et commencees sont comptees separement dans l'interface.
 
@@ -139,8 +139,6 @@ node tests/upgrades.test.js
 node tests/stitch-model.test.js
 node tests/path-zones.test.js
 node tests/path-orientation.test.js
-node tests/zone-optimization.test.js
-node tests/zone-timing.test.js
 node tests/spatial-candidates.test.js
 node tests/workflows.test.js
 node --test tests/path-edit-history.test.js
@@ -149,7 +147,9 @@ node tests/planner-inspection.test.js
 node tests/session-view.test.js
 ```
 
-Les tests navigateur necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import, la reprise et l'optimisation sur le gros fichier inclus au depot. `orthogonal-path.test.js` verifie les distances unitaires, toutes les petites formes connexes d'une grille 3 x 3, les entrees/sorties distinctes, les contraintes et les grands groupes. `block-optimizer.test.js` verifie le choix conjoint des configurations, les contraintes, le delai global et la conservation du meilleur resultat. Les tests des anciens moteurs et de leurs delais restent disponibles comme reference. Les couts de raccordement sont conserves dans un cache borne, sans matrice de distances entre toutes les diagonales.
+Les tests navigateur necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import, la reprise et l'optimisation sur le gros fichier inclus au depot. `orthogonal-path.test.js` verifie les distances unitaires, toutes les petites formes connexes d'une grille 3 x 3, les entrees/sorties distinctes, les contraintes et les grands groupes. `block-optimizer.test.js` verifie le choix conjoint des configurations, les contraintes, le delai global et la conservation du meilleur resultat. Les couts de raccordement sont conserves dans un cache borne, sans matrice de distances entre toutes les diagonales.
+
+Les verifications utiles des anciens moteurs ciblent maintenant le moteur actif : `path-optimizer.test.js` execute la source exacte du worker navigateur, `path-orientation.test.js` compare les sens du fil et couvre les gains masques par des orientations fixes, et `spatial-candidates.test.js` controle l'index spatial de la construction orthogonale. Les tests des anciens delais par zone ont ete retires ; les tests du delai global, de son redemarrage uniquement apres un vrai gain et de l'arret restent dans `block-optimizer.test.js` et les tests navigateur. Les migrations, les contraintes legacy, les conflits de synchronisation et l'integrite de la vraie sauvegarde restent testes. Cette suite fonctionnelle est distincte du benchmark de qualite ci-dessous.
 
 ### Comparaison de qualite
 

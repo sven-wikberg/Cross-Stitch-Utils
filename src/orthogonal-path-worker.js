@@ -261,25 +261,8 @@
       const result = { ...snapshot(), unitLinks, blocks, prefixLength };
       report(result); return result;
     }
-    return { buildPath, orthogonalComponents, buildSequence, orientUnitPath, satisfiesConstraints: model.satisfiesConstraints };
+    return { buildPath, orthogonalComponents, buildSequence, orientUnitPath, spatialIndex, satisfiesConstraints: model.satisfiesConstraints };
   }
   root.createOrthogonalPathBuilder = createOrthogonalPathBuilder;
-  function workerMain(createModel, createBuilder) {
-    self.onmessage = event => {
-      const options = event.data;
-      if (options.type !== "start") return;
-      try {
-        const result = createBuilder(createModel()).buildPath(options,
-          snapshot => self.postMessage({ ...snapshot, type: "progress", runId: options.runId }));
-        self.postMessage({ ...result, type: "complete", runId: options.runId });
-      } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
-    };
-  }
-  root.createPathOptimizerApi = () => createOrthogonalPathBuilder(root.StitchModel);
-  root.createPathOptimizerWorker = () => {
-    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${createOrthogonalPathBuilder.toString()});`;
-    const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-    const worker = new Worker(url); URL.revokeObjectURL(url); return worker;
-  };
   if (typeof module !== "undefined") module.exports = { createOrthogonalPathBuilder };
 })(typeof window === "undefined" ? globalThis : window);

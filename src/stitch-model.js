@@ -31,9 +31,6 @@
       }
       return { distance: distanceTotal, score, realisticScore: score, cuts, cutTravel, frontDistance: path.length * Math.SQRT2 };
     }
-    function compareZoneMetrics(a, b) {
-      return a.zoneReturns - b.zoneReturns || a.score - b.score || a.cuts - b.cuts || a.distance - b.distance;
-    }
     function createZones(cells) {
       const byCell = new Map(), available = new Map(cells.map(p => [cellKey(p), p])), zones = [];
       const ordered = [...cells].sort((a, b) => a.y - b.y || a.x - b.x);
@@ -215,7 +212,7 @@
       const complete = [...cells.values()].filter(bits => bits === 3).length;
       return { cells, complete, partial: cells.size - complete };
     }
-    return { cellKey, key, copy, holes, sameHole, distance, cost, metrics, createZones, compareZoneMetrics, validateRoute, satisfiesConstraints,
+    return { cellKey, key, copy, holes, sameHole, distance, cost, metrics, createZones, validateRoute, satisfiesConstraints,
       orient, expandCells, validatePattern, upgradePathsFile, upgradeProgressSave, completion };
   }
   root.createStitchModel = createStitchModel;
