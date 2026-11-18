@@ -36,7 +36,7 @@
     function strokeWidths(cellSize, isCut = false, internal = false) {
       return {
         front: Math.max(1.2, cellSize * 0.2),
-        back: Math.max(isCut ? 0.6 : internal ? 1 : 0.6, cellSize * (isCut ? 0.045 : internal ? 0.12 : 0.065))
+        back: Math.max(isCut ? 0.6 : internal ? 1 : 1.4, cellSize * (isCut ? 0.045 : internal ? 0.12 : 0.16))
       };
     }
     return { blockIndex, sameBlock, connections, diffConnections, strokeWidths };

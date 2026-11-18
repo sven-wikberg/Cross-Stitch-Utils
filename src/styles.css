@@ -661,12 +661,8 @@ select:focus {
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 250ms ease-out;
 }
-#pathImprovementCanvas.active { opacity: 1; transition: none; }
-@media (prefers-reduced-motion: reduce) {
-  #pathImprovementCanvas { transition: none; }
-}
+#pathImprovementCanvas.active { opacity: 1; }
 
 .zoom-controls {
   display: flex;

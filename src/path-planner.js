@@ -91,7 +91,6 @@ const PATH_TIMING_VERSION = 1;
 const pathZoneCache = new WeakMap();
 const pathBlockCache = new WeakMap();
 const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
-const PATH_IMPROVEMENT_HOLD_MS = 1400;
 
 let storedState = migratePlannerState(loadStoredState());
 let loadedPattern = storedState.pattern;
@@ -125,7 +124,6 @@ let optimizerSnapshotTimer = null;
 let optimizerLastRenderedAt = -Infinity;
 let pendingOptimizerSnapshot = null;
 let pathImprovement = null;
-let pathImprovementTimer = null;
 let constraintsByDmc = storedState.constraintsByDmc || {};
 let batchPlan = storedState.batchPlan || { pending: [], results: [] };
 let batchRunning = false;
@@ -423,8 +421,6 @@ function blocksForColor(dmc) {
 }
 
 function clearPathImprovement() {
-  clearTimeout(pathImprovementTimer);
-  pathImprovementTimer = null;
   pathImprovement = null;
   pathImprovementCanvas.classList.remove("active");
   pathImprovementCanvas.width = 1;
@@ -438,20 +434,15 @@ function recordPathImprovement(dmc, before, after) {
   if (constraintApi.compareMetrics(next, previous) >= 0) return;
   const scoreGain = Math.max(0, previous.score - next.score), cutsDelta = previous.cuts - next.cuts;
   if (scoreGain < 1e-8 && cutsDelta <= 0) return;
-  clearTimeout(pathImprovementTimer);
   pathImprovement = { ...PathVisuals.diffConnections(before, after, blocksForColor(dmc), cutThreshold),
-    pattern: loadedPattern, dmc, route: after, count: after.length, expiresAt: performance.now() + PATH_IMPROVEMENT_HOLD_MS };
+    pattern: loadedPattern, dmc, route: after, count: after.length };
   const amount = scoreGain > 0 && scoreGain < 0.01 ? "< 0,01"
     : scoreGain.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
   const cuts = Math.abs(cutsDelta);
   pathImprovementGain.textContent = `Gain : ${amount}${cuts
     ? ` | ${cuts} coupe${cuts > 1 ? "s" : ""} en ${cutsDelta > 0 ? "moins" : "plus"}` : ""}`;
-  // Only the lightweight overlay fades; no frame loop redraws the pattern or delays the worker.
+  // Keep the latest change visible until it is replaced, without an animation loop.
   pathImprovementCanvas.classList.add("active");
-  pathImprovementTimer = setTimeout(() => {
-    pathImprovementTimer = null;
-    pathImprovementCanvas.classList.remove("active");
-  }, PATH_IMPROVEMENT_HOLD_MS);
 }
 
 function renderPathImprovement(cellSize) {
@@ -464,7 +455,6 @@ function renderPathImprovement(cellSize) {
   if (pathImprovementCanvas.height !== patternCanvas.height) pathImprovementCanvas.height = patternCanvas.height;
   const context = pathImprovementCanvas.getContext("2d");
   context.clearRect(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height);
-  if (performance.now() >= pathImprovement.expiresAt) return;
   context.save(); context.lineCap = "round";
   const draw = (link, color, width, dash) => {
     context.strokeStyle = color; context.lineWidth = width; context.setLineDash(dash);
@@ -527,12 +517,18 @@ function pathPointStyle(cellSize) {
 function drawPathSegment(context, fromPoint, toPoint, cellSize, colors, internal = false) {
   const from = StitchModel.holes(fromPoint).end, to = StitchModel.holes(toPoint).start;
   const isCut = isCutJump(fromPoint, toPoint);
-  context.strokeStyle = isCut ? "#c63848" : colors.line;
-  context.lineWidth = PathVisuals.strokeWidths(cellSize, isCut, internal).back;
-  context.setLineDash(isCut ? pathCutDash(cellSize) : [Math.max(1, cellSize * 0.15), Math.max(1, cellSize * 0.15)]);
+  const width = PathVisuals.strokeWidths(cellSize, isCut, internal).back;
+  context.setLineDash(isCut ? pathCutDash(cellSize) : internal
+    ? [Math.max(1, cellSize * 0.15), Math.max(1, cellSize * 0.15)]
+    : [Math.max(3, cellSize * 0.3), Math.max(2.4, cellSize * 0.22)]);
   context.beginPath();
   context.moveTo(GRID_RULER_SIZE + from.x * cellSize, GRID_RULER_SIZE + from.y * cellSize);
   context.lineTo(GRID_RULER_SIZE + to.x * cellSize, GRID_RULER_SIZE + to.y * cellSize);
+  if (!isCut && !internal) {
+    context.strokeStyle = "#ffffff"; context.lineWidth = width + 1.5; context.stroke();
+  }
+  context.strokeStyle = isCut ? "#c63848" : internal ? colors.line : "#3f4b55";
+  context.lineWidth = width;
   context.stroke(); context.setLineDash([]);
 }
 

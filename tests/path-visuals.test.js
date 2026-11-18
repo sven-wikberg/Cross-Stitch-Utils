@@ -62,11 +62,12 @@ test("unit internal links are excluded but internal forced cuts and long histori
   assert.ok(visuals.connections(jumping, index, 100).size > 0);
 });
 
-test("internal strokes are thicker without thickening cuts or changing route data", () => {
+test("inter-block strokes stand out while cuts stay thin and route data stays unchanged", () => {
   for (const size of [3, 6, 10, 18]) {
     const normal = visuals.strokeWidths(size), internal = visuals.strokeWidths(size, false, true);
     const cut = visuals.strokeWidths(size, true, true);
-    assert.ok(internal.back > normal.back);
+    assert.ok(normal.back > internal.back && internal.back > cut.back);
+    assert.ok(normal.back > Math.max(0.6, size * 0.065));
     assert.ok(internal.front > Math.max(1, size * 0.14));
     assert.equal(cut.back, Math.max(0.6, size * 0.045));
   }

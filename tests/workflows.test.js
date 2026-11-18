@@ -510,9 +510,34 @@ async function run() {
     await planner.setViewportSize({ width: 1600, height: 1000 });
     await planner.evaluate(() => new Promise(requestAnimationFrame));
     const originalPixels = await planner.evaluate(() => patternCanvas.toDataURL());
-    await planner.waitForFunction(() => !pathImprovementCanvas.classList.contains("active"));
-    assert.equal(await planner.evaluate(() => patternCanvas.toDataURL()), originalPixels, "Fading never redraws the base canvas");
-    assert.equal(await planner.locator("#pathImprovementGain").innerText(), gainText, "The last gain remains readable after its highlight fades");
+    const originalOverlay = await planner.evaluate(() => pathImprovementCanvas.toDataURL());
+    await planner.evaluate(() => new Promise(resolve => setTimeout(resolve, 1800)));
+    assert.equal(await planner.evaluate(() => patternCanvas.toDataURL()), originalPixels, "Keeping the highlight never redraws the base canvas");
+    assert.equal(await planner.evaluate(() => pathImprovementCanvas.toDataURL()), originalOverlay);
+    assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true,
+      "The last improvement stays highlighted beyond the former expiry delay");
+    assert.equal(await planner.locator("#pathImprovementGain").innerText(), gainText);
+    const connectionContrast = await planner.evaluate(() => {
+      const canvas = document.createElement("canvas"); canvas.width = 125; canvas.height = 75;
+      const context = canvas.getContext("2d");
+      const from = { x: 0, y: 0, diagonal: "upper", direction: 1 };
+      const to = { x: 4, y: 0, diagonal: "lower", direction: 1 };
+      const counts = [];
+      for (const background of ["#ffffff", "#111111"]) {
+        context.fillStyle = background; context.fillRect(0, 0, 125, 75);
+        drawPathSegment(context, from, to, 18, { line: "#ffffff" }, false);
+        const pixels = context.getImageData(42, 40, 60, 9).data;
+        let ink = 0, outline = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i] === 63 && pixels[i + 1] === 75 && pixels[i + 2] === 85) ink++;
+          if (pixels[i] > 120 && pixels[i + 1] > 120 && pixels[i + 2] > 120) outline++;
+        }
+        counts.push({ background, ink, outline });
+      }
+      return counts;
+    });
+    assert.ok(connectionContrast.every(count => count.ink > 20 && count.outline > 20),
+      `Inter-block connections remain contrasted on white and dark fabric colors: ${JSON.stringify(connectionContrast)}`);
     assert.ok(await planner.evaluate(() => {
       clearPendingOptimizerSnapshot();
       optimizerLastRenderedAt = performance.now();
@@ -534,6 +559,8 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => currentPath()), stoppedBest);
     assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), stoppedBest);
     assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].terminated), true);
+    assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true,
+      "Stopping preserves the last highlighted improvement");
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();
     await planner.waitForFunction(() => !document.querySelector("main").inert);
