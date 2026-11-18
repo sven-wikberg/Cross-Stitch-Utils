@@ -58,7 +58,7 @@
       }
       return visited.size === available.size ? route : null;
     }
-    function orientUnitPath(sequence, unitLinks, constraints = {}, threshold = 10, previous = null, next = []) {
+    function orientUnitPath(sequence, unitLinks, constraints = {}, threshold = 10, previous = null, next = [], endpoints = {}) {
       if (!sequence.length) return { path: [], score: 0 };
       const fixed = new Map((constraints.lockedPrefix || []).map(p => [model.key(p), p.direction]));
       if (constraints.start) fixed.set(model.key(constraints.start), constraints.start.direction);
@@ -72,6 +72,8 @@
         for (let d = 0; d < 2; d++) {
           const point = variants[i][d], required = fixed.get(model.key(point));
           if (required && required !== point.direction) continue;
+          if ((!i && endpoints.first && endpoints.first !== point.direction)
+              || (i === sequence.length - 1 && endpoints.last && endpoints.last !== point.direction)) continue;
           if (!i) {
             if (previous && unitLinks[0] && model.distance(previous, point) !== 1) continue;
             current[d] = model.cost(previous, point, threshold, true); continue;
@@ -140,6 +142,7 @@
       if (prefixError || !model.satisfiesConstraints(prefix, { ...constraints, forcedCuts: [] })) {
         throw new Error(prefixError || "Depart et prefixe incompatibles.");
       }
+      const prefixLength = prefix.length;
       const cellIndex = new Map(cells.map((cell, i) => [model.cellKey(cell), i]));
       if (cellIndex.size !== cells.length) throw new Error("Cases dupliquees.");
       const state = new Uint8Array(cells.length);
@@ -165,7 +168,7 @@
       });
       const index = spatialIndex(cells, variants);
       cells.forEach((_, i) => { if (state[i] === 2) index.remove(i); });
-      const pending = new Set(groups.map(group => group.id)), unitLinks = prefix.map(() => false);
+      const pending = new Set(groups.map(group => group.id)), unitLinks = prefix.map(() => false), blocks = [];
       let route = prefix, currentZone = prefix.length ? zones.byCell.get(model.cellKey(prefix.at(-1))) : null;
       let completed = 0, active = null, attempts = 0, lastReport = -Infinity, phase = "Preparation des groupes orthogonaux";
       const started = clock(), diagnostics = { groups: groups.length, entryExitChanges: 0, diagonalLinks: 0, rejectedPrefixes: 0 };
@@ -243,6 +246,9 @@
         if (!best) throw new Error("Aucun aller-retour a distance 1 ne respecte les contraintes de ce groupe.");
         if (best.entry && model.cellKey(best.entry) !== model.cellKey(best.exit)) diagnostics.entryExitChanges++;
         if (previous && Math.abs(previous.x - best.path[0].x) === 1 && Math.abs(previous.y - best.path[0].y) === 1) diagnostics.diagonalLinks++;
+        blocks.push({ cells: group.cells.map(cell => ({ x: cell.x, y: cell.y })), partial: group.partial,
+          resume: Boolean(group.resume), start: route.length, end: route.length + best.path.length,
+          ...(group.resume ? { root: { x: cells[resumeIndex].x, y: cells[resumeIndex].y } } : {}) });
         for (let i = 0; i < best.path.length; i++) { route.push(best.path[i]); unitLinks.push(i > 0 || Boolean(group.resume)); }
         group.indices.forEach(i => { state[i] = 2; });
         pending.delete(group.id); completed++; active.status = "complete";
@@ -257,11 +263,12 @@
       if (route.some((point, i) => unitLinks[i] && model.distance(route[i - 1], point) !== 1)) throw new Error("Retour non unitaire.");
       initialMetrics ||= zones.measure(route, threshold);
       phase = "Parcours par retours termine";
-      const result = { ...snapshot(), unitLinks };
+      const result = { ...snapshot(), unitLinks, blocks, prefixLength };
       report(result); return result;
     }
     return { buildPath, orthogonalComponents, buildSequence, orientUnitPath, satisfiesConstraints: model.satisfiesConstraints };
   }
+  root.createOrthogonalPathBuilder = createOrthogonalPathBuilder;
   function workerMain(createModel, createBuilder) {
     self.onmessage = event => {
       const options = event.data;

@@ -1,0 +1,434 @@
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+const model = require("../src/stitch-model.js");
+const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
+const { createBlockOptimizer } = require("../src/block-optimizer-worker.js");
+
+const builder = createOrthogonalPathBuilder(model);
+const action = (cell, diagonal = "lower", direction = 1) => ({ ...cell, diagonal, direction });
+const rectangle = (width, height, x = 0, y = 0) => Array.from({ length: width * height }, (_, i) =>
+  ({ x: x + i % width, y: y + Math.floor(i / width) }));
+const close = (actual, expected, label) => assert.ok(Number.isFinite(actual)
+  && Math.abs(actual - expected) < 1e-7, `${label}: expected ${expected}, received ${actual}`);
+const compare = (a, b) => Math.abs(a.score - b.score) > 1e-8 ? a.score - b.score
+  : a.cuts - b.cuts || a.distance - b.distance;
+
+function seededRandom(seed = 31) {
+  return () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+}
+
+function optimizer(tickMs = 0, random = seededRandom()) {
+  let time = 0;
+  return createBlockOptimizer(model, createOrthogonalPathBuilder, () => { time += tickMs; return time; }, random);
+}
+
+function* permutations(values) {
+  if (!values.length) { yield []; return; }
+  for (let i = 0; i < values.length; i++) {
+    for (const rest of permutations(values.filter((_, j) => i !== j))) yield [values[i], ...rest];
+  }
+}
+
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function hole(point, start) {
+  const first = { x: point.x, y: point.y + (point.diagonal === "lower" ? 1 : 0) };
+  const second = { x: point.x + 1, y: point.y + (point.diagonal === "upper" ? 1 : 0) };
+  return start === (point.direction === 1) ? first : second;
+}
+
+function distance(a, b) {
+  const end = hole(a, false), start = hole(b, true);
+  return Math.hypot(end.x - start.x, end.y - start.y);
+}
+
+function measure(path, threshold) {
+  let score = 0, cuts = 0, total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const d = distance(path[i - 1], path[i]);
+    if (!d) return { score: Infinity, cuts: 0, distance: Infinity };
+    const cut = Number(Boolean(path[i].cutBefore) || d > threshold);
+    total += d; cuts += cut; score += d + cut * threshold * 3;
+  }
+  return { score, cuts, distance: total };
+}
+
+function assertPath(result, cells, constraints = {}, threshold = 10) {
+  assert.equal(model.validateRoute(result.path, cells), "", "complete, distinct, lower-before-upper actions");
+  assert.ok(model.satisfiesConstraints(result.path, constraints), "route constraints are retained");
+  assert.equal(result.unitLinks.length, result.path.length);
+  assert.ok(result.unitLinks.every(flag => typeof flag === "boolean"));
+  assert.equal(result.unitLinks[0] || false, false);
+  for (let i = 1; i < result.path.length; i++) {
+    const d = distance(result.path[i - 1], result.path[i]);
+    assert.ok(d > 0, `nonzero hole-to-hole link ${i}`);
+    if (result.unitLinks[i]) assert.equal(d, 1, `exact unit link ${i}`);
+  }
+  if (result.metrics) {
+    const expected = model.createZones(cells).measure(result.path, threshold);
+    for (const [key, value] of Object.entries(expected)) close(result.metrics[key], value, `metric ${key}`);
+  }
+}
+
+function assertBlockUnits(problem, order, result) {
+  let offset = 0;
+  for (const id of order) {
+    const block = problem.blocks[id];
+    for (let j = 0; j < block.seedSequence.length; j++) {
+      const expected = j === 0 ? Boolean(block.incomingUnit) : block.anchor ? block.seedUnits[j] : true;
+      assert.equal(result.unitLinks[offset + j], expected, `block ${id}, link ${j}`);
+    }
+    offset += block.seedSequence.length;
+  }
+  assert.equal(offset, result.path.length);
+}
+
+// Enumerate sewing directions directly; do not use either worker's orientation DP.
+function configVariants(problem, block) {
+  const fixed = new Map((problem.constraints.lockedPrefix || []).map(p => [model.key(p), p.direction]));
+  if (problem.constraints.start) fixed.set(model.key(problem.constraints.start), problem.constraints.start.direction);
+  const variants = new Map();
+  for (const config of block.configs) {
+    let sequence = config.sequence;
+    if (!sequence) {
+      sequence = builder.buildSequence(block.cells, config.entry, config.exit);
+      assert.ok(sequence, "a retained entry/exit pair has a valid sequence");
+      if (block.resume) sequence = sequence.slice(1);
+    }
+    assert.ok(sequence.length <= 8, "keep the exhaustive orientation oracle bounded");
+    const units = config.units || sequence.map((_, i) => i > 0);
+    for (let mask = 0; mask < 2 ** sequence.length; mask++) {
+      const path = sequence.map((point, i) => ({ ...point, direction: mask & (1 << i) ? -1 : 1,
+        ...(problem.cuts.has(model.key(point)) ? { cutBefore: true } : {}) }));
+      if (path.some(p => fixed.has(model.key(p)) && fixed.get(model.key(p)) !== p.direction)) continue;
+      if (path.some((point, i) => i > 0 && (!distance(path[i - 1], point)
+          || (units[i] && distance(path[i - 1], point) !== 1)))) continue;
+      const metrics = measure(path, problem.threshold);
+      const signature = path.map(p => `${model.key(p)}:${p.direction}:${Boolean(p.cutBefore)}`).join(";");
+      variants.set(signature, { path, ...metrics });
+    }
+  }
+  return [...variants.values()];
+}
+
+function bruteOrder(problem, order, variants) {
+  let best = { score: Infinity, cuts: Infinity, distance: Infinity }, visited = 0, rejectedZero = 0;
+  function visit(index, previous, metrics) {
+    if (index === order.length) {
+      visited++;
+      if (compare(metrics, best) < 0) best = metrics;
+      return;
+    }
+    const id = order[index], block = problem.blocks[id];
+    for (const variant of variants[id]) {
+      const d = previous ? distance(previous, variant.path[0]) : 0;
+      if (previous && !d) { rejectedZero++; continue; }
+      if (previous && block.incomingUnit && d !== 1) continue;
+      const cut = previous ? Number(Boolean(variant.path[0].cutBefore) || d > problem.threshold) : 0;
+      visit(index + 1, variant.path.at(-1), {
+        score: metrics.score + variant.score + d + cut * problem.threshold * 3,
+        cuts: metrics.cuts + variant.cuts + cut,
+        distance: metrics.distance + variant.distance + d
+      });
+    }
+  }
+  visit(0, null, { score: 0, cuts: 0, distance: 0 });
+  return { ...best, visited, rejectedZero };
+}
+
+function checkDP(engine, problem, orders) {
+  const variants = problem.blocks.map(block => configVariants(problem, block));
+  let rejectedZero = 0;
+  for (const block of problem.blocks) {
+    assert.ok(block.costs instanceof Float64Array);
+    assert.ok(block.cutCounts instanceof Int32Array);
+    assert.equal(block.costs.length, block.entries.length * block.exits.length);
+    assert.equal(block.cutCounts.length, block.costs.length);
+    assert.equal(block.choices.length, block.costs.length);
+    for (let entry = 0; entry < block.entries.length; entry++) for (let exit = 0; exit < block.exits.length; exit++) {
+      const same = (a, b) => model.key(a) === model.key(b) && a.direction === b.direction;
+      const candidates = variants[block.id].filter(v => same(v.path[0], block.entries[entry])
+        && same(v.path.at(-1), block.exits[exit])).sort(compare);
+      const at = entry * block.exits.length + exit;
+      if (!candidates.length) {
+        assert.equal(block.costs[at], Infinity, "infeasible port pair remains infeasible");
+        assert.equal(block.choices[at], -1);
+      } else {
+        close(block.costs[at], candidates[0].score, "prepared internal cost");
+        assert.equal(block.cutCounts[at], candidates[0].cuts);
+        assert.ok(block.choices[at] >= 0 && block.choices[at] < block.configs.length);
+      }
+    }
+  }
+  for (const order of orders) {
+    const expected = bruteOrder(problem, order, variants);
+    rejectedZero += expected.rejectedZero;
+    assert.ok(expected.visited > 0, "the exhaustive oracle finds feasible combinations");
+    const original = order.slice(), value = engine.evaluateOrder(problem, Object.freeze(order), true);
+    close(value.score, expected.score, `DP score for ${order}`);
+    assert.equal(value.cuts, expected.cuts, `DP cuts for ${order}`);
+    assert.equal(value.trace.length, order.length);
+    const route = engine.materialize(problem, order, value);
+    assertPath(route, problem.cells, problem.constraints, problem.threshold);
+    assertBlockUnits(problem, order, route);
+    close(measure(route.path, problem.threshold).score, expected.score, "materialized optimum");
+    assert.equal(measure(route.path, problem.threshold).cuts, expected.cuts);
+    assert.deepEqual(order, original, "evaluation and materialization do not reorder their input");
+    assert.deepEqual(engine.materialize(problem, order, engine.evaluateOrder(problem, order)), route,
+      "materialization also accepts an evaluation without trace");
+  }
+  return { variants, rejectedZero };
+}
+
+test("prepared block matrices and route DP match exhaustive configuration/direction choices", () => {
+  const engine = optimizer();
+  const points = [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 4, y: 1 }];
+  let rejectedZero = 0;
+  for (const threshold of [1, 2, 10]) {
+    const constraints = { forcedCuts: [action(points[1]), action(points[2], "upper")] };
+    const problem = engine.prepareProblem({ points, constraints, cutThreshold: threshold });
+    assert.equal(problem.blocks.length, 3);
+    rejectedZero += checkDP(engine, problem, [...permutations(problem.orders[0])]).rejectedZero;
+  }
+  const openCells = [{ x: 0, y: 0 }, { x: 1, y: 0 }];
+  const partial = engine.prepareProblem({ points: openCells, constraints: {
+    lockedPrefix: [action(openCells[1]), action(openCells[0])],
+    forcedCuts: [action(openCells[1], "upper")]
+  } });
+  assert.equal(partial.fixedCount, 1);
+  const partialOrders = [...permutations(partial.orders[0].slice(1))].map(order => [0, ...order]);
+  rejectedZero += checkDP(engine, partial, partialOrders).rejectedZero;
+  assert.ok(rejectedZero > 0, "zero-length boundary choices are rejected, even with forced cuts");
+  const pair = engine.prepareProblem({ points: [...rectangle(2, 2), ...rectangle(2, 2, 4, 1)] });
+  assert.equal(pair.blocks.length, 2);
+  checkDP(engine, pair, [...permutations(pair.orders[0])]);
+});
+
+test("entry and exit choices are coupled: independent edge minima are unattainable", () => {
+  const engine = optimizer();
+  const points = [{ x: 0, y: 3 }, ...rectangle(2, 2, 3, 3), { x: 7, y: 3 }];
+  const problem = engine.prepareProblem({ points });
+  const order = [0, 3, 7].map(x => problem.blocks.find(block => block.cells.some(cell => cell.x === x)).id);
+  const { variants } = checkDP(engine, problem, [order]);
+  let independent = order.reduce((sum, id) => sum + Math.min(...variants[id].map(v => v.score)), 0);
+  for (let i = 1; i < order.length; i++) {
+    const edges = variants[order[i - 1]].flatMap(a => variants[order[i]].map(b => {
+      const d = distance(a.path.at(-1), b.path[0]);
+      return d ? d + Number(Boolean(b.path[0].cutBefore) || d > problem.threshold) * problem.threshold * 3 : Infinity;
+    }));
+    independent += Math.min(...edges);
+  }
+  close(independent, 13, "relaxed independent-edge bound");
+  close(engine.evaluateOrder(problem, order).score, 13.23606797749979, "coupled optimum");
+  assert.ok(engine.evaluateOrder(problem, order).score > independent + 0.2);
+});
+
+const zoneReturnCells = [{ x: 3, y: 6 }, { x: 0, y: 6 }, { x: 0, y: 2 },
+  { x: 5, y: 3 }, { x: 2, y: 5 }, { x: 6, y: 5 }];
+const zoneReturnConstraints = { start: action(zoneReturnCells[0]) };
+
+test("exhaustive search may return to an old eight-connected zone when score improves", () => {
+  const engine = optimizer();
+  const problem = engine.prepareProblem({ points: zoneReturnCells, constraints: zoneReturnConstraints });
+  assert.equal(problem.seed.metrics.zoneReturns, 0);
+  assert.equal(problem.fixedCount, 2, "start anchor and resumed upper are fixed");
+  const orders = [...permutations(problem.orders[0].slice(2))].map(order => [0, 1, ...order]);
+  let best = Infinity, contiguous = Infinity;
+  for (const order of orders) {
+    const route = engine.materialize(problem, order);
+    const metrics = model.createZones(zoneReturnCells).measure(route.path, 10);
+    best = Math.min(best, metrics.score);
+    if (!metrics.zoneReturns) contiguous = Math.min(contiguous, metrics.score);
+  }
+  assert.ok(best < contiguous - 0.05, "this fixture requires a zone return for its optimum");
+  const result = engine.optimizePath({ points: zoneReturnCells, constraints: zoneReturnConstraints, stagnationLimitMs: 1 });
+  assertPath(result, zoneReturnCells, zoneReturnConstraints);
+  close(result.metrics.score, best, "exhaustive block-order optimum");
+  assert.equal(result.metrics.zoneReturns, 1);
+  assert.equal(result.reason, "exhaustive");
+  assert.equal(result.attempts, 120);
+  assert.equal(result.lastImprovementMs, 0, "exhaustion need not consume the inactivity budget");
+  assert.equal(result.method, "block-optimization");
+  assert.equal(engine.compareMetrics({ score: 9, cuts: 1, distance: 6, zoneReturns: 99 },
+    { score: 10, cuts: 0, distance: 4, zoneReturns: 0 }), -1);
+  assert.ok(engine.compareMetrics({ score: 10, cuts: 1, distance: 8 }, { score: 10, cuts: 2, distance: 1 }) < 0);
+  assert.ok(engine.compareMetrics({ score: 10, cuts: 1, distance: 7 }, { score: 10, cuts: 1, distance: 8 }) < 0);
+});
+
+test("reversing blocks never reverses the diagonals within those blocks", () => {
+  const engine = optimizer();
+  const points = [...rectangle(2, 2), ...rectangle(2, 1, 8, 0), { x: 15, y: 2 }];
+  const problem = engine.prepareProblem({ points });
+  const order = problem.orders[0].slice().reverse();
+  const route = engine.materialize(problem, order);
+  assertPath(route, points);
+  assertBlockUnits(problem, order, route);
+  const owners = new Map(problem.blocks.flatMap(block => block.cells.map(cell => [model.cellKey(cell), block.id])));
+  const realizedOrder = route.path.map(point => owners.get(model.cellKey(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
+  assert.deepEqual(realizedOrder, order);
+  assert.notEqual(model.validateRoute(problem.seed.path.slice().reverse(), points), "",
+    "the fixture distinguishes block reversal from invalid raw-action reversal");
+});
+
+test("an eligible initial route beating the fresh seed is retained before search", () => {
+  const initialPath = [0, 5, 3, 4, 1, 2].flatMap((index, i) => {
+    const directions = [[1, 1], [1, -1], [1, -1], [-1, -1], [-1, -1], [1, 1]][i];
+    return [action(zoneReturnCells[index], "lower", directions[0]), action(zoneReturnCells[index], "upper", directions[1])];
+  });
+  const options = { points: zoneReturnCells, constraints: zoneReturnConstraints, initialPath, stagnationLimitMs: 1 };
+  const engine = optimizer(500), problem = engine.prepareProblem(options);
+  assert.equal(problem.orders.length, 2);
+  assert.ok(problem.incumbent.metrics.score < problem.seed.metrics.score - 0.05);
+  assert.deepEqual(problem.incumbent.path, initialPath);
+  const reports = [];
+  const result = engine.optimizePath(options, snapshot => { if (snapshot.path) reports.push(snapshot); });
+  assert.ok(reports.length > 0);
+  for (const snapshot of reports) {
+    assert.equal(snapshot.path.length, initialPath.length, "never replace the eligible initial route with a partial preview");
+    assert.ok(snapshot.metrics.score <= problem.incumbent.metrics.score + 1e-7);
+  }
+  assertPath(result, zoneReturnCells, zoneReturnConstraints);
+  close(result.initialMetrics.score, problem.incumbent.metrics.score, "initial incumbent metrics");
+  assert.ok(result.metrics.score <= problem.incumbent.metrics.score + 1e-7);
+});
+
+test("historical prefixes, starts, resumed groups and forced cuts remain fixed", () => {
+  const points = [...rectangle(2, 2), ...rectangle(2, 2, 8, 3), { x: 20, y: 1 }];
+  const initialPath = model.orient([action(points[0]), action(points[4]), action(points[1]),
+    action(points[0], "upper"), action(points[8]), action(points[4], "upper"),
+    action(points[1], "upper"), action(points[8], "upper"),
+    ...[points[2], points[3], points[5], points[6]].flatMap(cell => [action(cell), action(cell, "upper")])], 10, {}, true);
+  initialPath[6].cutBefore = true;
+  for (const prefixLength of [0, 1, 2, 3, 5, 8, initialPath.length - 1, initialPath.length]) {
+    const constraints = { lockedPrefix: initialPath.slice(0, prefixLength).map(model.copy), start: model.copy(initialPath[0]),
+      forcedCuts: [model.copy(initialPath[1]), model.copy(initialPath.at(-1))] };
+    const engine = optimizer(500), problem = engine.prepareProblem({ points, initialPath, constraints });
+    const order = [...problem.orders[0].slice(0, problem.fixedCount), ...problem.orders[0].slice(problem.fixedCount).reverse()];
+    const route = engine.materialize(problem, order);
+    assertPath(route, points, constraints);
+    assertBlockUnits(problem, order, route);
+    assert.deepEqual(route.path.slice(0, prefixLength).map(p => [model.key(p), p.direction]),
+      constraints.lockedPrefix.map(p => [model.key(p), p.direction]));
+    assert.equal(route.path.find(p => model.key(p) === model.key(initialPath[6])).cutBefore, true,
+      "cuts carried only by initialPath are preserved");
+    if (problem.fixedCount && problem.blocks.length > 1) {
+      const invalid = problem.orders[0].slice();
+      [invalid[0], invalid[1]] = [invalid[1], invalid[0]];
+      assert.throws(() => engine.evaluateOrder(problem, invalid), /Ordre/);
+    }
+    const result = engine.optimizePath({ points, initialPath, constraints, stagnationLimitMs: 1 });
+    assertPath(result, points, constraints);
+  }
+  for (const direction of [1, -1]) {
+    const constraints = { start: action(points[2], "lower", direction), forcedCuts: [action(points[5], "upper")] };
+    const result = optimizer(500).optimizePath({ points, constraints, stagnationLimitMs: 1 });
+    assertPath(result, points, constraints);
+  }
+});
+
+test("search reports only global improvements and resets its timer only for those improvements", () => {
+  const engine = optimizer(500), reports = [];
+  const result = engine.optimizePath({ points: zoneReturnCells, constraints: zoneReturnConstraints, stagnationLimitMs: 1000000 },
+    snapshot => { if (snapshot.stage === "search") reports.push(snapshot); });
+  let observed = 0;
+  for (let i = 1; i < reports.length; i++) {
+    const previous = reports[i - 1], current = reports[i];
+    assert.ok(compare(current.metrics, previous.metrics) <= 0, "reported best metrics are monotonic");
+    const previousOrigin = previous.elapsedMs - previous.lastImprovementMs;
+    const currentOrigin = current.elapsedMs - current.lastImprovementMs;
+    if (current.improvements === previous.improvements) {
+      assert.equal(currentOrigin, previousOrigin, "no improvement means no timer reset");
+      assert.ok(current.lastImprovementMs >= previous.lastImprovementMs);
+    } else {
+      observed++;
+      assert.ok(current.improvements > previous.improvements);
+      assert.ok(compare(current.metrics, previous.metrics) < 0);
+      assert.ok(currentOrigin > previousOrigin, "a new global best resets inactivity");
+      assert.ok(current.path, "the improved best path accompanies its metrics");
+      assertPath(current, zoneReturnCells, zoneReturnConstraints);
+    }
+  }
+  assert.ok(reports.length > 2 && observed > 0, "exercise both steady search and actual improvement");
+  assert.equal(result.reason, "exhaustive");
+  assertPath(result, zoneReturnCells, zoneReturnConstraints);
+});
+
+test("restarts and preparation do not consume or reset the global search inactivity budget", () => {
+  const points = Array.from({ length: 9 }, (_, i) => ({ x: i * 4, y: i % 2 * 3 }));
+  const reports = [], limit = 130000;
+  const result = optimizer(500).optimizePath({ points, stagnationLimitMs: limit }, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  assert.ok(reports.length > 100 && result.restarts > 0, "exercise a restart with the injected clock");
+  assert.equal(result.improvements, 0, "this seed is already the best found");
+  const origin = reports[0].elapsedMs - reports[0].lastImprovementMs;
+  assert.ok(origin > 10000, "preparation takes logical time before the search timer starts");
+  for (const snapshot of reports) {
+    assert.equal(snapshot.elapsedMs - snapshot.lastImprovementMs, origin, "restart never resets the global timer");
+    assert.equal(snapshot.stagnationLimitMs, limit);
+    close(snapshot.metrics.score, result.metrics.score, "steady global best");
+  }
+  assert.equal(result.reason, "inactivity");
+  assert.ok(result.lastImprovementMs >= limit && result.lastImprovementMs <= limit + 2000);
+  assert.ok(result.attempts > 100 && result.attempts < 140, "deadline bounds search despite restarting");
+  assertPath(result, points);
+});
+
+test("public operations do not mutate frozen options, actions, constraints or orders", () => {
+  const points = [...rectangle(2, 2), ...rectangle(2, 2, 8, 3)].map((cell, i) => ({ ...cell, annotation: { index: i } }));
+  const initialPath = model.expandCells(points), constraints = {
+    lockedPrefix: initialPath.slice(0, 3), start: initialPath[0], forcedCuts: [initialPath[5]]
+  };
+  const options = deepFreeze({ points, initialPath, constraints, cutThreshold: 3, stagnationLimitMs: 1 });
+  const original = structuredClone(options), engine = optimizer(500), problem = engine.prepareProblem(options);
+  for (const order of problem.orders.map(order => deepFreeze(order.slice()))) {
+    const before = order.slice();
+    const evaluation = engine.evaluateOrder(problem, order, true);
+    assertPath(engine.materialize(problem, order, evaluation), points, constraints, 3);
+    assert.deepEqual(order, before);
+  }
+  assertPath(engine.optimizePath(options), points, constraints, 3);
+  assert.deepEqual(options, original);
+});
+
+test("empty routes and malformed block orders are handled explicitly", () => {
+  const engine = optimizer(), empty = engine.prepareProblem({ points: [] });
+  assert.deepEqual(engine.evaluateOrder(empty, []), { score: 0, cuts: 0 });
+  assert.deepEqual(engine.materialize(empty, []), { path: [], unitLinks: [] });
+  const result = engine.optimizePath({ points: [], stagnationLimitMs: 1 });
+  assertPath(result, []);
+  assert.deepEqual(result.blocks, { total: 0, prepared: 0 });
+  assert.equal(result.reason, "exhaustive");
+  const problem = engine.prepareProblem({ points: [{ x: 0, y: 0 }, { x: 4, y: 4 }] });
+  for (const order of [[], [0], [0, 0], [0, 2], [0, -1], [0, 0.5]]) {
+    assert.throws(() => engine.evaluateOrder(problem, order), /Ordre/);
+  }
+});
+
+test("3259-cross benchmark preserves all 345 blocks and exact internal unit links", { timeout: 30000 }, t => {
+  const fixture = require("../data/examples/grands-ilots.pattern.json");
+  const points = fixture.grid.cells.filter(cell => !cell.empty), before = structuredClone(points);
+  const started = performance.now(), reports = [];
+  const result = optimizer(500).optimizePath({ points, stagnationLimitMs: 2000 }, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  t.diagnostic(`3259 crosses, 345 blocks: ${(performance.now() - started).toFixed(0)} ms wall time, ${result.attempts} search attempts`);
+  assert.equal(points.length, 3259);
+  assertPath(result, points);
+  assert.equal(result.path.length, 6518);
+  assert.deepEqual(result.blocks, { total: 345, prepared: 345 });
+  assert.equal(result.metrics.zoneCount, 9);
+  assert.equal(result.unitLinks.filter(Boolean).length, 6173);
+  assert.ok(result.metrics.score <= result.initialMetrics.score + 1e-7);
+  assert.equal(result.reason, "inactivity");
+  assert.ok(result.attempts > 0 && result.lastImprovementMs >= 2000);
+  assert.ok(reports.length > 0);
+  for (let i = 1; i < reports.length; i++) assert.ok(compare(reports[i].metrics, reports[i - 1].metrics) <= 0);
+  assert.deepEqual(points, before);
+});

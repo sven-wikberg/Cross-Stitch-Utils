@@ -71,14 +71,14 @@
           </dl>
           <div class="path-algorithm-panel">
             <div class="algorithm-group">
-              <p class="field-label">Construction</p>
-              <button id="optimizedPathButton" class="secondary-button" type="button">Parcours par retours</button>
-              <button id="batchOptimizeButton" class="secondary-button" type="button">Generer toutes les couleurs</button>
+              <p class="field-label">Optimisation</p>
+              <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
+              <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <div id="batchResults" class="batch-results"></div>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
-              <label class="cut-threshold-field hidden" for="pathStagnationLimit">
-                Sans amelioration pour 500 croix
+              <label class="cut-threshold-field" for="pathStagnationLimit">
+                Sans amelioration (couleur)
                 <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
                   <option value="60000" selected>1 minute</option>
@@ -92,11 +92,11 @@
                 <input id="cutThresholdInput" type="number" min="1" step="1" value="10">
               </label>
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
-                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Avancement des groupes orthogonaux"></progress>
+                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Preparation des blocs"></progress>
                 <p id="pathAlgorithmDistance">Pret.</p>
                 <dl class="algorithm-live-metrics algorithm-zone-metrics">
                   <div class="algorithm-zone-heading">
-                    <dt>Groupe orthogonal</dt>
+                    <dt>Bloc en construction</dt>
                     <dd id="pathAlgorithmZone">-</dd>
                   </div>
                   <div>
@@ -104,11 +104,11 @@
                     <dd id="pathAlgorithmTotalScore">-</dd>
                   </div>
                   <div>
-                    <dt>Groupes termines</dt>
+                    <dt>Blocs prepares</dt>
                     <dd id="pathAlgorithmZonesDone">-</dd>
                   </div>
                   <div>
-                    <dt>Croix du groupe</dt>
+                    <dt>Croix du bloc</dt>
                     <dd id="pathAlgorithmZoneCrosses">-</dd>
                   </div>
                   <div class="hidden">
@@ -130,15 +130,19 @@
                     <dd id="pathAlgorithmElapsed">-</dd>
                   </div>
                   <div>
-                    <dt>Paires entree / sortie testees</dt>
+                    <dt>Essais</dt>
+                    <dd id="pathAlgorithmAttempts">-</dd>
+                  </div>
+                  <div>
+                    <dt>Relances</dt>
                     <dd id="pathAlgorithmRestarts">-</dd>
                   </div>
                   <div>
-                    <dt>Entrees et sorties distinctes</dt>
+                    <dt>Ameliorations</dt>
                     <dd id="pathAlgorithmImprovements">-</dd>
                   </div>
-                  <div class="hidden">
-                    <dt id="pathAlgorithmClockLabel">Sans gain (zone)</dt>
+                  <div>
+                    <dt id="pathAlgorithmClockLabel">Sans amelioration (couleur)</dt>
                     <dd id="pathAlgorithmLastImprovement">-</dd>
                   </div>
                 </dl>
@@ -287,6 +291,7 @@
 
     <script src="src/stitch-model.js"></script>
     <script src="src/orthogonal-path-worker.js"></script>
+    <script src="src/block-optimizer-worker.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/path-planner.js"></script>
