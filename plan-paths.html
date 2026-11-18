@@ -197,7 +197,7 @@
                 <div class="path-search-summary">
                   <div class="path-search-reading">
                     <output id="pathImprovementGain" class="path-improvement-gain" aria-live="polite" aria-atomic="true"></output>
-                    <span id="pathSearchActivity" class="path-search-activity"></span>
+                    <output id="pathComparisonScore" class="path-comparison-score"></output>
                   </div>
                   <div class="path-score-chart">
                     <span>Evolution du score</span>
@@ -205,15 +205,34 @@
                   </div>
                 </div>
                 <div class="path-search-legend" aria-label="Legende du parcours">
-                  <span><i class="legend-search"></i>Examine</span>
                   <span><i class="legend-gain"></i>Ameliore</span>
                   <span><i class="legend-cut"></i>Coupe</span>
                 </div>
+                <div class="path-inspection-toolbar" aria-label="Vue du parcours">
+                  <div class="path-view-tools">
+                    <button id="pathZoomOut" class="secondary-button path-view-button" type="button" title="Zoom arriere" aria-label="Zoom arriere"><img src="assets/icons/zoom-out.svg" alt=""></button>
+                    <output id="pathZoomLevel">100 %</output>
+                    <button id="pathZoomIn" class="secondary-button path-view-button" type="button" title="Zoom avant" aria-label="Zoom avant"><img src="assets/icons/zoom-in.svg" alt=""></button>
+                    <button id="pathFitView" class="secondary-button path-view-button" type="button" title="Vue complete" aria-label="Vue complete"><img src="assets/icons/maximize.svg" alt=""></button>
+                  </div>
+                  <div class="path-segmented" role="group" aria-label="Interaction avec la grille">
+                    <button id="pathDrawMode" class="secondary-button path-view-button" type="button" title="Tracer" aria-label="Tracer" aria-pressed="true"><img src="assets/icons/pencil.svg" alt=""></button>
+                    <button id="pathPanMode" class="secondary-button path-view-button" type="button" title="Deplacer" aria-label="Deplacer" aria-pressed="false"><img src="assets/icons/hand.svg" alt=""></button>
+                  </div>
+                  <div class="path-segmented" role="group" aria-label="Comparaison du parcours">
+                    <button id="pathViewBefore" class="secondary-button" type="button" aria-pressed="false" disabled>Avant</button>
+                    <button id="pathViewAfter" class="secondary-button" type="button" aria-pressed="true">Apres</button>
+                  </div>
+                  <button id="pathFocusGain" class="secondary-button path-view-button" type="button" title="Cadrer le dernier gain" aria-label="Cadrer le dernier gain" disabled><img src="assets/icons/focus.svg" alt=""></button>
+                </div>
               </div>
-              <div class="path-canvas-stage">
-                <canvas id="patternCanvas" width="1" height="1" aria-label="Grille du pattern"></canvas>
-                <canvas id="pathSearchCanvas" width="1" height="1" aria-hidden="true"></canvas>
+              <div id="pathCanvasStage" class="path-canvas-stage">
+                <canvas id="patternCanvas" width="1" height="1" tabindex="0" aria-label="Grille du pattern"></canvas>
                 <canvas id="pathImprovementCanvas" width="1" height="1" aria-hidden="true"></canvas>
+              </div>
+              <div class="path-overview-row">
+                <canvas id="pathOverview" width="160" height="100" tabindex="0" aria-label="Vue d'ensemble du pattern" title="Recentrer la vue"></canvas>
+                <output id="pathInspection" aria-live="polite"></output>
               </div>
             </div>
             <div>
@@ -299,6 +318,7 @@
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>
     <script src="src/path-settings.js"></script>
+    <script src="src/path-viewport.js"></script>
     <script src="src/path-planner.js"></script>
   </body>
 </html>

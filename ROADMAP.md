@@ -14,8 +14,8 @@ Statut : termine, verifie sur ordinateur, mobile et grand pattern.
 
 - [x] Couleur de travail commune a toutes les couleurs DMC, reglable et memorisee localement.
 - [x] Palette DMC et fichiers exportes inchanges.
-- [x] Zones reellement examinees visibles pendant la preparation et la recherche.
-- [x] Distinction entre essais en cours, ameliorations retenues et coupes.
+- [x] Zones examinees initialement affichees, puis retirees a la priorite 4 sur demande.
+- [x] Distinction entre ameliorations retenues et coupes ; les essais orange ne sont plus affiches.
 - [x] Courbe du meilleur score pendant le calcul.
 - [x] Affichage fluide, sans redessiner toute la grille pour chaque essai.
 - [x] Verification sur grands patterns, petits ecrans, arret et relance.
@@ -73,9 +73,24 @@ y compris le pattern de 41602 diagonales, sans toucher a la progression de l'out
 
 ## Priorite 4 : examiner les parcours plus facilement
 
-- [ ] Zoom de grille, deplacement et retour a la vue complete.
-- [ ] Bascule avant/apres avec cadrage identique.
-- [ ] Faciliter l'inspection d'un raccordement ou d'une coupe sans perdre la vue generale.
+Statut : termine. Inspection independante du chemin et de ses sauvegardes.
+
+- [x] Zoom de grille, deplacement et retour a la vue complete.
+- [x] Bascule avant/apres avec cadrage identique.
+- [x] Faciliter l'inspection d'un raccordement ou d'une coupe sans perdre la vue generale.
+- [x] Retirer les zones orange et les calculs/transports dedies a leur affichage.
+
+Molette, boutons de zoom, main, miniature cliquable, raccourcis clavier et zoom
+tactile sont disponibles. Le canvas reste borne a sa fenetre ; le zoom n'alloue
+pas une image geante. Les gains bleus restent affiches, avec un cadrage explicite
+du dernier gain. Le survol indique la distance entre trous et les coupes.
+
+Avant est le parcours au debut de la derniere recherche (ou sa premiere solution
+complete). Cette reference est locale a la session et n'est pas exportee ; un
+rechargement ou une edition l'efface. Apres reste le parcours courant, meme si
+Avant est affiche pendant le calcul. Le zoom et le deplacement sont communs.
+Tests du cadrage, du trace zoome, de la comparaison en cours de calcul, du tactile
+et des formats PC/mobile/grand ecran, sans modification de la progression.
 
 ## Entretien
 
@@ -85,7 +100,7 @@ y compris le pattern de 41602 diagonales, sans toucher a la progression de l'out
 
 ## Ordre propose
 
-Recherche plus visuelle et priorites 1 a 3 terminees.
-Suite proposee : inspection detaillee des parcours (priorite 4).
+Recherche plus visuelle et priorites 1 a 4 terminees.
+Suite proposee : entretien cible du code, a valider separement.
 
 Chaque chantier doit etre valide separement avant de passer au suivant.

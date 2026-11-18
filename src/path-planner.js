@@ -13,8 +13,15 @@ const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathImprovementCanvas = document.querySelector("#pathImprovementCanvas");
 const pathImprovementGain = document.querySelector("#pathImprovementGain");
-const pathSearchCanvas = document.querySelector("#pathSearchCanvas");
-const pathSearchActivity = document.querySelector("#pathSearchActivity");
+const pathCanvasStage = document.querySelector("#pathCanvasStage");
+const pathOverview = document.querySelector("#pathOverview");
+const pathInspection = document.querySelector("#pathInspection");
+const pathComparisonScore = document.querySelector("#pathComparisonScore");
+const pathViewBefore = document.querySelector("#pathViewBefore");
+const pathViewAfter = document.querySelector("#pathViewAfter");
+let viewportPattern = null, inspectionMode = "draw", comparisonMode = "after", viewFrame = null, panGesture = null;
+const comparisonPaths = new Map(), viewPointers = new Map();
+let overviewCache = null, inspectionLinks = null;
 const pathScoreHistory = document.querySelector("#pathScoreHistory");
 const pathWorkColor = document.querySelector("#pathWorkColor");
 const pathColorLegend = document.querySelector("#pathColorLegend");
@@ -83,8 +90,8 @@ const ISLAND_GAP_TOLERANCE = 3;
 const BACKTRACK_ISLAND_GAP_TOLERANCE = 1;
 const BACKTRACK_MAX_STEP_DISTANCE = 1;
 const BACKTRACK_MAX_VISITS = 45000;
-const MAX_RESPONSIVE_CELL_SIZE = 18;
 const GRID_RULER_SIZE = 26;
+const pathViewport = createPathViewport(GRID_RULER_SIZE);
 const COMPACT_PATH_CELL_SIZE = 6;
 const PATH_OPTIMIZATION_TIME_LIMIT = 45000;
 const DEFAULT_CUT_THRESHOLD = 10;
@@ -127,7 +134,6 @@ let activePathOptimizerNeedsSave = false;
 let activePathOptimizerSnapshot = null;
 let activePathOptimizerBestPath = [];
 let pathConstructionSummaries = {};
-let optimizerGridFrame = null;
 let optimizerSnapshotFrame = null;
 let optimizerSnapshotTimer = null;
 let optimizerLastRenderedAt = -Infinity;
@@ -246,6 +252,10 @@ function capturePathEdit(scope) {
 }
 
 function beginPathEdit(label, scope = { type: "color", dmc: selectedDmc }) {
+  inspectionLinks = null; pathInspection.textContent = "";
+  if (scope.type === "color") comparisonPaths.delete(scope.dmc);
+  else comparisonPaths.clear();
+  comparisonMode = "after";
   pathEditHistory.begin(scope, label, capturePathEdit(scope));
 }
 
@@ -301,6 +311,7 @@ function travelPathHistory(direction) {
   activePathStep = loadedPattern ? "paths" : "load";
   pathConstructionSummaries = {};
   scoreHistory = []; scoreHistoryDmc = null;
+  comparisonPaths.clear(); comparisonMode = "after";
   clearPathImprovement();
   savePathPlannerState();
   renderPathTool();
@@ -387,7 +398,7 @@ function renderLoadedPattern() {
   loadedColorsText.textContent = String(loadedPattern.colors.length);
 }
 
-function renderPatternGrid() {
+function renderPatternGrid(canvasOnly = false) {
   const context = patternCanvas.getContext("2d");
   pathGridStatus.classList.add("hidden");
 
@@ -397,41 +408,48 @@ function renderPatternGrid() {
     context.clearRect(0, 0, 1, 1);
     pathColorLegend.innerHTML = "";
     selectedColorLabel.textContent = "Aucune couleur selectionnee";
+    viewportPattern = null; comparisonPaths.clear(); comparisonMode = "after";
     renderSearchVisuals();
     return;
   }
+
+  if (activePathStep !== "paths") return;
+  if (viewportPattern !== loadedPattern) {
+    viewportPattern = loadedPattern; comparisonPaths.clear(); comparisonMode = "after"; overviewCache = null;
+    pathViewport.setGrid(loadedPattern.grid.width, loadedPattern.grid.height);
+  }
+  const width = Math.max(120, Math.floor(pathCanvasStage.clientWidth)), height = Math.max(200, Math.floor(pathCanvasStage.clientHeight));
+  if (pathViewport.state.width !== width || pathViewport.state.height !== height) pathViewport.resize(width, height);
 
   const colorByDmc = new Map(loadedPattern.colors.map((color) => [color.dmc, color]));
   if (!selectedDmc || !colorByDmc.has(selectedDmc)) {
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
   }
 
-  const cellSize = gridCellSize(
-    loadedPattern.grid.width,
-    loadedPattern.grid.height,
-    availableGridWidth(patternCanvas) - GRID_RULER_SIZE
-  );
+  const cellSize = pathViewport.state.scale, bounds = pathViewport.bounds;
   const selectedColor = colorByDmc.get(selectedDmc);
   const workPalette = PathVisuals.workPalette(workColor);
+  const mutedColors = new Map(loadedPattern.colors.map(color => [color.dmc, mutedHex(color.hex || "#d9dddd")]));
   selectedColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
   selectedColorLabel.style.color = workPalette.line;
   selectedColorLabel.style.backgroundColor = workPalette.fill;
-  patternCanvas.width = GRID_RULER_SIZE + loadedPattern.grid.width * cellSize;
-  patternCanvas.height = GRID_RULER_SIZE + loadedPattern.grid.height * cellSize;
+  if (patternCanvas.width !== width) patternCanvas.width = width;
+  if (patternCanvas.height !== height) patternCanvas.height = height;
   context.clearRect(0, 0, patternCanvas.width, patternCanvas.height);
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
+  beginViewportDrawing(context);
 
   loadedPattern.grid.cells.forEach((cell) => {
-    const color = colorByDmc.get(cell.dmc);
+    if (cell.x + 1 < bounds.minX || cell.y + 1 < bounds.minY || cell.x > bounds.maxX || cell.y > bounds.maxY) return;
     if (cell.empty) {
       context.fillStyle = "#ffffff";
     } else if (cell.dmc === selectedDmc) {
       context.fillStyle = workPalette.fill;
     } else {
-      context.fillStyle = mutedHex(color?.hex || "#d9dddd");
+      context.fillStyle = mutedColors.get(cell.dmc) || "#eeeeee";
     }
 
     context.fillRect(
@@ -446,13 +464,31 @@ function renderPatternGrid() {
     drawGridLines(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   }
 
-  drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   drawSelectedPath(context, cellSize);
+  context.restore();
+  drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   renderPathImprovement(cellSize);
   renderSearchVisuals();
+  renderInspectionControls();
+  renderOverview();
 
-  renderPathColorLegend();
-  renderPathBuilder();
+  if (!canvasOnly) { renderPathColorLegend(); renderPathBuilder(); }
+}
+
+function beginViewportDrawing(context) {
+  const view = pathViewport.state;
+  context.save(); context.beginPath();
+  context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, view.width - GRID_RULER_SIZE, view.height - GRID_RULER_SIZE); context.clip();
+  context.translate(-view.x * view.scale, -view.y * view.scale);
+}
+
+function displayedPath() {
+  return comparisonMode === "before" && comparisonPaths.has(selectedDmc) ? comparisonPaths.get(selectedDmc).path : currentPath();
+}
+
+function queueViewportRender() {
+  if (viewFrame !== null) return;
+  viewFrame = requestAnimationFrame(() => { viewFrame = null; renderPatternGrid(true); });
 }
 
 function showPathGridError(message) {
@@ -461,7 +497,7 @@ function showPathGridError(message) {
 }
 
 function drawSelectedPath(context, cellSize) {
-  const path = currentPath(), colors = selectedPathDrawingColors();
+  const path = displayedPath(), colors = selectedPathDrawingColors(), bounds = pathViewport.bounds;
   const blocks = blocksForColor(selectedDmc);
   context.save(); context.lineCap = "round";
   const pixel = hole => ({ x: GRID_RULER_SIZE + hole.x * cellSize, y: GRID_RULER_SIZE + hole.y * cellSize });
@@ -470,6 +506,7 @@ function drawSelectedPath(context, cellSize) {
       PathVisuals.sameBlock(path[index - 1], point, blocks));
   });
   path.forEach((point, index) => {
+    if (point.x + 1 < bounds.minX || point.y + 1 < bounds.minY || point.x > bounds.maxX || point.y > bounds.maxY) return;
     const holes = StitchModel.holes(point), from = pixel(holes.start), to = pixel(holes.end);
     context.strokeStyle = colors.line; context.lineWidth = PathVisuals.strokeWidths(cellSize).front;
     context.setLineDash([]);
@@ -522,11 +559,13 @@ function renderPathImprovement(cellSize) {
       || pathImprovement.route !== currentPath() || pathImprovement.count !== currentPath().length || activePathStep !== "paths") {
     clearPathImprovement(); return;
   }
+  pathImprovementCanvas.classList.toggle("active", comparisonMode === "after");
+  if (comparisonMode === "before") return;
   if (pathImprovementCanvas.width !== patternCanvas.width) pathImprovementCanvas.width = patternCanvas.width;
   if (pathImprovementCanvas.height !== patternCanvas.height) pathImprovementCanvas.height = patternCanvas.height;
   const context = pathImprovementCanvas.getContext("2d");
   context.clearRect(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height);
-  context.save(); context.lineCap = "round";
+  beginViewportDrawing(context); context.lineCap = "round";
   const draw = (link, color, width, dash) => {
     context.strokeStyle = color; context.lineWidth = width; context.setLineDash(dash);
     context.beginPath();
@@ -585,43 +624,80 @@ function renderScoreHistory() {
 
 function renderSearchVisuals() {
   renderScoreHistory();
-  const snapshot = pathAlgorithmRunning && activePathOptimizerDmc === selectedDmc && activePathStep === "paths"
-    ? activePathOptimizerSnapshot : null;
-  const activity = snapshot?.activity || (snapshot?.stage === "construction" && snapshot.zone?.bounds
-    ? { kind: "construction", regions: [snapshot.zone.bounds] } : null);
-  const labels = { construction: "Construction du bloc", configuration: "Entrees et sorties examinees", order: "Liaisons entre blocs examinees",
-    insertion: `Insertion examinee : ${activity?.crossCount || 1} croix` };
-  pathSearchActivity.textContent = snapshot ? labels[activity?.kind] || "Recherche en cours" : "";
-  if (!snapshot || !activity?.regions?.length || !loadedPattern) {
-    pathSearchCanvas.classList.remove("active");
-    pathSearchCanvas.getContext("2d").clearRect(0, 0, pathSearchCanvas.width, pathSearchCanvas.height);
-    return;
+}
+
+function captureComparison(dmc, path) {
+  if (comparisonPaths.has(dmc) || !path.length || StitchModel.validateRoute(path, cellsForColor(dmc))
+      || !constraintApi.satisfiesConstraints(path, constraintsByDmc[dmc])) return;
+  const metrics = pathPerformanceMetrics(path, dmc);
+  comparisonPaths.set(dmc, { path: path.map(copyPoint), metrics });
+}
+
+let comparisonMetricCache = null;
+function renderInspectionControls() {
+  const before = comparisonPaths.get(selectedDmc), path = currentPath();
+  if (!before) comparisonMode = "after";
+  pathViewBefore.disabled = !before;
+  pathViewBefore.title = before ? "Parcours au debut de cette recherche" : "Disponible apres la construction d'un parcours complet";
+  pathViewBefore.setAttribute("aria-pressed", String(comparisonMode === "before"));
+  pathViewAfter.setAttribute("aria-pressed", String(comparisonMode === "after"));
+  if (before) {
+    if (comparisonMetricCache?.path !== path || comparisonMetricCache.length !== path.length || comparisonMetricCache.threshold !== cutThreshold) {
+      comparisonMetricCache = { path, length: path.length, threshold: cutThreshold, metrics: pathPerformanceMetrics(path) };
+    }
+    pathComparisonScore.textContent = `Avant : ${formatMetric(before.metrics.score)} | Apres : ${formatMetric(comparisonMetricCache.metrics.score)}`;
+  } else pathComparisonScore.textContent = "";
+  document.querySelector("#pathZoomLevel").textContent = `${Math.round(pathViewport.state.zoom * 100)} %`;
+  document.querySelector("#pathZoomOut").disabled = pathViewport.state.zoom <= 1 + 1e-8;
+  document.querySelector("#pathZoomIn").disabled = pathViewport.state.scale >= 80;
+  document.querySelector("#pathDrawMode").disabled = pathAlgorithmRunning || comparisonMode === "before";
+  document.querySelector("#pathConstraints").disabled = pathAlgorithmRunning || comparisonMode === "before";
+  const pan = inspectionMode === "pan" || pathAlgorithmRunning || comparisonMode === "before";
+  document.querySelector("#pathDrawMode").setAttribute("aria-pressed", String(!pan));
+  document.querySelector("#pathPanMode").setAttribute("aria-pressed", String(pan));
+  patternCanvas.classList.toggle("is-pan", pan);
+  document.querySelector("#pathFocusGain").disabled = !pathImprovement || pathImprovement.dmc !== selectedDmc;
+}
+
+function renderOverview() {
+  const width = pathOverview.width, height = pathOverview.height;
+  const scale = Math.min((width - 8) / loadedPattern.grid.width, (height - 8) / loadedPattern.grid.height);
+  const offsetX = (width - loadedPattern.grid.width * scale) / 2, offsetY = (height - loadedPattern.grid.height * scale) / 2;
+  if (overviewCache?.pattern !== loadedPattern || overviewCache.dmc !== selectedDmc || overviewCache.color !== workColor) {
+    const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+    const context = canvas.getContext("2d"), colors = new Map(loadedPattern.colors.map(color => [color.dmc, color.hex]));
+    context.fillStyle = "#f4f6f4"; context.fillRect(0, 0, width, height);
+    loadedPattern.grid.cells.forEach(cell => {
+      if (cell.empty) return;
+      context.fillStyle = cell.dmc === selectedDmc ? workColor : mutedHex(colors.get(cell.dmc));
+      context.fillRect(offsetX + cell.x * scale, offsetY + cell.y * scale, Math.max(1, scale), Math.max(1, scale));
+    });
+    overviewCache = { pattern: loadedPattern, dmc: selectedDmc, color: workColor, canvas };
   }
-  if (pathSearchCanvas.width !== patternCanvas.width) pathSearchCanvas.width = patternCanvas.width;
-  if (pathSearchCanvas.height !== patternCanvas.height) pathSearchCanvas.height = patternCanvas.height;
-  const context = pathSearchCanvas.getContext("2d"), cellSize = (patternCanvas.width - GRID_RULER_SIZE) / loadedPattern.grid.width;
-  context.clearRect(0, 0, pathSearchCanvas.width, pathSearchCanvas.height);
-  context.save(); context.beginPath();
-  context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, patternCanvas.width - GRID_RULER_SIZE, patternCanvas.height - GRID_RULER_SIZE); context.clip();
-  const regions = activity.regions.filter(b => b && [b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite)).slice(0, 3);
-  const centers = regions.map(b => ({ x: GRID_RULER_SIZE + (b.minX + b.maxX) * cellSize / 2,
-    y: GRID_RULER_SIZE + (b.minY + b.maxY) * cellSize / 2 }));
-  if (centers.length > 1) {
-    context.strokeStyle = "#d48700"; context.lineWidth = 2; context.setLineDash([6, 5]);
-    context.beginPath(); context.moveTo(centers[0].x, centers[0].y);
-    centers.slice(1).forEach(p => context.lineTo(p.x, p.y)); context.stroke();
+  const context = pathOverview.getContext("2d"), bounds = pathViewport.bounds;
+  context.clearRect(0, 0, width, height); context.drawImage(overviewCache.canvas, 0, 0);
+  const x = offsetX + bounds.minX * scale, y = offsetY + bounds.minY * scale;
+  const w = (bounds.maxX - bounds.minX) * scale, h = (bounds.maxY - bounds.minY) * scale;
+  context.strokeStyle = "#ffffff"; context.lineWidth = 4; context.strokeRect(x, y, w, h);
+  context.strokeStyle = "#007fa3"; context.lineWidth = 2; context.strokeRect(x, y, w, h);
+}
+
+function inspectConnection(point) {
+  const route = displayedPath();
+  if (inspectionLinks?.route !== route || inspectionLinks.length !== route.length || inspectionLinks.threshold !== cutThreshold) {
+    inspectionLinks = { route, length: route.length, threshold: cutThreshold, links: route.slice(1).map((next, i) => {
+      const from = StitchModel.holes(route[i]).end, to = StitchModel.holes(next).start;
+      return { from, to, distance: StitchModel.distance(route[i], next), cut: isCutJump(route[i], next), index: i + 1 };
+    }) };
   }
-  regions.forEach((b, i) => {
-    const x = GRID_RULER_SIZE + b.minX * cellSize, y = GRID_RULER_SIZE + b.minY * cellSize;
-    const width = (b.maxX - b.minX) * cellSize, height = (b.maxY - b.minY) * cellSize;
-    context.fillStyle = "rgba(245,166,35,0.14)"; context.fillRect(x, y, width, height);
-    context.setLineDash([]); context.strokeStyle = "#ffffff"; context.lineWidth = 5; context.strokeRect(x, y, width, height);
-    context.setLineDash([6, 4]); context.strokeStyle = "#b77300"; context.lineWidth = 2.5; context.strokeRect(x, y, width, height);
-    context.setLineDash([]); context.fillStyle = "#9b5e00"; context.fillRect(x + 2, y + 2, 18, 18);
-    context.fillStyle = "#ffffff"; context.font = "bold 11px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.fillText(String(i + 1), x + 11, y + 11);
-  });
-  context.restore(); pathSearchCanvas.classList.add("active");
+  const world = pathViewport.toWorld(point); let nearest = null, gap = 8 / pathViewport.state.scale;
+  for (const link of inspectionLinks.links) {
+    const dx = link.to.x - link.from.x, dy = link.to.y - link.from.y;
+    const t = Math.max(0, Math.min(1, ((world.x - link.from.x) * dx + (world.y - link.from.y) * dy) / (dx * dx + dy * dy || 1)));
+    const distance = Math.hypot(world.x - link.from.x - t * dx, world.y - link.from.y - t * dy);
+    if (distance < gap) { gap = distance; nearest = link; }
+  }
+  pathInspection.textContent = nearest ? `${nearest.cut ? "Coupe" : "Dos"} ${nearest.index} : ${nearest.distance.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} cases | (${nearest.from.x}, ${nearest.from.y}) vers (${nearest.to.x}, ${nearest.to.y})` : "";
 }
 
 function pathPointStyle(cellSize) {
@@ -643,6 +719,9 @@ function pathPointStyle(cellSize) {
 
 function drawPathSegment(context, fromPoint, toPoint, cellSize, colors, internal = false) {
   const from = StitchModel.holes(fromPoint).end, to = StitchModel.holes(toPoint).start;
+  const bounds = pathViewport.bounds;
+  if (Math.max(from.x, to.x) < bounds.minX || Math.max(from.y, to.y) < bounds.minY
+      || Math.min(from.x, to.x) > bounds.maxX || Math.min(from.y, to.y) > bounds.maxY) return;
   const isCut = isCutJump(fromPoint, toPoint);
   const width = PathVisuals.strokeWidths(cellSize, isCut, internal).back;
   context.setLineDash(isCut ? pathCutDash(cellSize) : internal
@@ -825,39 +904,11 @@ function toHex(value) {
   return value.toString(16).padStart(2, "0").toUpperCase();
 }
 
-function gridCellSize(width, height, availableWidth = 0) {
-  const largestSide = Math.max(width, height);
-  let baseSize = 4;
-  if (largestSide <= 80) {
-    baseSize = 10;
-  } else if (largestSide <= 160) {
-    baseSize = 6;
-  }
-
-  if (!availableWidth || width <= 0) {
-    return baseSize;
-  }
-
-  const fittedSize = Math.floor(availableWidth / width);
-  return Math.max(baseSize, Math.min(MAX_RESPONSIVE_CELL_SIZE, fittedSize));
-}
-
-function availableGridWidth(canvas) {
-  const wrapper = canvas.closest(".pattern-canvas-wrap");
-  if (!wrapper) {
-    return 0;
-  }
-
-  const wrapperStyle = window.getComputedStyle(wrapper);
-  const horizontalPadding =
-    parseFloat(wrapperStyle.paddingLeft || "0") + parseFloat(wrapperStyle.paddingRight || "0");
-  return Math.max(0, wrapper.clientWidth - horizontalPadding);
-}
-
 function drawGridLines(context, width, height, cellSize) {
   context.save();
+  const bounds = pathViewport.bounds;
 
-  for (let x = 0; x <= width; x += 1) {
+  for (let x = Math.ceil(bounds.minX); x <= bounds.maxX; x += 1) {
     const isMajorLine = x % 10 === 0;
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
@@ -867,7 +918,7 @@ function drawGridLines(context, width, height, cellSize) {
     context.stroke();
   }
 
-  for (let y = 0; y <= height; y += 1) {
+  for (let y = Math.ceil(bounds.minY); y <= bounds.maxY; y += 1) {
     const isMajorLine = y % 10 === 0;
     context.strokeStyle = isMajorLine ? "rgba(34, 36, 38, 0.34)" : "rgba(34, 36, 38, 0.18)";
     context.lineWidth = isMajorLine ? 1.5 : 1;
@@ -882,9 +933,10 @@ function drawGridLines(context, width, height, cellSize) {
 
 function drawGridRulers(context, width, height, cellSize) {
   context.save();
+  const view = pathViewport.state, bounds = pathViewport.bounds;
   context.fillStyle = "#f4f6f4";
-  context.fillRect(GRID_RULER_SIZE, 0, width * cellSize, GRID_RULER_SIZE);
-  context.fillRect(0, GRID_RULER_SIZE, GRID_RULER_SIZE, height * cellSize);
+  context.fillRect(0, 0, view.width, GRID_RULER_SIZE);
+  context.fillRect(0, 0, GRID_RULER_SIZE, view.height);
   context.fillStyle = "#5f6b69";
   context.strokeStyle = "rgba(34, 36, 38, 0.24)";
   context.lineWidth = 1;
@@ -892,8 +944,9 @@ function drawGridRulers(context, width, height, cellSize) {
   context.textAlign = "center";
   context.textBaseline = "middle";
 
-  for (let x = 10; x <= width; x += 10) {
-    const position = GRID_RULER_SIZE + x * cellSize;
+  const step = Math.max(10, Math.ceil(35 / cellSize / 10) * 10);
+  for (let x = Math.max(step, Math.ceil(bounds.minX / step) * step); x <= bounds.maxX; x += step) {
+    const position = GRID_RULER_SIZE + (x - view.x) * cellSize;
     context.beginPath();
     context.moveTo(position + 0.5, GRID_RULER_SIZE - 7);
     context.lineTo(position + 0.5, GRID_RULER_SIZE);
@@ -902,8 +955,8 @@ function drawGridRulers(context, width, height, cellSize) {
   }
 
   context.textAlign = "right";
-  for (let y = 10; y <= height; y += 10) {
-    const position = GRID_RULER_SIZE + y * cellSize;
+  for (let y = Math.max(step, Math.ceil(bounds.minY / step) * step); y <= bounds.maxY; y += step) {
+    const position = GRID_RULER_SIZE + (y - view.y) * cellSize;
     context.beginPath();
     context.moveTo(GRID_RULER_SIZE - 7, position + 0.5);
     context.lineTo(GRID_RULER_SIZE, position + 0.5);
@@ -914,9 +967,9 @@ function drawGridRulers(context, width, height, cellSize) {
   context.strokeStyle = "rgba(34, 36, 38, 0.32)";
   context.beginPath();
   context.moveTo(GRID_RULER_SIZE + 0.5, 0);
-  context.lineTo(GRID_RULER_SIZE + 0.5, GRID_RULER_SIZE + height * cellSize);
+  context.lineTo(GRID_RULER_SIZE + 0.5, view.height);
   context.moveTo(0, GRID_RULER_SIZE + 0.5);
-  context.lineTo(GRID_RULER_SIZE + width * cellSize, GRID_RULER_SIZE + 0.5);
+  context.lineTo(view.width, GRID_RULER_SIZE + 0.5);
   context.stroke();
   context.restore();
 }
@@ -1621,15 +1674,16 @@ function cellFromCanvasEvent(event) {
     return null;
   }
 
-  const cellSize = (patternCanvas.width - GRID_RULER_SIZE) / loadedPattern.grid.width;
+  const pixel = canvasEventPoint(event);
+  if (pixel.x < GRID_RULER_SIZE || pixel.y < GRID_RULER_SIZE) return null;
+  const point = pathViewport.toWorld(pixel);
+  return findCellAt(Math.floor(point.x), Math.floor(point.y));
+}
+
+function canvasEventPoint(event) {
   const rect = patternCanvas.getBoundingClientRect();
-  const scaleX = patternCanvas.width / rect.width;
-  const scaleY = patternCanvas.height / rect.height;
-  const canvasX = (event.clientX - rect.left) * scaleX - GRID_RULER_SIZE;
-  const canvasY = (event.clientY - rect.top) * scaleY - GRID_RULER_SIZE;
-  const x = Math.floor(canvasX / cellSize);
-  const y = Math.floor(canvasY / cellSize);
-  return findCellAt(x, y);
+  return { x: (event.clientX - rect.left) * patternCanvas.width / rect.width,
+    y: (event.clientY - rect.top) * patternCanvas.height / rect.height };
 }
 
 function addCellToCurrentPath(cell) {
@@ -1842,7 +1896,7 @@ function renderPlanningOptions() {
     row.textContent = `DMC ${result.dmc} : ${Number.isFinite(result.initial) ? formatMetric(result.initial) : "-"} > ${formatMetric(result.score)} (${result.cuts} coupes)`;
     results.appendChild(row);
   });
-  document.querySelector("#pathConstraints").disabled = pathAlgorithmRunning;
+  document.querySelector("#pathConstraints").disabled = pathAlgorithmRunning || comparisonMode === "before";
   const constraints = constraintsByDmc[selectedDmc] || {};
   lockedPrefixCount.max = String(currentPath().length);
   lockedPrefixCount.value = String(constraints.lockedPrefix?.length || 0);
@@ -1979,6 +2033,13 @@ patternJsonFileInput.addEventListener("change", async () => {
 });
 
 patternCanvas.addEventListener("pointerdown", (event) => {
+  if (loadedPattern && !isDrawingPath && (event.button === 0 || event.button === 1)
+      && (inspectionMode === "pan" || pathAlgorithmRunning || comparisonMode === "before" || event.button === 1 || event.altKey)) {
+    event.preventDefault(); patternCanvas.focus({ preventScroll: true });
+    viewPointers.set(event.pointerId, canvasEventPoint(event));
+    panGesture = pointerGesture(); patternCanvas.setPointerCapture(event.pointerId);
+    patternCanvas.classList.add("is-panning"); return;
+  }
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning || isDrawingPath || event.button !== 0) {
     return;
   }
@@ -1998,7 +2059,17 @@ patternCanvas.addEventListener("pointerdown", (event) => {
 });
 
 patternCanvas.addEventListener("pointermove", (event) => {
+  if (viewPointers.has(event.pointerId)) {
+    event.preventDefault(); viewPointers.set(event.pointerId, canvasEventPoint(event));
+    const next = pointerGesture();
+    if (panGesture) {
+      if (next.count > 1 && panGesture.count > 1 && panGesture.distance > 0) pathViewport.zoom(next.distance / panGesture.distance, panGesture.center);
+      pathViewport.pan(next.center.x - panGesture.center.x, next.center.y - panGesture.center.y);
+    }
+    panGesture = next; queueViewportRender(); return;
+  }
   if (!isDrawingPath) {
+    queueConnectionInspection(canvasEventPoint(event));
     return;
   }
 
@@ -2013,6 +2084,7 @@ patternCanvas.addEventListener("pointermove", (event) => {
 });
 
 patternCanvas.addEventListener("pointerup", (event) => {
+  finishViewportPointer(event);
   if (isDrawingPath) {
     finishPathEdit();
     savePathPlannerState();
@@ -2038,8 +2110,77 @@ function finishInterruptedPathDrawing() {
   renderPathHistory();
   renderPathBuilder();
 }
-patternCanvas.addEventListener("pointercancel", finishInterruptedPathDrawing);
-patternCanvas.addEventListener("lostpointercapture", finishInterruptedPathDrawing);
+for (const name of ["pointercancel", "lostpointercapture"]) patternCanvas.addEventListener(name, event => {
+  finishViewportPointer(event); finishInterruptedPathDrawing();
+});
+
+function pointerGesture() {
+  const points = [...viewPointers.values()].slice(0, 2);
+  if (!points.length) return null;
+  return { count: points.length, center: points.length === 1 ? points[0]
+    : { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 },
+    distance: points.length === 1 ? 0 : Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) };
+}
+function finishViewportPointer(event) {
+  viewPointers.delete(event.pointerId); panGesture = pointerGesture();
+  patternCanvas.classList.toggle("is-panning", Boolean(panGesture));
+}
+let inspectFrame = null, pendingInspection = null;
+function queueConnectionInspection(point) {
+  pendingInspection = point;
+  if (inspectFrame !== null) return;
+  inspectFrame = requestAnimationFrame(() => { inspectFrame = null; if (loadedPattern && !panGesture && !isDrawingPath) inspectConnection(pendingInspection); });
+}
+patternCanvas.addEventListener("wheel", event => {
+  if (!loadedPattern || isDrawingPath || panGesture) return;
+  event.preventDefault();
+  const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? patternCanvas.height : 1);
+  pathViewport.zoom(Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.003), canvasEventPoint(event));
+  queueViewportRender();
+}, { passive: false });
+patternCanvas.addEventListener("keydown", event => {
+  if (!loadedPattern || isDrawingPath || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (["+", "="].includes(event.key)) pathViewport.zoom(1.4);
+  else if (event.key === "-") pathViewport.zoom(1 / 1.4);
+  else if (event.key === "Home") pathViewport.fit();
+  else if (event.key.startsWith("Arrow")) {
+    const delta = { ArrowLeft: [80, 0], ArrowRight: [-80, 0], ArrowUp: [0, 80], ArrowDown: [0, -80] }[event.key];
+    pathViewport.pan(...delta);
+  } else return;
+  event.preventDefault(); queueViewportRender();
+});
+document.querySelector("#pathZoomIn").addEventListener("click", () => { pathViewport.zoom(1.4); queueViewportRender(); });
+document.querySelector("#pathZoomOut").addEventListener("click", () => { pathViewport.zoom(1 / 1.4); queueViewportRender(); });
+document.querySelector("#pathFitView").addEventListener("click", () => { pathViewport.fit(); queueViewportRender(); });
+document.querySelector("#pathPanMode").addEventListener("click", () => { inspectionMode = "pan"; renderInspectionControls(); });
+document.querySelector("#pathDrawMode").addEventListener("click", () => { inspectionMode = "draw"; renderInspectionControls(); });
+for (const [button, mode] of [[pathViewBefore, "before"], [pathViewAfter, "after"]]) button.addEventListener("click", () => {
+  if (isDrawingPath || panGesture) return;
+  comparisonMode = mode; pathInspection.textContent = ""; queueViewportRender();
+});
+document.querySelector("#pathFocusGain").addEventListener("click", () => {
+  if (!pathImprovement) return;
+  const links = [...pathImprovement.added, ...pathImprovement.removed];
+  if (!links.length) return;
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const link of links) for (const point of [link.from, link.to]) {
+    bounds.minX = Math.min(bounds.minX, point.x); bounds.minY = Math.min(bounds.minY, point.y);
+    bounds.maxX = Math.max(bounds.maxX, point.x); bounds.maxY = Math.max(bounds.maxY, point.y);
+  }
+  pathViewport.frame(bounds); queueViewportRender();
+});
+pathOverview.addEventListener("pointerdown", event => {
+  if (!loadedPattern) return;
+  event.preventDefault();
+  const rect = pathOverview.getBoundingClientRect(), width = pathOverview.width, height = pathOverview.height;
+  const scale = Math.min((width - 8) / loadedPattern.grid.width, (height - 8) / loadedPattern.grid.height);
+  pathViewport.center({ x: ((event.clientX - rect.left) * width / rect.width - (width - loadedPattern.grid.width * scale) / 2) / scale,
+    y: ((event.clientY - rect.top) * height / rect.height - (height - loadedPattern.grid.height * scale) / 2) / scale });
+  queueViewportRender();
+});
+pathOverview.addEventListener("keydown", event => {
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); pathViewport.fit(); queueViewportRender(); }
+});
 
 pathColorLegend.addEventListener("click", (event) => {
   if (pathAlgorithmRunning) {
@@ -2052,6 +2193,7 @@ pathColorLegend.addEventListener("click", (event) => {
   }
 
   selectedDmc = button.dataset.dmc;
+  pathInspection.textContent = "";
   savePathPlannerState();
   renderPathTool();
 });
@@ -2131,12 +2273,14 @@ function startAdvancedPathSearch() {
   const currentComplete = isCompletePathForColor(loadedPattern, pathsByDmc, dmc)
     && constraintApi.satisfiesConstraints(pathsByDmc[dmc], constraintsByDmc[dmc]);
   if (currentComplete) {
+    captureComparison(dmc, pathsByDmc[dmc]);
     if (pathOptimizationBaselinesByDmc[dmc] === undefined) {
       pathOptimizationBaselinesByDmc[dmc] = pathPerformanceMetrics(pathsByDmc[dmc], dmc).score;
     }
     rememberBestPath(dmc, pathsByDmc[dmc]);
   }
   const startingPath = bestCompletePathForColor(dmc);
+  captureComparison(dmc, startingPath);
   if (startingPath.length) trackSearchScore({ stage: "search", elapsedMs: 0, metrics: pathPerformanceMetrics(startingPath, dmc) });
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
     pathOptimizationBaselinesByDmc[dmc] = pathPerformanceMetrics(startingPath, dmc).score;
@@ -2166,6 +2310,8 @@ function startAdvancedPathSearch() {
     if (!message || message.runId !== activePathOptimizerRunId) {
       return;
     }
+
+    if (message.path && !comparisonPaths.has(dmc) && message.stage !== "construction") captureComparison(dmc, message.path);
 
     if (message.type === "error") {
       flushAdvancedPathSnapshot();
@@ -2254,7 +2400,6 @@ function recoverableBestPath(dmc) {
 
 function applyAdvancedPathSnapshot(dmc, snapshot) {
   const previousSnapshot = activePathOptimizerSnapshot;
-  const previousZone = previousSnapshot?.zone;
   const baselineChanged = pathOptimizationBaselinesByDmc[dmc] === undefined && Number.isFinite(snapshot.initialMetrics?.score);
   if (baselineChanged) {
     pathOptimizationBaselinesByDmc[dmc] = snapshot.initialMetrics.score;
@@ -2295,12 +2440,6 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
 
   if (pathChanged) {
     renderPathTool();
-  } else if (previousSnapshot?.stage !== snapshot.stage
-      || previousZone?.id !== snapshot.zone?.id || previousZone?.status !== snapshot.zone?.status) {
-    if (optimizerGridFrame === null) optimizerGridFrame = requestAnimationFrame(() => {
-      optimizerGridFrame = null;
-      renderPatternGrid();
-    });
   }
   if (baselineChanged && !pathChanged) renderPathMetrics();
   if (!pathChanged) renderSearchVisuals();
@@ -2323,10 +2462,6 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
     label = "Optimisation interrompue : aucun parcours complet valide";
   }
   const progress = completed ? 100 : finalSnapshot?.progress || 0;
-  if (optimizerGridFrame !== null) {
-    cancelAnimationFrame(optimizerGridFrame);
-    optimizerGridFrame = null;
-  }
   if (activePathOptimizerWorker) {
     activePathOptimizerWorker.terminate();
   }

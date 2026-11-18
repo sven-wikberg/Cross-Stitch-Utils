@@ -474,14 +474,15 @@ test("the first stoppable preview already applies forced cuts inside its locked 
   assert.equal(constraints.lockedPrefix[1].cutBefore, undefined, "the user's prefix is not mutated");
 });
 
-test("a 160000-cell group's bounds do not exceed the JavaScript argument limit", () => {
-  const cells = rectangle(400, 400), stop = new Error("stop after group bounds");
-  let ticks = 0, bounds;
+test("a 160000-cell group reports its size without computing obsolete focus bounds", () => {
+  const cells = rectangle(400, 400), stop = new Error("stop after group preparation");
+  let ticks = 0, zone;
   const engine = createOrthogonalPathBuilder(model, () => { ticks += 200; return ticks; });
   assert.throws(() => engine.buildPath({ points: cells }, snapshot => {
-    if (snapshot.zone.status === "running") { bounds = snapshot.zone.bounds; throw stop; }
+    if (snapshot.zone.status === "running") { zone = snapshot.zone; throw stop; }
   }), error => error === stop);
-  assert.deepEqual(bounds, { minX: 0, minY: 0, maxX: 400, maxY: 400 });
+  assert.equal(zone.crossCount, 160000);
+  assert.equal(zone.bounds, undefined);
 });
 
 test("a 12000-cell chain does not overflow the component, DFS, orientation, or build stacks", () => {

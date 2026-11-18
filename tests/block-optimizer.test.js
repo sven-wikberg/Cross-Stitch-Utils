@@ -827,23 +827,11 @@ test("bent and solid small blocks retain all internal diagonals during insertion
   }
 });
 
-test("visual search activity is compact, describes actual candidates and never changes the solution", () => {
+test("search no longer computes or transports orange focus regions", () => {
   const reports = [], cells = smallBlockBridge(3), engine = optimizer(100);
   const result = engine.optimizePath({ points: cells, stagnationLimitMs: 1000000 }, snapshot => reports.push(snapshot));
-  const activities = reports.filter(snapshot => snapshot.activity);
-  assert.ok(activities.some(snapshot => snapshot.activity.kind === "configuration"));
-  assert.ok(activities.some(snapshot => snapshot.activity.kind === "insertion" && snapshot.activity.crossCount === 3));
-  assert.ok(activities.some(snapshot => snapshot.activity.kind === "order"));
-  for (const { activity } of activities) {
-    assert.ok(activity.regions.length <= 3);
-    for (const bounds of activity.regions) {
-      assert.ok([bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite));
-      assert.ok(bounds.maxX > bounds.minX && bounds.maxY > bounds.minY);
-      assert.ok(cells.some(p => p.x >= bounds.minX && p.x < bounds.maxX && p.y >= bounds.minY && p.y < bounds.maxY));
-    }
-    assert.ok(JSON.stringify(activity).length < 500, "no extra full paths or cell arrays in the visual metadata");
-  }
-  assert.equal(reports.at(-1).activity, undefined);
+  assert.ok(reports.length > 2);
+  assert.ok(reports.every(snapshot => snapshot.activity === undefined && snapshot.zone?.bounds === undefined));
   assertPath(result, cells);
   close(result.metrics.score, cells.length * 2 - 1, "visual reporting preserves the known optimum");
 });

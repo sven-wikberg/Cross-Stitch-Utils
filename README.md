@@ -106,7 +106,17 @@ L'interface conserve le score total, le score initial, le gain total et les coup
 
 Les raccordements ameliores sont mis en evidence en bleu, avec les anciens liens en gris pointille, jusqu'a la prochaine amelioration. La derniere surbrillance reste visible a l'arret du calcul; changer de couleur, modifier le chemin ou relancer la recherche l'efface. Une coupe modifiee conserve son trait rouge au centre de la surbrillance. Le gain depuis le dernier parcours affiche et la variation des coupes apparaissent au-dessus de la grille. Les diagonales et les trajets internes aux blocs sont plus epais; les liaisons entre blocs utilisent un trait fonce plus marque avec un contour clair. Les coupes restent fines, rouges et pointillees. Les apercus rapides sont regroupes toutes les 750 ms, sans pause dans le moteur de calcul; l'arret et la fin du calcul appliquent immediatement le dernier resultat. Une couche canvas separee conserve la surbrillance sans animation continue, sans deplacer la vue ni modifier les fichiers exportes.
 
-La couleur selectionnee utilise une couleur de travail commune et reglable au-dessus de la grille, avec fond clair et diagonales contrastees. Ce choix est conserve localement dans le navigateur, sans modifier la palette DMC ni les fichiers exportes. Pendant le calcul, une couche distincte signale en orange jusqu'a trois regions du dernier essai observe (construction, entrees/sorties, ordre ou insertion). Les cadres et leur liaison indicative representent les regions examinees, pas un nouveau chemin accepte. Le meilleur parcours reste affiche dessous. Une pulsation CSS respecte la preference de reduction des animations; aucun recalcul de chemin ni dessin continu de la grille n'est necessaire. La courbe du meilleur score conserve au plus 240 echantillons de la recherche courante; elle n'est pas exportee. Les essais orange disparaissent a l'arret, alors que le dernier gain bleu reste visible.
+La couleur selectionnee utilise une couleur de travail commune et reglable au-dessus de la grille, avec fond clair et diagonales contrastees. Ce choix est conserve localement dans le navigateur, sans modifier la palette DMC ni les fichiers exportes. Les anciennes zones orange ont ete supprimees : plus de couche canvas, de pulsation CSS, de calcul de regions d'essais ni de transport de ces regions depuis le worker. Les bornes de blocs necessaires a l'algorithme restent presentes. La courbe du meilleur score conserve au plus 240 echantillons de la recherche courante; elle n'est pas exportee. Le dernier gain bleu reste visible.
+
+### Examiner un parcours
+
+La grille de l'outil 2 utilise maintenant un canvas limite a la taille de sa fenetre, independamment du zoom. La molette et les boutons loupe changent l'echelle ; le trou sous le curseur reste fixe tant que les limites de la grille le permettent. La main permet de deplacer la vue, y compris pendant le calcul et en mode Avant. Le bouton de cadrage revient a la vue complete. Le bouton cible cadre explicitement les derniers raccordements ameliores ; aucun gain ne deplace automatiquement la vue. Les regles restent visibles en haut et a gauche, et leur espacement s'adapte quand la grille devient trop petite.
+
+La miniature montre le pattern et le rectangle de la portion visible ; cliquer dessus recentre la vue sans changer son zoom. Le survol d'un raccordement affiche son numero, sa longueur reelle entre trous, ses coordonnees et son statut de coupe. Le crayon conserve le trace manuel par glisser, avec les memes coordonnees et le meme historique meme apres zoom et deplacement. Le bouton central de la souris ou Alt + glisser permet aussi de deplacer la vue. En mode main, deux doigts permettent le zoom tactile. Lorsque le canvas a le focus, les fleches deplacent la vue, +/- changent le zoom et Home revient a la vue complete.
+
+Avant / Apres compare le parcours complet present au debut de la derniere recherche pour cette couleur avec le meilleur parcours courant. Si aucun parcours complet n'existait, Avant est capture des que le moteur fournit sa premiere solution complete. Le cadrage est strictement commun aux deux vues ; les nouvelles ameliorations ne changent pas le dessin Avant. Cette vue est en lecture seule pour le trace et les contraintes. Le score affiche avec la comparaison est celui de cette reference, distinct du score initial historique de la colonne gauche. Les references de comparaison restent en memoire pour la session, par couleur : elles ne sont pas exportees, n'alourdissent pas la sauvegarde et disparaissent au rechargement, au changement de projet ou apres une edition/annulation. Une nouvelle recherche remplace la reference de sa couleur.
+
+Les icones sont distribuees localement depuis Lucide (`assets/icons/`, licences ISC et MIT incluses) ; ces commandes fonctionnent aussi depuis `file://`, sans acces reseau.
 
 Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les portions de blocs nouvellement construites et non modifiees, pas dans les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 
@@ -123,6 +133,7 @@ node tests/path-optimizer.test.js
 node tests/orthogonal-path.test.js
 node tests/block-optimizer.test.js
 node tests/path-visuals.test.js
+node --test tests/path-viewport.test.js
 node tests/github-sync.test.js
 node tests/upgrades.test.js
 node tests/stitch-model.test.js
@@ -134,6 +145,7 @@ node tests/spatial-candidates.test.js
 node tests/workflows.test.js
 node --test tests/path-edit-history.test.js
 node tests/planner-safety.test.js
+node tests/planner-inspection.test.js
 node tests/session-view.test.js
 ```
 

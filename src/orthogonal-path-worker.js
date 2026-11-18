@@ -178,7 +178,7 @@
         return { method: "orthogonal-backtracking", phase, stage: completed === groups.length ? "complete" : "zones",
           ...(includePath ? { path: route.map(model.copy) } : {}), metrics: zones.measure(route, threshold), initialMetrics,
           zone: { total: groups.length, completed, ...(active ? { id: active.id, index: completed + (active.status === "complete" ? 0 : 1),
-            bounds: active.bounds, crossCount: active.cells.length,
+            crossCount: active.cells.length,
             unlockedCrosses: active.partial ? 0.5 : active.cells.length - (active.resume ? 0.5 : 0),
             status: active.status } : {}) },
           elapsedMs: clock() - started, progress: groups.length ? completed / groups.length * 100 : 100,
@@ -196,12 +196,7 @@
         if (!chosen) throw new Error("Aucun groupe accessible depuis le trou courant.");
         const group = groups[groupByCell.get(chosen.i)];
         currentZone = group.zoneId;
-        const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-        for (const cell of group.cells) {
-          bounds.minX = Math.min(bounds.minX, cell.x); bounds.maxX = Math.max(bounds.maxX, cell.x + 1);
-          bounds.minY = Math.min(bounds.minY, cell.y); bounds.maxY = Math.max(bounds.maxY, cell.y + 1);
-        }
-        active = { ...group, status: "running", bounds };
+        active = { ...group, status: "running" };
         phase = `Parcours par retours : groupe ${completed + 1} / ${groups.length}`;
         emit();
         group.indices.forEach(i => index.remove(i));

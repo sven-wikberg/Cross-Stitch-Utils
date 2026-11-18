@@ -587,8 +587,8 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => currentPath()), stoppedBest);
     assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), stoppedBest);
     assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].terminated), true);
-    assert.equal(await planner.evaluate(() => pathSearchCanvas.classList.contains("active")), false,
-      "Stopping clears the examined regions without removing the retained improvement");
+    assert.equal(await planner.locator("#pathSearchCanvas").count(), 0,
+      "No trial regions are present, while the retained improvement remains visible");
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true,
       "Stopping preserves the last highlighted improvement");
     await planner.evaluate(() => plannerSaveQueue);
@@ -816,14 +816,12 @@ async function run() {
     assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Recherche en cours");
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 35);
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
-    assert.ok(await planner.evaluate(() => pathSearchCanvas.classList.contains("active") && scoreHistory.length >= 2));
-    assert.match(await planner.locator("#pathSearchActivity").innerText(), /Insertion examinee/);
+    assert.ok(await planner.evaluate(() => scoreHistory.length >= 2));
+    assert.equal(await planner.locator("#pathSearchActivity").count(), 0);
     assert.ok(await planner.evaluate(() => pathScoreHistory.getContext("2d").getImageData(0, 0, 240, 40).data
       .some((value, i, pixels) => i % 4 === 0 && value < 40 && pixels[i + 1] > 100 && pixels[i + 2] < 150 && pixels[i + 3] > 100)),
       "The score chart contains a visible improvement trace");
-    assert.ok(await planner.evaluate(() => pathSearchCanvas.getContext("2d").getImageData(0, 0, pathSearchCanvas.width, pathSearchCanvas.height).data
-      .some((value, i, pixels) => i % 4 === 0 && value > 140 && pixels[i + 1] > 50 && pixels[i + 2] < 60 && pixels[i + 3] > 100)),
-      "The actual inspected regions have visible orange pixels");
+    assert.equal(await planner.locator("#pathSearchCanvas").count(), 0, "Orange trial regions have been removed");
     const beforeProbeOnly = await planner.evaluate(() => ({ pixels: patternCanvas.toDataURL(), path: currentPath(),
       scroll: [patternCanvas.parentElement.parentElement.scrollLeft, patternCanvas.parentElement.parentElement.scrollTop] }));
     await planner.evaluate(() => applyAdvancedPathSnapshot(selectedDmc, { ...activePathOptimizerSnapshot, path: undefined,
@@ -831,10 +829,6 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => ({ pixels: patternCanvas.toDataURL(), path: currentPath(),
       scroll: [patternCanvas.parentElement.parentElement.scrollLeft, patternCanvas.parentElement.parentElement.scrollTop] })), beforeProbeOnly,
       "Activity-only previews do not redraw the base pattern, edit the best path or move the view");
-    assert.equal(await planner.locator("#pathSearchCanvas").evaluate(canvas => getComputedStyle(canvas).pointerEvents), "none");
-    await planner.emulateMedia({ reducedMotion: "reduce" });
-    assert.equal(await planner.locator("#pathSearchCanvas").evaluate(canvas => getComputedStyle(canvas).animationName), "none");
-    await planner.emulateMedia({ reducedMotion: "no-preference" });
     assert.ok(await planner.evaluate(() => pathImprovementCanvas.getContext("2d")
       .getImageData(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height).data.some((value, i) => i % 4 === 3 && value > 0)),
       "Inserted connections draw visible highlight pixels");
@@ -845,14 +839,21 @@ async function run() {
     await planner.evaluate(() => new Promise(requestAnimationFrame));
     assert.ok(await planner.evaluate(() => {
       const heading = document.querySelector(".path-canvas-heading").getBoundingClientRect();
-      return [pathWorkColor, pathImprovementGain, pathSearchActivity, pathScoreHistory].every(element => {
+      return [pathWorkColor, pathImprovementGain, pathComparisonScore, pathScoreHistory].every(element => {
         const rect = element.getBoundingClientRect(); return rect.right <= heading.right + 1 && rect.bottom <= heading.bottom + 1;
       }) && document.documentElement.scrollWidth <= innerWidth + 1;
     }), "Work color, live status and chart fit the mobile heading");
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-search-mobile.png"), fullPage: true });
     await planner.setViewportSize({ width: 1600, height: 1000 });
     const pendingInsertionMessages = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.length);
+    await planner.locator("#pathViewBefore").click();
+    await planner.evaluate(() => new Promise(requestAnimationFrame));
+    const comparisonDuringSearch = await planner.evaluate(() => ({ camera: pathViewport.state, path: displayedPath(), pixels: patternCanvas.toDataURL() }));
     await deliverWorkerMessages(planner, 0, pendingInsertionMessages - 1);
+    assert.deepEqual(await planner.evaluate(() => ({ camera: pathViewport.state, path: displayedPath(), pixels: patternCanvas.toDataURL() })),
+      comparisonDuringSearch, "new best results do not replace the before view or move its camera");
+    await planner.locator("#pathViewAfter").click();
+    await planner.evaluate(() => new Promise(requestAnimationFrame));
     const bridgeResult = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
     assertBlockResult(bridgeResult, bridge.paths[0].points, {}, 12, false);
     assert.ok(bridgeResult.insertions >= 2);
@@ -862,7 +863,7 @@ async function run() {
       assert.equal(indices.at(-1) - indices[0], 3, "Each inserted two-cross block remains contiguous and complete");
     }
     assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
-    assert.equal(await planner.evaluate(() => pathSearchCanvas.classList.contains("active")), false, "Finishing clears trial regions, not retained gains");
+    assert.equal(await planner.locator("#pathSearchCanvas").count(), 0, "No obsolete trial overlay remains");
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();

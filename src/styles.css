@@ -634,7 +634,7 @@ select:focus {
   left: 0;
   z-index: 2;
   display: grid;
-  grid-template-rows: 36px 58px 20px;
+  grid-template-rows: 36px 58px 20px auto;
   gap: 6px;
   margin-bottom: 8px;
   background: #ffffff;
@@ -650,14 +650,13 @@ select:focus {
 .path-work-color input[type="color"] { width: 36px; height: 30px; padding: 2px; cursor: pointer; }
 .path-search-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 32%); gap: 12px; align-items: center; }
 .path-search-reading { min-width: 0; }
-.path-search-activity { display: block; color: #935c00; font-size: 0.75rem; line-height: 17px; overflow-wrap: anywhere; }
+.path-comparison-score { display: block; color: var(--muted); font-size: 0.75rem; line-height: 17px; overflow-wrap: anywhere; }
 .path-score-chart { min-width: 0; }
 .path-score-chart > span { display: block; color: var(--muted); font-size: 0.7rem; line-height: 15px; }
 #pathScoreHistory { display: block; width: 100%; height: 40px; }
 .path-search-legend { gap: 16px; font-size: 0.7rem; color: var(--muted); }
 .path-search-legend span { gap: 5px; white-space: nowrap; }
 .path-search-legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
-.legend-search { color: #d48700; border-top-style: dashed !important; }
 .legend-gain { color: #008be2; }
 .legend-cut { color: #c63848; border-top-width: 2px !important; border-top-style: dashed !important; }
 
@@ -695,26 +694,44 @@ select:focus {
 .stagnation #pathAlgorithmProgress { accent-color: #e8b45c; }
 .manual-constraints-summary { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; }
 #pathManualControls .path-constraints { margin-top: 10px; padding-top: 0; border-top: 0; }
-.path-canvas-stage { position: relative; width: max-content; }
-#pathImprovementCanvas, #pathSearchCanvas {
+#pathsPanel .pattern-canvas-wrap { max-height: none; overflow: hidden; }
+.path-canvas-stage { position: relative; width: 100%; height: clamp(320px, 65vh, 1000px); overflow: hidden; }
+.path-canvas-stage canvas { width: 100%; height: 100%; touch-action: none; }
+#pathImprovementCanvas {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0;
 }
 #pathImprovementCanvas.active { opacity: 1; }
-#pathSearchCanvas.active { opacity: 1; animation: search-focus 1.4s ease-in-out infinite alternate; }
-@keyframes search-focus { from { opacity: 0.65; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { #pathSearchCanvas.active { animation: none; } }
+.path-inspection-toolbar, .path-view-tools, .path-segmented { display: flex; align-items: center; gap: 4px; }
+.path-inspection-toolbar { flex-wrap: wrap; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.path-view-tools { flex-shrink: 0; }
+.path-view-button { width: 32px; height: 32px; min-height: 32px; padding: 6px; flex-shrink: 0; }
+.path-view-button img { display: block; width: 18px; height: 18px; }
+.path-segmented { gap: 0; }
+.path-segmented button { min-height: 32px; border-radius: 0; padding: 6px 10px; font-size: 0.75rem; }
+.path-segmented .path-view-button { padding: 6px; }
+.path-segmented button:first-child { border-radius: 4px 0 0 4px; }
+.path-segmented button:last-child { border-radius: 0 4px 4px 0; }
+.path-segmented button[aria-pressed="true"] { background: #c6e0db; box-shadow: inset 0 -2px var(--accent); }
+#pathZoomLevel { min-width: 55px; text-align: center; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+#patternCanvas.is-pan { cursor: grab; }
+#patternCanvas.is-panning { cursor: grabbing; }
+.path-overview-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; min-height: 100px; }
+#pathsPanel #pathOverview { width: 160px; height: 100px; flex-shrink: 0; background: #f4f6f4; cursor: pointer; touch-action: none; }
+#pathInspection { min-width: 0; color: var(--muted); font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .planner-topbar { flex-direction: column; align-items: stretch; }
   .planner-topbar .topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
   .planner-topbar .status-pill { margin-right: auto; }
-  .path-canvas-heading { grid-template-rows: 64px 80px 20px; }
+  .path-canvas-heading { grid-template-rows: 64px 80px 20px auto; }
   .path-canvas-toolbar { flex-wrap: wrap; align-content: center; gap: 4px; }
   .path-work-color { margin-left: auto; }
   .path-search-summary { grid-template-columns: minmax(0, 1fr) 95px; gap: 8px; }
   .path-search-legend { gap: 12px; }
+  .path-overview-row { align-items: flex-start; flex-wrap: wrap; }
+  .path-canvas-stage { height: 420px; }
 }
 
 .zoom-controls {
