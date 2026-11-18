@@ -471,6 +471,7 @@
       let insertionAttempts = 0, insertions = 0;
       let refinedOrders = 0, intermediateImprovements = 0, interleavedRestarts = 0;
       let relay = null, relayPasses = 0, relayImprovements = 0, relayAttempts = 0, relayChange = null;
+      let lastRelayImprovement = null;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -519,15 +520,18 @@
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-          refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange,
+          refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange, lastRelayImprovement,
           progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
       function publish(route, metrics, order, insertion = false, intermediate = false, relayed = null) {
         if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
         best = route; bestOrder = order ? order.slice() : routeOrder(route); bestMetrics = metrics;
-        relayChange = relayed;
-        if (relayed) relayImprovements++;
+        relayChange = relayed?.diagonals || null;
+        if (relayed) {
+          relayImprovements++;
+          lastRelayImprovement = { ...relayed.link, pass: relayPasses };
+        }
         changed = true; improvements++; lastImprovement = clock();
         if (insertion) insertions++;
         if (intermediate) intermediateImprovements++;
@@ -709,7 +713,7 @@
           const metrics = zones.measure(route.path, problem.threshold);
           if (metrics.score >= bestMetrics.score - epsilon) continue;
           const changedDiagonals = candidate.moved.map(i => model.key(best.path[i]));
-          if (!publish(route, metrics, null, false, false, changedDiagonals)) continue;
+          if (!publish(route, metrics, null, false, false, { diagonals: changedDiagonals, link: candidate.relayLink })) continue;
           restarts++; improved = true; refined.clear();
           remember(best, bestMetrics); emit(true); break;
         }
@@ -720,7 +724,7 @@
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
         stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-        refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange,
+        refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange, lastRelayImprovement,
         progress: 100, reason, order: actualOrder };
       report(final); return final;
     }

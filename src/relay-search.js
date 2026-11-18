@@ -93,6 +93,7 @@
         attempts++;
         const value = score(pieces);
         return { score: value, kind, moved, from: moved[0], to: moved[1] ?? link.at, link: link.at,
+          relayLink: { rank: examined + 1, total: links.length, length: link.length },
           materialize() {
             const sequence = [];
             for (const [a, b] of pieces) for (let i = a; i < b; i++) sequence.push(path[i]);

@@ -116,6 +116,8 @@ Des matrices de segments reevaluent tous les sens pour chaque ordre candidat, av
 
 Le suivi affiche `Recherche de relais`, le numero de passe et les liaisons examinees. Les raccordements modifies et les diagonales relais retenues restent en bleu jusqu'au prochain gain, sans deplacer la vue. `Details` indique le nombre de relais retenus. Arreter conserve le meilleur parcours complet, y compris pendant cette passe.
 
+`Derniere liaison amelioree` affiche le rang et le total de la liste au moment du dernier relais accepte (par exemple `45 / 76`), avec la longueur du raccordement avant ce gain. Le rang suit le cout decroissant, coupes comprises ; l'infobulle precise la passe. Cette valeur reste fixe pendant les recherches et passes suivantes, meme si leur liste change, jusqu'au prochain relais accepte. Elle reste visible a l'arret mais est reinitialisee au lancement d'une nouvelle recherche. Ce suivi n'est pas ajoute aux sauvegardes ni aux exports.
+
 ### Examiner un parcours
 
 La grille de l'outil 2 utilise maintenant un canvas limite a la taille de sa fenetre, independamment du zoom. La molette et les boutons loupe changent l'echelle ; le trou sous le curseur reste fixe tant que les limites de la grille le permettent. La main permet de deplacer la vue, y compris pendant le calcul et en mode Avant. Le bouton de cadrage revient a la vue complete. Le bouton cible cadre explicitement les derniers raccordements ameliores ; aucun gain ne deplace automatiquement la vue. Les regles restent visibles en haut et a gauche, et leur espacement s'adapte quand la grille devient trop petite.

@@ -692,6 +692,10 @@ select:focus {
 .path-progress-heading > span:not(:first-child) { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 #pathAlgorithmProgress { accent-color: #6dc5b8; }
 .stagnation #pathAlgorithmProgress { accent-color: #e8b45c; }
+.path-last-relay { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 8px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.path-last-relay > span { color: rgba(255, 255, 255, 0.72); font-size: 0.72rem; }
+.path-last-relay > span:first-child { grid-column: 1 / -1; }
+.path-last-relay > strong { font-size: 1rem; overflow-wrap: anywhere; }
 .manual-constraints-summary { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; }
 #pathManualControls .path-constraints { margin-top: 10px; padding-top: 0; border-top: 0; }
 #pathsPanel .pattern-canvas-wrap { max-height: none; overflow: hidden; }

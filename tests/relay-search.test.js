@@ -16,8 +16,14 @@ test("relay transfers match every orientation, including source repair, cuts and
     const path = model.expandCells(cells, threshold); path[5].cutBefore = true;
     const before = JSON.stringify(path), constraints = { start: path[0], lockedPrefix: path.slice(0, prefixLength), forcedCuts: [path[5]] };
     const candidates = [...search.candidates({ path, constraints, cutThreshold: threshold })];
+    const locked = Math.max(1, prefixLength);
+    const links = path.slice(1).map((p, i) => ({ at: i + 1, length: model.distance(path[i], p), cost: model.cost(path[i], p, threshold, true) }))
+      .filter(link => link.length > Math.SQRT2 + 1e-8 && link.at >= locked)
+      .sort((a, b) => b.cost - a.cost || b.length - a.length || a.at - b.at);
     assert.ok(candidates.some(c => c.kind === "relocate") && candidates.some(c => c.kind === "swap"));
     for (const candidate of candidates) {
+      const rank = links.findIndex(link => link.at === candidate.link) + 1;
+      assert.deepEqual(candidate.relayLink, { rank, total: links.length, length: links[rank - 1].length });
       const route = candidate.materialize();
       if (!route) { assert.equal(candidate.score, Infinity); continue; }
       assert.equal(model.validateRoute(route.path, cells), "");
@@ -43,17 +49,23 @@ test("a one-diagonal relay breaks a block-search plateau, then ordinary optimiza
   close(firstPlateau.metrics.score, 49.38905042258274);
   assert.ok(result.metrics.score < firstPlateau.metrics.score - 8);
   assert.ok(result.relayImprovements >= 2 && result.relayPasses > result.relayImprovements);
+  assert.ok(result.lastRelayImprovement.pass < result.relayPasses, "A later unsuccessful pass retains the last accepted relay");
   assert.equal(result.metrics.cuts, 1);
   assert.ok(reports.some(s => s.relayChange?.length === 1), "one half-cross is enough to unlock the improvement");
   for (let i = 1; i < reports.length; i++) {
     const a = reports[i - 1], b = reports[i];
     if (a.metrics && b.metrics && a.stage !== "construction") assert.ok(b.metrics.score <= a.metrics.score + 1e-8);
     if (b.relayImprovements > (a.relayImprovements || 0)) {
+      assert.equal(b.lastRelayImprovement.pass, b.relayPasses);
+      assert.ok(b.lastRelayImprovement.rank >= 1 && b.lastRelayImprovement.rank <= b.lastRelayImprovement.total);
+      assert.ok(b.lastRelayImprovement.length > Math.SQRT2);
       assert.ok(reports.slice(i + 1).some(s => s.stage === "search" && s.relayImprovements >= b.relayImprovements));
       assert.ok(b.lastImprovementMs <= 1);
-    }
+    } else assert.deepEqual(b.lastRelayImprovement || null, a.lastRelayImprovement || null,
+      "Scanning, ordinary improvements and restarts cannot overwrite the last accepted relay");
     if (b.path && b.stage !== "construction") assert.equal(model.validateRoute(b.path, points), "");
   }
+  assert.deepEqual(result.lastRelayImprovement, reports.at(-1).lastRelayImprovement);
 });
 
 test("relay scans respect locks and a separate deadline, and report actual examined links", () => {

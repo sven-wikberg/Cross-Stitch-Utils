@@ -40,6 +40,9 @@ const pathAlgorithmAttempts = document.querySelector("#pathAlgorithmAttempts");
 const pathAlgorithmRestarts = document.querySelector("#pathAlgorithmRestarts");
 const pathAlgorithmImprovements = document.querySelector("#pathAlgorithmImprovements");
 const pathRelayImprovements = document.querySelector("#pathRelayImprovements");
+const pathLastRelay = document.querySelector("#pathLastRelay");
+const pathLastRelayPosition = document.querySelector("#pathLastRelayPosition");
+const pathLastRelayLength = document.querySelector("#pathLastRelayLength");
 const pathAlgorithmLastImprovement = document.querySelector("#pathAlgorithmLastImprovement");
 const pathAlgorithmClockLabel = document.querySelector("#pathAlgorithmClockLabel");
 const pathAlgorithmZone = document.querySelector("#pathAlgorithmZone");
@@ -1860,6 +1863,11 @@ function showAdvancedPathFeedback(snapshot) {
 function updateAlgorithmLiveMetrics(snapshot) {
   const view = PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning);
   pathRelayImprovements.textContent = snapshot ? String(snapshot.relayImprovements || 0) : "-";
+  const lastRelay = snapshot?.lastRelayImprovement;
+  pathLastRelay.classList.toggle("hidden", !lastRelay);
+  pathLastRelayPosition.textContent = lastRelay ? `${lastRelay.rank} / ${lastRelay.total}` : "-";
+  pathLastRelayLength.textContent = lastRelay ? `${formatMetric(lastRelay.length)} cases avant` : "";
+  pathLastRelay.title = lastRelay ? `Passe ${lastRelay.pass}, rang par cout decroissant au moment du gain` : "";
   pathAlgorithmFeedback.classList.toggle("is-running", pathAlgorithmRunning);
   pathAlgorithmProgressArea.classList.toggle("hidden", !view.active);
   pathAlgorithmProgressArea.classList.toggle("stagnation", view.searching);
