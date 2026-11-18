@@ -38,12 +38,19 @@ la derniere operation conservee. Charger un nouveau fichier commence un nouvel h
 
 ## Priorite 2 : clarifier l'interface
 
-- [ ] Retirer Retours de zone des indicateurs principaux : un retour peut maintenant etre benefique.
-- [ ] Afficher Bloc en construction et Croix du bloc seulement pendant la phase pertinente.
-- [ ] Reduire les repetitions du score et de l'etat du calcul.
-- [ ] Deplacer Essais, Relances et Distance apres coupe dans un volet Details.
-- [ ] Replier les reglages manuels de diagonale et de sens lorsqu'ils ne servent pas.
-- [ ] Distinguer progression de preparation et delai sans amelioration ; ne pas suggerer un pourcentage de qualite.
+Statut : termine, sans changement du moteur de calcul ni des formats de fichiers.
+
+- [x] Retirer Retours de zone des indicateurs principaux : un retour peut maintenant etre benefique.
+- [x] Afficher Bloc en construction et Croix du bloc seulement pendant la phase pertinente.
+- [x] Reduire les repetitions du score et de l'etat du calcul.
+- [x] Deplacer Essais, Relances et Distance apres coupe dans un volet Details.
+- [x] Replier les reglages manuels de diagonale et de sens lorsqu'ils ne servent pas.
+- [x] Distinguer progression de preparation et delai sans amelioration ; ne pas suggerer un pourcentage de qualite.
+
+Le score principal reste visible. Details et Edition manuelle sont replies par
+defaut ; les reglages actifs restent signales dans le resume. La barre compte les
+blocs pendant la preparation, puis le temps sans amelioration pendant la recherche.
+Elle disparait a l'arret. Gain total et Dernier gain sont distingues.
 
 ## Priorite 3 : mieux combiner les optimisations
 
@@ -66,7 +73,7 @@ la derniere operation conservee. Charger un nouveau fichier commence un nouvel h
 
 ## Ordre propose
 
-Recherche plus visuelle et protection du travail terminees. Suite proposee :
-allegement de l'interface, combinaison des optimisations et inspection detaillee.
+Recherche plus visuelle, protection du travail et allegement de l'interface termines.
+Suite proposee : combinaison des optimisations et inspection detaillee.
 
 Chaque chantier doit etre valide separement avant de passer au suivant.

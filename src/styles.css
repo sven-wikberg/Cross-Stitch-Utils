@@ -677,6 +677,24 @@ select:focus {
 }
 
 .path-history-button { width: 36px; height: 36px; padding: 0; font-size: 1.4rem; }
+.planner-details { min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.planner-details > summary { cursor: pointer; font-size: 0.85rem; font-weight: 700; line-height: 1.5; }
+.planner-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.planner-details > dl { margin-top: 12px; }
+#pathPerformancePanel .planner-details { border-color: rgba(255, 255, 255, 0.18); }
+#pathPerformancePanel .planner-details > summary:focus-visible { outline-color: #ffffff; }
+#pathPerformancePanel .primary-path-score dd { font-size: 1.25rem; }
+#pathPerformancePanel .algorithm-feedback { align-content: start; padding: 12px 0 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.18); border-radius: 0; background: transparent; }
+#pathPerformancePanel .algorithm-feedback.is-running { min-height: 120px; }
+#pathPerformancePanel .hidden { display: none; }
+#pathPerformancePanel .algorithm-live-metrics dd { white-space: normal; overflow-wrap: anywhere; }
+.path-progress-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 6px 0 2px; font-size: 0.72rem; }
+.path-progress-heading > span:first-child { color: rgba(255, 255, 255, 0.72); }
+.path-progress-heading > span:not(:first-child) { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+#pathAlgorithmProgress { accent-color: #6dc5b8; }
+.stagnation #pathAlgorithmProgress { accent-color: #e8b45c; }
+.manual-constraints-summary { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 400; overflow-wrap: anywhere; }
+#pathManualControls .path-constraints { margin-top: 10px; padding-top: 0; border-top: 0; }
 .path-canvas-stage { position: relative; width: max-content; }
 #pathImprovementCanvas, #pathSearchCanvas {
   position: absolute;

@@ -320,16 +320,29 @@ async function run() {
     assert.equal(await planner.evaluate(() => typeof createPathOptimizerApi().optimizePath), "function");
     assert.equal([...plannerScripts].some(src => /(?:path-optimizer|diagonal-optimizer)(?:-worker)?\.js$/.test(src)), false, "The legacy engines are not loaded");
     assert.equal(await planner.locator("#optimizedPathButton").innerText(), "Optimiser les blocs");
-    assert.match(await planner.locator('label[for="pathStagnationLimit"]').innerText(), /Sans amelioration\s*\(couleur\)/);
+    assert.match(await planner.locator('label[for="pathStagnationLimit"]').innerText(), /Arret sans amelioration/);
     assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "60000");
     assert.equal(await planner.locator("#pathStagnationLimit option").evaluateAll(options => Math.min(...options.map(option => Number(option.value)))), 30000);
     for (const id of ["pathAlgorithmZoneLimit", "pathAlgorithmZoneInitial", "pathAlgorithmZoneScore"]) {
-      assert.equal(await planner.locator(`#${id}`).isVisible(), false, `${id} is a hidden legacy field`);
+      assert.equal(await planner.locator(`#${id}`).count(), 0, `${id} is removed from the interface`);
     }
     await planner.locator("#patternJsonFile").setInputFiles({ name: "fixture.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Verification");
     assert.equal(await planner.locator("#pathStagnationLimit").isVisible(), true);
     assert.equal(await planner.locator("#cutThresholdInput").inputValue(), "12");
+    assert.equal(await planner.locator("#pathAlgorithmFeedback").isVisible(), false, "No stale search status before a run");
+    assert.equal(await planner.locator("#pathDetails").getAttribute("open"), null);
+    assert.equal(await planner.locator("#metricCutTravel").isVisible(), false);
+    assert.equal(await planner.locator("#metricZoneReturns").count(), 0);
+    assert.equal(await planner.locator("#pathAlgorithmTotalScore").count(), 0, "The score has a single main readout");
+    assert.equal(await planner.locator("#pathGridStatus").isVisible(), false);
+    const exportBeforePanels = await planner.evaluate(() => buildPathExport());
+    await planner.locator("#pathDetails > summary").click();
+    assert.equal(await planner.locator("#metricCutTravel").isVisible(), true);
+    await planner.locator("#pathDetails > summary").click();
+    assert.deepEqual(await planner.evaluate(() => buildPathExport()), exportBeforePanels);
+    assert.equal(await planner.locator("#pathManualControls").getAttribute("open"), null);
+    await planner.locator("#pathManualControls > summary").click();
     await planner.locator("#pathEditMode").selectOption("start");
     await planner.locator("#patternCanvas").click({ position: { x: 35, y: 35 } });
     await planner.locator("#pathEditMode").selectOption("cut");
@@ -385,11 +398,18 @@ async function run() {
       message.stage === "construction" && Array.isArray(message.path) && message.path.length < cellsForSelectedColor().length * 2));
     assert.ok(partialIndex >= 0, "Construction publishes a partial route when no complete incumbent exists");
     await deliverWorkerMessages(planner, 2, partialIndex);
+    assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(),
+      await planner.evaluate(() => activePathOptimizerSnapshot.zone?.status === "running"));
+    assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), false);
+    assert.equal(await planner.locator("#pathAlgorithmProgress").isVisible(), true);
+    assert.doesNotMatch(await planner.locator("#pathAlgorithmFeedback").innerText(), /%|score|retours/i);
     const partialPath = await planner.evaluate(() => currentPath());
     assert.deepEqual(partialPath.slice(0, lockedDiagonals.length), lockedDiagonals);
     assert.ok(partialPath.length < constrainedPath.length);
     await planner.locator("#stopPathAlgorithmButton").click();
     assert.deepEqual(await planner.evaluate(() => currentPath()), partialPath, "Stopping retains the partial route without generic reorientation");
+    assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(), false);
+    assert.equal(await planner.locator("#pathAlgorithmProgress").isVisible(), false);
     assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor(), false)), "");
     assert.equal(await planner.evaluate(() => bestPathsByDmc["310"]?.length || 0), 0, "A partial route is not saved as a complete best");
     assert.deepEqual(await planner.evaluate(() => [batchPlan.pending.length, batchPlan.results.length]), [2, 0]);
@@ -441,25 +461,33 @@ async function run() {
     const configurationDisplays = await deliverWorkerMessages(planner, 0, configurationIndex);
     const configuration = configurationDisplays.at(-1).snapshot;
     assert.equal(configuration.stage, "configuration");
-    assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), true);
-    assert.notEqual(await planner.locator("#pathAlgorithmLastImprovement").innerText(), "-");
-    assert.match(await planner.locator("#pathAlgorithmClockLabel").innerText(), /couleur/i);
-    assert.ok((await planner.locator("#pathAlgorithmDistance").innerText()).includes(configuration.phase));
+    assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), false);
+    assert.equal(await planner.locator("#pathPreparationCount").isVisible(), true);
+    assert.match(await planner.locator("#pathAlgorithmClockLabel").innerText(), /Blocs prepares/);
+    assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Preparation des entrees et sorties");
+    assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(), false);
     const lastSearchIndex = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.findLastIndex(message => message.stage === "search"));
     assert.ok(lastSearchIndex >= 0);
     const searchDisplays = await deliverWorkerMessages(planner, 0, lastSearchIndex);
     const search = searchDisplays.at(-1).snapshot;
     assert.equal(search.stage, "search");
     assert.equal(search.blocks.prepared, search.blocks.total);
-    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), `${search.blocks.prepared} / ${search.blocks.total}`);
-    assert.equal(await planner.locator("#pathAlgorithmAttempts").innerText(), String(search.attempts));
-    assert.equal(await planner.locator("#pathAlgorithmRestarts").innerText(), String(search.restarts));
-    assert.equal(await planner.locator("#pathAlgorithmImprovements").innerText(), String(search.improvements));
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").textContent(), `${search.blocks.prepared} / ${search.blocks.total}`);
+    assert.equal(await planner.locator("#pathAlgorithmAttempts").textContent(), String(search.attempts));
+    assert.equal(await planner.locator("#pathAlgorithmRestarts").textContent(), String(search.restarts));
+    assert.equal(await planner.locator("#pathAlgorithmImprovements").textContent(), String(search.improvements));
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), true);
     assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("aria-label"), "Sans amelioration (couleur)");
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").innerText(),
       await planner.evaluate(snapshot => `${formatAlgorithmTime(snapshot.lastImprovementMs)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs)}`, search));
-    assert.ok((await planner.locator("#pathAlgorithmDistance").innerText()).includes(search.phase));
+    assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Recherche en cours");
+    assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(), false);
+    assert.equal(await planner.locator("#pathPreparationCount").isVisible(), false);
+    assert.equal(await planner.locator("#pathAlgorithmAttempts").isVisible(), false);
+    assert.doesNotMatch(await planner.locator("#pathAlgorithmFeedback").innerText(), /%|score|retours/i);
+    await planner.locator("#pathDetails > summary").click();
+    assert.equal(await planner.locator("#pathAlgorithmAttempts").isVisible(), true);
+    await planner.locator("#pathDetails > summary").click();
     let previousDisplay = alternatingBefore;
     for (const display of [...configurationDisplays, ...searchDisplays]) {
       assert.equal(require("../src/stitch-model.js").validateRoute(display.path, alternating.paths[0].points), "");
@@ -468,7 +496,7 @@ async function run() {
       previousDisplay = display.path;
     }
     assert.ok(await planner.evaluate(old => comparePathPerformance(currentPath(), old) < 0, alternatingBefore), "The alternating fixture receives a better complete path");
-    assert.match(await planner.locator("#pathImprovementGain").innerText(), /^Gain : /,
+    assert.match(await planner.locator("#pathImprovementGain").innerText(), /^Dernier gain : /,
       "Retained worker improvements automatically update visual feedback");
     const feedbackCheck = await planner.evaluate(before => {
       const wrap = patternCanvas.closest(".pattern-canvas-wrap");
@@ -497,7 +525,7 @@ async function run() {
     assert.ok(feedbackCheck.blue > 0 && feedbackCheck.red > 0, "Changed cuts have a blue highlight with a red core");
     assert.ok(feedbackCheck.unchanged && feedbackCheck.active);
     assert.equal(feedbackCheck.pointerEvents, "none", "The overlay never intercepts path editing");
-    assert.match(feedbackCheck.gain, /^Gain : /);
+    assert.match(feedbackCheck.gain, /^Dernier gain : /);
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-improvement.png"), fullPage: true });
     const gainText = await planner.locator("#pathImprovementGain").innerText();
     await planner.setViewportSize({ width: 390, height: 844 });
@@ -585,12 +613,13 @@ async function run() {
       assert.equal(completedGroups.unitLinks[i], sameGroup, "Every link inside an orthogonal group is constrained to one unit");
     });
     assert.deepEqual(await planner.evaluate(() => currentPath()), completedGroups.path);
-    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "2 / 2");
-    assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
-    assert.equal(await planner.locator("#pathAlgorithmAttempts").innerText(), String(completedGroups.attempts));
-    assert.equal(await planner.locator("#pathAlgorithmRestarts").innerText(), String(completedGroups.restarts));
-    assert.equal(await planner.locator("#pathAlgorithmImprovements").innerText(), String(completedGroups.improvements));
-    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("value"), "100");
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").textContent(), "2 / 2");
+    assert.notEqual(await planner.locator("#metricRealisticScore").innerText(), "-");
+    assert.equal(await planner.locator("#pathAlgorithmAttempts").textContent(), String(completedGroups.attempts));
+    assert.equal(await planner.locator("#pathAlgorithmRestarts").textContent(), String(completedGroups.restarts));
+    assert.equal(await planner.locator("#pathAlgorithmImprovements").textContent(), String(completedGroups.improvements));
+    assert.equal(await planner.locator("#pathAlgorithmProgress").isVisible(), false);
+    assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(), false);
     assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Optimisation.*termin/i);
     const completedFeedback = await planner.locator("#pathAlgorithmFeedback").innerText();
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-block-complete.png"), fullPage: true });
@@ -600,6 +629,7 @@ async function run() {
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-block-complete-mobile.png"), fullPage: true });
     await planner.setViewportSize({ width: 1600, height: 1000 });
     await planner.locator('[data-dmc="321"]').click();
+    assert.equal(await planner.locator("#pathAlgorithmFeedback").isVisible(), false, "Another color does not inherit the last run's feedback");
     await planner.locator('[data-dmc="310"]').click();
     assert.equal(await planner.locator("#pathAlgorithmFeedback").innerText(), completedFeedback, "Completed statistics survive returning to the color");
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).cutTravel > 0));
@@ -627,12 +657,16 @@ async function run() {
 
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();
-    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "-", "Editing clears obsolete construction statistics");
-    assert.equal(await planner.locator("#pathAlgorithmRestarts").innerText(), "-");
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").textContent(), "-", "Editing clears obsolete construction statistics");
+    assert.equal(await planner.locator("#pathAlgorithmRestarts").textContent(), "-");
+    await planner.locator("#pathManualControls").evaluate(el => { el.open = true; });
     await planner.locator("#diagonalMode").selectOption("upper");
     const canvasCell = async x => planner.locator("#patternCanvas").click({ position: { x: 26 + (x + 0.5) * 18, y: 35 } });
+    const canvasBeforeError = await planner.locator("#patternCanvas").boundingBox();
     await canvasCell(2);
     assert.equal(await planner.evaluate(() => currentPath().length), 0, "An upper leg cannot precede its lower leg");
+    assert.equal(await planner.locator("#pathGridStatus").isVisible(), true);
+    assert.deepEqual(await planner.locator("#patternCanvas").boundingBox(), canvasBeforeError, "A manual validation error must not displace the canvas");
     await planner.locator("#diagonalMode").selectOption("lower");
     await planner.locator("#diagonalDirection").selectOption("1");
     await canvasCell(2); await canvasCell(1);
@@ -779,7 +813,7 @@ async function run() {
     const viewBeforeInsertion = await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height }));
     await deliverWorkerMessages(planner, 0, insertionIndex);
     assert.ok(await planner.evaluate(() => activePathOptimizerSnapshot.insertions > 0 && pathAlgorithmRunning));
-    assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Insertion de petits blocs/);
+    assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Recherche en cours");
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 35);
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
     assert.ok(await planner.evaluate(() => pathSearchCanvas.classList.contains("active") && scoreHistory.length >= 2));
@@ -924,9 +958,9 @@ async function run() {
       assert.equal(largeSnapshot.stagnationLimitMs, 300);
       assert.ok(largeSnapshot.lastImprovementMs >= largeSnapshot.stagnationLimitMs);
       assert.deepEqual(await planner.evaluate(() => currentPath()), largeSnapshot.path);
-      assert.notEqual(await planner.locator("#pathAlgorithmZonesDone").innerText(), "-");
-      assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), true);
-      assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
+      assert.notEqual(await planner.locator("#pathAlgorithmZonesDone").textContent(), "-");
+      assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), false);
+      assert.notEqual(await planner.locator("#metricRealisticScore").innerText(), "-");
       const result = await planner.evaluate(() => ({ count: currentPath().length,
         error: StitchModel.validateRoute(currentPath(), cellsForSelectedColor()), metrics: pathPerformanceMetrics(currentPath()),
         feedback: pathAlgorithmDistance.textContent }));

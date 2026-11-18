@@ -36,15 +36,7 @@
               <dt>Couleur</dt>
               <dd id="metricColor">-</dd>
             </div>
-            <div>
-              <dt>Diagonales</dt>
-              <dd id="metricPoints">0 / 0</dd>
-            </div>
-            <div>
-              <dt>Deplacements</dt>
-              <dd id="metricDistance">-</dd>
-            </div>
-            <div>
+            <div class="primary-path-score">
               <dt>Score total</dt>
               <dd id="metricRealisticScore">-</dd>
             </div>
@@ -53,20 +45,12 @@
               <dd id="metricInitialScore">-</dd>
             </div>
             <div>
-              <dt>Gain</dt>
+              <dt>Gain total</dt>
               <dd id="metricScoreGain">-</dd>
             </div>
             <div>
               <dt>Coupes</dt>
               <dd id="metricCuts">-</dd>
-            </div>
-            <div>
-              <dt>Retours de zone</dt>
-              <dd id="metricZoneReturns">-</dd>
-            </div>
-            <div>
-              <dt>Distance apres coupe</dt>
-              <dd id="metricCutTravel">-</dd>
             </div>
           </dl>
           <div class="path-algorithm-panel">
@@ -75,10 +59,9 @@
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
-              <div id="batchResults" class="batch-results"></div>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
-                Sans amelioration (couleur)
+                Arret sans amelioration
                 <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
                   <option value="60000" selected>1 minute</option>
@@ -92,41 +75,38 @@
                 <input id="cutThresholdInput" type="number" min="1" step="1" value="10">
               </label>
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
-                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Preparation des blocs"></progress>
-                <p id="pathAlgorithmDistance">Pret.</p>
-                <dl class="algorithm-live-metrics algorithm-zone-metrics">
-                  <div class="algorithm-zone-heading">
+                <p id="pathAlgorithmDistance" role="status" aria-live="polite">Pret.</p>
+                <div id="pathAlgorithmProgressArea" class="hidden">
+                  <div class="path-progress-heading">
+                    <span id="pathAlgorithmClockLabel">Preparation</span>
+                    <span id="pathPreparationCount">-</span>
+                    <span id="pathAlgorithmLastImprovement" class="hidden">-</span>
+                  </div>
+                  <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Preparation des blocs"></progress>
+                </div>
+                <dl id="pathConstructionMetrics" class="algorithm-live-metrics hidden">
+                  <div>
                     <dt>Bloc en construction</dt>
                     <dd id="pathAlgorithmZone">-</dd>
-                  </div>
-                  <div>
-                    <dt>Score total</dt>
-                    <dd id="pathAlgorithmTotalScore">-</dd>
-                  </div>
-                  <div>
-                    <dt>Blocs prepares</dt>
-                    <dd id="pathAlgorithmZonesDone">-</dd>
                   </div>
                   <div>
                     <dt>Croix du bloc</dt>
                     <dd id="pathAlgorithmZoneCrosses">-</dd>
                   </div>
-                  <div class="hidden">
-                    <dt>Delai de la zone</dt>
-                    <dd id="pathAlgorithmZoneLimit">-</dd>
-                  </div>
-                  <div class="hidden" title="Score de la zone avec ses liaisons d'entree et de sortie">
-                    <dt>Zone + liaisons : avant</dt>
-                    <dd id="pathAlgorithmZoneInitial">-</dd>
-                  </div>
-                  <div class="hidden" title="Score de la zone avec ses liaisons d'entree et de sortie">
-                    <dt>Zone + liaisons : actuel</dt>
-                    <dd id="pathAlgorithmZoneScore">-</dd>
-                  </div>
                 </dl>
-                <dl class="algorithm-live-metrics">
+              </div>
+            </div>
+          </div>
+          <details id="pathDetails" class="planner-details">
+            <summary>Details</summary>
+            <dl class="metric-list">
+              <div><dt>Diagonales</dt><dd id="metricPoints">0 / 0</dd></div>
+              <div><dt>Deplacements</dt><dd id="metricDistance">-</dd></div>
+              <div><dt>Distance apres coupe</dt><dd id="metricCutTravel">-</dd></div>
+            </dl>
+            <dl class="algorithm-live-metrics">
                   <div>
-                    <dt>Temps</dt>
+                    <dt>Temps ecoule</dt>
                     <dd id="pathAlgorithmElapsed">-</dd>
                   </div>
                   <div>
@@ -142,13 +122,15 @@
                     <dd id="pathAlgorithmImprovements">-</dd>
                   </div>
                   <div>
-                    <dt id="pathAlgorithmClockLabel">Sans amelioration (couleur)</dt>
-                    <dd id="pathAlgorithmLastImprovement">-</dd>
+                    <dt>Blocs prepares</dt>
+                    <dd id="pathAlgorithmZonesDone">-</dd>
                   </div>
-                </dl>
-              </div>
+            </dl>
+            <div id="batchResultDetails" class="hidden">
+              <p class="field-label">Bilan des couleurs</p>
+              <div id="batchResults" class="batch-results"></div>
             </div>
-          </div>
+          </details>
         </section>
       </aside>
 
@@ -202,16 +184,7 @@
           <p id="loadError" class="form-error" hidden>Le fichier choisi n'a pas le format attendu.</p>
         </section>
 
-        <section id="pathsPanel" class="tool-panel hidden" data-panel="paths" aria-labelledby="paths-title">
-          <div class="panel-heading">
-            <div>
-              <h3 id="paths-title">Chemins par couleur</h3>
-              <p>Visualise la grille chargee avec les couleurs du pattern.</p>
-            </div>
-          </div>
-
-          <div id="pathGridStatus" class="coverage-status invalid">Charge un pattern pour afficher la grille.</div>
-
+        <section id="pathsPanel" class="tool-panel hidden" data-panel="paths" aria-label="Chemins par couleur">
           <div class="pattern-viewer">
             <div class="pattern-canvas-wrap">
               <div class="path-canvas-heading">
@@ -224,10 +197,10 @@
                 <div class="path-search-summary">
                   <div class="path-search-reading">
                     <output id="pathImprovementGain" class="path-improvement-gain" aria-live="polite" aria-atomic="true"></output>
-                    <span id="pathSearchActivity" class="path-search-activity">Recherche inactive</span>
+                    <span id="pathSearchActivity" class="path-search-activity"></span>
                   </div>
                   <div class="path-score-chart">
-                    <span>Meilleur score</span>
+                    <span>Evolution du score</span>
                     <canvas id="pathScoreHistory" width="240" height="40" aria-label="Evolution du meilleur score"></canvas>
                   </div>
                 </div>
@@ -248,13 +221,16 @@
               <div id="pathColorLegend" class="path-color-legend"></div>
               <div class="path-builder-panel">
                 <div id="pathBuildStatus" class="coverage-status invalid">Selectionne les cases de la couleur.</div>
+                <div id="pathGridStatus" class="coverage-status invalid hidden" role="status"></div>
                 <div class="actions split-actions">
                   <button id="clearPathButton" class="secondary-button" type="button">Vider</button>
                 </div>
                 <button id="restoreBestPathButton" class="secondary-button" type="button" disabled>Restaurer le meilleur chemin</button>
                 <button id="savePathAndNextButton" class="primary-button" type="button">Enregistrer et couleur suivante</button>
-                <fieldset id="pathConstraints" class="path-constraints">
-                  <legend>Contraintes</legend>
+                <details id="pathManualControls" class="planner-details">
+                  <summary>Edition manuelle<span id="constraintsStatus" class="manual-constraints-summary"></span></summary>
+                  <fieldset id="pathConstraints" class="path-constraints">
+                  <legend class="sr-only">Contraintes</legend>
                   <label for="pathEditMode">Mode</label>
                   <select id="pathEditMode">
                     <option value="draw">Tracer le chemin</option>
@@ -275,9 +251,9 @@
                   </select>
                   <label for="lockedPrefixCount">Premieres diagonales verrouillees</label>
                   <input id="lockedPrefixCount" type="number" min="0" step="1" value="0">
-                  <p id="constraintsStatus" class="compact-status"></p>
                   <button id="clearConstraintsButton" class="secondary-button" type="button">Retirer les contraintes</button>
-                </fieldset>
+                  </fieldset>
+                </details>
               </div>
             </div>
           </div>

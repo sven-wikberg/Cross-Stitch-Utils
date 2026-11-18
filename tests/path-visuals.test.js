@@ -7,6 +7,28 @@ const builder = createOrthogonalPathBuilder(model);
 const visuals = createPathVisuals(model, builder);
 const cell = (x, y = 0) => ({ x, y });
 
+test("search presentation distinguishes preparation counts from inactivity, never solution quality", () => {
+  const construction = { stage: "construction", progress: 3, zone: { total: 10, completed: 3, status: "running" } };
+  const config = { stage: "configuration", progress: 12.5, blocks: { total: 20, prepared: 5 } };
+  const search = { stage: "search", progress: 99, lastImprovementMs: 12000, stagnationLimitMs: 60000 };
+  const before = structuredClone([construction, config, search]);
+  const a = visuals.searchPresentation(construction, true), b = visuals.searchPresentation(config, true);
+  assert.equal(a.showConstruction, true); assert.equal(a.count, "3 / 10");
+  assert.equal(a.value, 3); assert.equal(a.max, 10); assert.equal(a.searching, false);
+  assert.equal(b.showConstruction, false); assert.equal(b.count, "5 / 20");
+  assert.equal(b.value, 5); assert.equal(b.max, 20);
+  const c = visuals.searchPresentation(search, true);
+  assert.equal(c.label, "Sans amelioration (couleur)"); assert.equal(c.value, 12000); assert.equal(c.max, 60000);
+  assert.equal(visuals.searchPresentation({ ...search, lastImprovementMs: 0 }, true).value, 0);
+  assert.equal(visuals.searchPresentation({ ...search, lastImprovementMs: 70000 }, true).value, 60000);
+  for (const snapshot of [null, construction, config, search, { stage: "complete" }]) {
+    const view = visuals.searchPresentation(snapshot, false);
+    assert.equal(view.active, false); assert.equal(Boolean(view.showConstruction), false);
+  }
+  assert.equal(visuals.searchPresentation(null, true).value, null);
+  assert.deepEqual([construction, config, search], before);
+});
+
 test("a work palette is independent of DMC colors and keeps light fills with dark thread strokes", () => {
   assert.equal(visuals.workPalette("invalid").color, "#157f83");
   assert.equal(visuals.workPalette("#AABBCC").color, "#aabbcc");

@@ -1,6 +1,26 @@
 (function (root) {
   "use strict";
   function createPathVisuals(model, builder) {
+    function searchPresentation(snapshot, running) {
+      const stage = snapshot?.stage || "preparation";
+      const searching = running && stage === "search";
+      const constructing = running && stage === "construction";
+      const preparing = running && ["preparation", "construction", "configuration"].includes(stage);
+      const total = constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
+      const done = constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
+      const knownCount = Number.isFinite(total) && total > 0 && Number.isFinite(done);
+      const max = searching ? Math.max(1, snapshot.stagnationLimitMs || 60000) : knownCount ? total : 1;
+      const value = searching ? snapshot.lastImprovementMs || 0 : knownCount ? done : null;
+      return {
+        phase: { preparation: "Preparation de la recherche", construction: "Construction des blocs",
+          configuration: "Preparation des entrees et sorties", search: "Recherche en cours", complete: "Recherche terminee" }[stage] || "Recherche en cours",
+        active: preparing || searching, searching,
+        showConstruction: constructing && snapshot.zone?.status === "running",
+        label: searching ? "Sans amelioration (couleur)" : constructing ? "Blocs construits" : "Blocs prepares",
+        count: knownCount ? `${Math.min(total, Math.max(0, done))} / ${total}` : "",
+        max, value: value === null ? null : Math.max(0, Math.min(max, value))
+      };
+    }
     function workPalette(value) {
       const color = /^#[0-9a-f]{6}$/i.test(value || "") ? value.toLowerCase() : "#157f83";
       const channels = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
@@ -45,7 +65,7 @@
         back: Math.max(isCut ? 0.6 : internal ? 1 : 1.4, cellSize * (isCut ? 0.045 : internal ? 0.12 : 0.16))
       };
     }
-    return { workPalette, blockIndex, sameBlock, connections, diffConnections, strokeWidths };
+    return { searchPresentation, workPalette, blockIndex, sameBlock, connections, diffConnections, strokeWidths };
   }
   if (root.StitchModel && root.createOrthogonalPathBuilder) {
     root.PathVisuals = createPathVisuals(root.StitchModel, root.createOrthogonalPathBuilder(root.StitchModel));

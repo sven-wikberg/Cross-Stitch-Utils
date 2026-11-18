@@ -62,6 +62,7 @@ async function run() {
     assert.equal(await page.evaluate(() => currentPath().length), 0, "Restoration itself can be undone");
     await page.locator("#redoPathActionButton").click();
 
+    await page.locator("#pathManualControls > summary").click();
     await page.locator("#lockedPrefixCount").fill("2");
     await page.locator("#lockedPrefixCount").dispatchEvent("change");
     assert.equal(await page.evaluate(() => constraintsByDmc["310"].lockedPrefix.length), 2);
@@ -150,6 +151,7 @@ async function run() {
     assert.equal(await page.evaluate(() => currentPath().length), 0);
     await page.keyboard.press("Control+Z");
     assert.deepEqual((await state()).paths["321"], initial.paths["321"]);
+    await page.locator("#pathManualControls").evaluate(el => { el.open = true; });
     await page.locator("#lockedPrefixCount").focus();
     await page.keyboard.press("Control+Z");
     assert.deepEqual((await state()).paths["321"], initial.paths["321"], "Editing inputs keeps native undo");
