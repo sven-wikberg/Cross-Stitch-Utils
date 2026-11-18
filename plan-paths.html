@@ -71,13 +71,13 @@
           </dl>
           <div class="path-algorithm-panel">
             <div class="algorithm-group">
-              <p class="field-label">Optimisation</p>
-              <button id="optimizedPathButton" class="secondary-button" type="button">Recherche approfondie</button>
-              <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
+              <p class="field-label">Construction</p>
+              <button id="optimizedPathButton" class="secondary-button" type="button">Parcours par retours</button>
+              <button id="batchOptimizeButton" class="secondary-button" type="button">Generer toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <div id="batchResults" class="batch-results"></div>
-              <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le meilleur</button>
-              <label class="cut-threshold-field" for="pathStagnationLimit">
+              <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
+              <label class="cut-threshold-field hidden" for="pathStagnationLimit">
                 Sans amelioration pour 500 croix
                 <select id="pathStagnationLimit">
                   <option value="30000">30 secondes</option>
@@ -92,11 +92,11 @@
                 <input id="cutThresholdInput" type="number" min="1" step="1" value="10">
               </label>
               <div id="pathAlgorithmFeedback" class="algorithm-feedback hidden">
-                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Avancement des zones"></progress>
+                <progress id="pathAlgorithmProgress" value="0" max="100" aria-label="Avancement des groupes orthogonaux"></progress>
                 <p id="pathAlgorithmDistance">Pret.</p>
                 <dl class="algorithm-live-metrics algorithm-zone-metrics">
                   <div class="algorithm-zone-heading">
-                    <dt>Zone en cours</dt>
+                    <dt>Groupe orthogonal</dt>
                     <dd id="pathAlgorithmZone">-</dd>
                   </div>
                   <div>
@@ -104,22 +104,22 @@
                     <dd id="pathAlgorithmTotalScore">-</dd>
                   </div>
                   <div>
-                    <dt>Zones terminees</dt>
+                    <dt>Groupes termines</dt>
                     <dd id="pathAlgorithmZonesDone">-</dd>
                   </div>
                   <div>
-                    <dt>Croix a optimiser</dt>
+                    <dt>Croix du groupe</dt>
                     <dd id="pathAlgorithmZoneCrosses">-</dd>
                   </div>
-                  <div>
+                  <div class="hidden">
                     <dt>Delai de la zone</dt>
                     <dd id="pathAlgorithmZoneLimit">-</dd>
                   </div>
-                  <div title="Score de la zone avec ses liaisons d'entree et de sortie">
+                  <div class="hidden" title="Score de la zone avec ses liaisons d'entree et de sortie">
                     <dt>Zone + liaisons : avant</dt>
                     <dd id="pathAlgorithmZoneInitial">-</dd>
                   </div>
-                  <div title="Score de la zone avec ses liaisons d'entree et de sortie">
+                  <div class="hidden" title="Score de la zone avec ses liaisons d'entree et de sortie">
                     <dt>Zone + liaisons : actuel</dt>
                     <dd id="pathAlgorithmZoneScore">-</dd>
                   </div>
@@ -130,14 +130,14 @@
                     <dd id="pathAlgorithmElapsed">-</dd>
                   </div>
                   <div>
-                    <dt>Relances</dt>
+                    <dt>Paires entree / sortie testees</dt>
                     <dd id="pathAlgorithmRestarts">-</dd>
                   </div>
                   <div>
-                    <dt>Ameliorations</dt>
+                    <dt>Entrees et sorties distinctes</dt>
                     <dd id="pathAlgorithmImprovements">-</dd>
                   </div>
-                  <div>
+                  <div class="hidden">
                     <dt id="pathAlgorithmClockLabel">Sans gain (zone)</dt>
                     <dd id="pathAlgorithmLastImprovement">-</dd>
                   </div>
@@ -220,6 +220,7 @@
                   <button id="undoPathPointButton" class="secondary-button" type="button">Annuler</button>
                   <button id="clearPathButton" class="secondary-button" type="button">Vider</button>
                 </div>
+                <button id="restoreBestPathButton" class="secondary-button" type="button" disabled>Restaurer le meilleur chemin</button>
                 <button id="savePathAndNextButton" class="primary-button" type="button">Enregistrer et couleur suivante</button>
                 <fieldset id="pathConstraints" class="path-constraints">
                   <legend>Contraintes</legend>
@@ -285,7 +286,7 @@
     </main>
 
     <script src="src/stitch-model.js"></script>
-    <script src="src/diagonal-optimizer-worker.js"></script>
+    <script src="src/orthogonal-path-worker.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/path-planner.js"></script>

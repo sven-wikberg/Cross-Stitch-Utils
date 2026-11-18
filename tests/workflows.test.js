@@ -21,6 +21,70 @@ function fixture() {
     pattern: { kind: "cross-stitch-pattern", schemaVersion: 1, project: { name: "Verification" }, colors, grid: { width: 40, height: 30, cells } }, paths };
 }
 
+async function observePathWorkers(page, holdMessages = false) {
+  await page.evaluate(hold => {
+    const createWorker = window.createPathOptimizerWorker;
+    const harness = window.pathWorkerHarness = { holdMessages: hold, messages: [], workers: [] };
+    window.createPathOptimizerWorker = () => {
+      const worker = createWorker(), target = new EventTarget();
+      const record = { pending: [], terminated: false,
+        deliverNext() {
+          if (!this.terminated && this.pending.length) {
+            target.dispatchEvent(new MessageEvent("message", { data: this.pending.shift() }));
+          }
+        } };
+      harness.workers.push(record);
+      target.postMessage = message => worker.postMessage(message);
+      target.terminate = () => { record.terminated = true; worker.terminate(); };
+      worker.addEventListener("message", event => {
+        harness.messages.push(event.data);
+        if (record.terminated) return;
+        if (harness.holdMessages && ["progress", "complete"].includes(event.data.type)) record.pending.push(event.data);
+        else target.dispatchEvent(new MessageEvent("message", { data: event.data }));
+      });
+      worker.addEventListener("error", event => target.dispatchEvent(new ErrorEvent("error", { message: event.message })));
+      return target;
+    };
+  }, holdMessages);
+}
+
+function assertOrthogonalResult(snapshot, cells, constraints = {}, threshold = 12) {
+  const model = require("../src/stitch-model.js");
+  assert.equal(snapshot.method, "orthogonal-backtracking");
+  assert.equal(snapshot.type, "complete");
+  assert.equal(snapshot.progress, 100);
+  assert.equal(snapshot.zone.completed, snapshot.zone.total);
+  assert.equal(model.validateRoute(snapshot.path, cells), "");
+  assert.ok(model.satisfiesConstraints(snapshot.path, constraints));
+  assert.equal(snapshot.unitLinks.length, snapshot.path.length);
+  const prefixLength = constraints.lockedPrefix?.length || (constraints.start ? 1 : 0);
+  const minimumUnitLinks = snapshot.path.length - prefixLength - snapshot.zone.total;
+  const unitLinkCount = snapshot.unitLinks.filter(Boolean).length;
+  // Resuming an open lower diagonal also constrains the first newly generated link.
+  assert.ok(unitLinkCount >= minimumUnitLinks && unitLinkCount <= minimumUnitLinks + 1);
+  snapshot.path.forEach((point, i) => {
+    if (snapshot.unitLinks[i]) assert.equal(model.distance(snapshot.path[i - 1], point), 1, `Non-unit link at diagonal ${i}`);
+  });
+  assert.ok(Math.abs(snapshot.metrics.score - model.metrics(snapshot.path, threshold, true).score) < 1e-7);
+
+  // Exhaustively check small routes, including inter-group links, independently of the worker's DP.
+  if (snapshot.path.length <= 14) {
+    let minimum = Infinity;
+    const visit = (i, previous, score) => {
+      if (score >= minimum) return;
+      if (i === snapshot.path.length) { minimum = score; return; }
+      const fixed = constraints.lockedPrefix?.[i] || (i === 0 ? constraints.start : null);
+      for (const direction of fixed ? [fixed.direction] : [1, -1]) {
+        const point = { ...snapshot.path[i], direction };
+        if (snapshot.unitLinks[i] && model.distance(previous, point) !== 1) continue;
+        visit(i + 1, point, score + model.cost(previous, point, threshold, true));
+      }
+    };
+    visit(0, null, 0);
+    assert.ok(Math.abs(snapshot.metrics.score - minimum) < 1e-7, "Directions minimize the score across all links while retaining unit links");
+  }
+}
+
 async function run() {
   await fs.mkdir(screenshotDirectory, { recursive: true });
   const server = http.createServer(async (req, res) => {
@@ -173,8 +237,18 @@ async function run() {
     await migrationContext.close();
 
     const planner = await context.newPage();
+    const plannerScripts = new Set();
+    planner.on("request", request => { if (request.resourceType() === "script") plannerScripts.add(new URL(request.url()).pathname); });
     await planner.goto(`${origin}/plan-paths.html`);
     await planner.waitForFunction(() => !document.querySelector("main").inert);
+    assert.ok(plannerScripts.has("/src/orthogonal-path-worker.js"));
+    assert.equal([...plannerScripts].some(src => /(?:path-optimizer|diagonal-optimizer)(?:-worker)?\.js$/.test(src)), false, "The legacy engines are not loaded");
+    assert.deepEqual(await planner.evaluate(() => Object.keys(createPathOptimizerApi()).sort()),
+      ["buildPath", "buildSequence", "orientUnitPath", "orthogonalComponents", "satisfiesConstraints"]);
+    assert.equal(await planner.locator("#optimizedPathButton").innerText(), "Parcours par retours");
+    for (const id of ["pathStagnationLimit", "pathAlgorithmZoneLimit", "pathAlgorithmZoneInitial", "pathAlgorithmZoneScore", "pathAlgorithmLastImprovement"]) {
+      assert.equal(await planner.locator(`#${id}`).isVisible(), false, `${id} is a hidden legacy field`);
+    }
     await planner.locator("#patternJsonFile").setInputFiles({ name: "fixture.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     assert.equal(await planner.locator("#cutThresholdInput").inputValue(), "12");
     await planner.locator("#pathEditMode").selectOption("start");
@@ -185,32 +259,56 @@ async function run() {
     await planner.locator("#lockedPrefixCount").fill("2");
     await planner.locator("#lockedPrefixCount").dispatchEvent("change");
     const lockedDiagonals = await planner.evaluate(() => currentPath().slice(0, 2));
-    await planner.evaluate(() => {
-      pathStagnationLimitMs = 60000;
-      window.manualOrientationCalls = 0;
-      const orient = StitchModel.orient;
-      StitchModel.orient = (...args) => { window.manualOrientationCalls++; return orient(...args); };
-    });
+    const constrainedPath = await planner.evaluate(() => currentPath());
+    const savedConstraints = await planner.evaluate(() => constraintsByDmc["310"]);
+    await observePathWorkers(planner, true);
     await planner.locator("#batchOptimizeButton").click();
-    await planner.waitForFunction(() => pathAlgorithmRunning);
+    await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
+    assert.equal(await planner.evaluate(() => pathAlgorithmRunning && activePathOptimizerSnapshot === null), true);
+    assert.equal(await planner.locator("#restoreBestPathButton").isEnabled(), false);
     await planner.locator("#stopPathAlgorithmButton").click();
-    assert.equal(await planner.evaluate(() => batchPlan.pending.length), 2);
-    assert.ok(await planner.evaluate(() => window.manualOrientationCalls > 0), "Stopping manually also finalizes the directions");
-    assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
-      - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7));
-    assert.deepEqual(await planner.evaluate(() => currentPath().slice(0, 2)), lockedDiagonals);
+    assert.deepEqual(await planner.evaluate(() => [pathAlgorithmRunning, batchRunning, batchPlan.pending.length, batchPlan.results.length]), [false, false, 2, 0]);
+    assert.deepEqual(await planner.evaluate(() => currentPath()), constrainedPath, "Stopping before any result does not erase or reorient the old path");
+    assert.deepEqual(await planner.evaluate(() => bestPathsByDmc["310"]), constrainedPath);
+
+    await planner.locator("#batchOptimizeButton").click();
+    await planner.waitForFunction(() => pathWorkerHarness.workers[1]?.pending.some(message => message.type === "complete"));
+    await planner.evaluate(() => pathWorkerHarness.workers[1].deliverNext());
+    await planner.waitForFunction(() => activePathOptimizerSnapshot?.method === "orthogonal-backtracking");
+    const partialPath = await planner.evaluate(() => currentPath());
+    assert.deepEqual(partialPath, lockedDiagonals, "The initial construction snapshot contains the locked partial route");
+    await planner.locator("#stopPathAlgorithmButton").click();
+    assert.deepEqual(await planner.evaluate(() => currentPath()), partialPath, "Stopping retains the partial route without generic reorientation");
+    assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor(), false)), "");
+    assert.deepEqual(await planner.evaluate(() => bestPathsByDmc["310"]), constrainedPath);
+    assert.deepEqual(await planner.evaluate(() => [batchPlan.pending.length, batchPlan.results.length]), [2, 0]);
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();
     await planner.waitForFunction(() => !document.querySelector("main").inert);
+    assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"]), partialPath);
+    assert.deepEqual(await planner.evaluate(() => bestPathsByDmc["310"]), constrainedPath);
+    assert.deepEqual(await planner.evaluate(() => constraintsByDmc["310"]), savedConstraints);
     await planner.locator('[data-step="paths"]').click();
-    await planner.evaluate(() => { pathStagnationLimitMs = 60000; });
+    await observePathWorkers(planner);
     await planner.locator("#batchOptimizeButton").click();
-    await planner.waitForFunction(() => !batchRunning && batchPlan.results.length === 2, null, { timeout: 40000 });
+    await planner.waitForFunction(() => !pathAlgorithmRunning && !batchRunning && batchPlan.results.length === 2);
+    const batchSnapshots = await planner.evaluate(() => pathWorkerHarness.messages.filter(message => message.type === "complete"));
+    assert.equal(batchSnapshots.length, 2);
+    for (let i = 0; i < data.paths.length; i++) {
+      const dmc = data.paths[i].dmc;
+      assertOrthogonalResult(batchSnapshots[i], data.paths[i].points, dmc === "310" ? savedConstraints : {});
+      assert.deepEqual(await planner.evaluate(dmc => pathsByDmc[dmc], dmc), batchSnapshots[i].path);
+    }
     assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), lockedDiagonals);
+    assert.deepEqual(await planner.evaluate(() => constraintsByDmc["310"]), savedConstraints);
     assert.equal(await planner.evaluate(() => buildPathExport().schemaVersion), 2);
     assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor())), "");
     assert.equal(await planner.evaluate(() => buildPathExport().settings.cutThreshold), 12);
-    await planner.evaluate(() => { pathStagnationLimitMs = 60000; renderPathTool(); });
+    const exported = await planner.evaluate(() => buildPathExport());
+    assert.doesNotThrow(() => require("../src/stitch-model.js").upgradePathsFile(exported));
+    assert.deepEqual(exported.paths.find(route => route.dmc === "310").constraints, savedConstraints);
+    assert.deepEqual(exported.paths.find(route => route.dmc === "310").forcedCuts.map(point => [point.x, point.y, point.diagonal]),
+      savedConstraints.forcedCuts.map(point => [point.x, point.y, point.diagonal]));
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner.png"), fullPage: true });
 
     const alternating = structuredClone(data);
@@ -221,43 +319,45 @@ async function run() {
     await planner.locator("#patternJsonFile").setInputFiles({ name: "alternating.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(alternating)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Alternating zones");
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).zoneReturns > 0));
-    await planner.evaluate(() => {
-      pathStagnationLimitMs = 60000;
-      window.zoneUpdates = [];
-      const createWorker = window.createPathOptimizerWorker;
-      window.createPathOptimizerWorker = () => {
-        const worker = createWorker();
-        worker.addEventListener("message", event => {
-          if (event.data.stage === "zones") window.zoneUpdates.push(event.data.zone);
-        });
-        return worker;
-      };
-    });
+    await planner.evaluate(() => { pathWorkerHarness.messages = []; });
     await planner.locator("#optimizedPathButton").click();
-    await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.status === "running");
-    assert.match(await planner.locator("#pathAlgorithmZone").innerText(), /^\d+ \/ 2$/);
+    await planner.waitForFunction(() => !pathAlgorithmRunning && pathWorkerHarness.messages.some(message => message.type === "complete"));
+    const groupSnapshots = await planner.evaluate(() => pathWorkerHarness.messages);
+    const completedGroups = groupSnapshots.find(message => message.type === "complete");
+    assertOrthogonalResult(completedGroups, alternating.paths[0].points);
+    assert.ok(groupSnapshots.some(snapshot => snapshot.type === "progress" && snapshot.stage === "zones"));
+    assert.ok(groupSnapshots.every(snapshot => snapshot.method === "orthogonal-backtracking"));
+    assert.ok(groupSnapshots.every(snapshot => snapshot.stagnationLimitMs === undefined && snapshot.zone.stagnationLimitMs === undefined));
+    assert.ok(groupSnapshots.every((snapshot, i) => !i || snapshot.zone.completed >= groupSnapshots[i - 1].zone.completed));
+    assert.equal(completedGroups.zone.completed, 2);
+    assert.equal(completedGroups.diagnostics.groups, 2);
+    assert.ok(completedGroups.restarts > 0, "Entry/exit candidate pairs were evaluated");
+    completedGroups.path.forEach((point, i, route) => {
+      const sameGroup = i > 0 && (point.x < 20) === (route[i - 1].x < 20);
+      assert.equal(completedGroups.unitLinks[i], sameGroup, "Every link inside an orthogonal group is constrained to one unit");
+    });
+    assert.deepEqual(await planner.evaluate(() => currentPath()), completedGroups.path);
+    assert.equal(await planner.locator("#pathAlgorithmZone").innerText(), "2 / 2");
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "2 / 2");
     assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
-    assert.notEqual(await planner.locator("#pathAlgorithmZoneInitial").innerText(), "-");
-    assert.notEqual(await planner.locator("#pathAlgorithmZoneScore").innerText(), "-");
     assert.equal(await planner.locator("#pathAlgorithmZoneCrosses").innerText(), "3");
-    assert.equal(await planner.locator("#pathAlgorithmZoneLimit").innerText(), "0:05");
-    assert.match(await planner.locator("#pathAlgorithmLastImprovement").innerText(), /\/ 0:05$/);
-    assert.match(await planner.locator("#pathGridStatus").innerText(), /zone \d+ \/ 2.*score total/);
-    assert.match(await planner.locator("#pathGridStatus").innerText(), /3 croix a optimiser - sans gain .* \/ 0:05/);
-    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-zone-search.png"), fullPage: true });
+    assert.equal(await planner.locator("#pathAlgorithmRestarts").innerText(), String(completedGroups.restarts));
+    assert.equal(await planner.locator("#pathAlgorithmImprovements").innerText(), String(completedGroups.diagnostics.entryExitChanges));
+    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("value"), "100");
+    assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Parcours par retours termine/);
+    const completedFeedback = await planner.locator("#pathAlgorithmFeedback").innerText();
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-orthogonal-complete.png"), fullPage: true });
     await planner.setViewportSize({ width: 390, height: 844 });
     assert.equal(await planner.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
-    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-zone-search-mobile.png"), fullPage: true });
+    assert.equal(await planner.locator("#pathAlgorithmFeedback").innerText(), completedFeedback, "Completed statistics survive mobile resize");
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-orthogonal-complete-mobile.png"), fullPage: true });
     await planner.setViewportSize({ width: 1600, height: 1000 });
-    await planner.waitForFunction(() => !pathAlgorithmRunning);
-    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "2 / 2");
-    assert.deepEqual(await planner.evaluate(() => zoneUpdates.filter(z => z.status === "complete").map(z => z.index)), [1, 2]);
+    await planner.locator('[data-dmc="321"]').click();
+    await planner.locator('[data-dmc="310"]').click();
+    assert.equal(await planner.locator("#pathAlgorithmFeedback").innerText(), completedFeedback, "Completed statistics survive returning to the color");
     assert.equal(await planner.locator("#metricZoneReturns").innerText(), "0");
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(bestPathsByDmc[selectedDmc]).zoneReturns), 0);
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).cutTravel > 0));
-    assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
-      - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7),
-    "A completed worker result already has optimal directions for its order");
     assert.ok(await planner.evaluate(() => {
       const old = { pattern: loadedPattern, pathSchemaVersion: 2, pathObjectiveVersion: 1,
         pathsByDmc, bestPathsByDmc, constraintsByDmc, selectedDmc,
@@ -267,21 +367,11 @@ async function run() {
         && migrated.constraintsByDmc === old.constraintsByDmc && migrated.selectedDmc === old.selectedDmc
         && Object.keys(migrated.pathOptimizationBaselinesByDmc).length === 0 && migrated.batchPlan.pending.length === 0;
     }), "Changing the zone definition retains paths and constraints, resetting only obsolete search statistics");
-    assert.ok(await planner.evaluate(() => {
-      const state = { pattern: loadedPattern, pathSchemaVersion: 2, pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
-        pathsByDmc, bestPathsByDmc, constraintsByDmc, pathStagnationLimitMs: 300000,
-        batchPlan, pathOptimizationBaselinesByDmc };
-      const migrated = migratePlannerState(state);
-      const custom = migratePlannerState({ ...migrated, pathStagnationLimitMs: 120000 });
-      return migrated.pathStagnationLimitMs === 60000 && migrated.pathTimingVersion === PATH_TIMING_VERSION
-        && migrated.pathsByDmc === pathsByDmc && migrated.bestPathsByDmc === bestPathsByDmc
-        && migrated.constraintsByDmc === constraintsByDmc && migrated.batchPlan === batchPlan
-        && migrated.pathOptimizationBaselinesByDmc === pathOptimizationBaselinesByDmc
-        && custom.pathStagnationLimitMs === 120000;
-    }), "Timing migration sets the new one-minute reference once, retaining paths and subsequent preferences");
 
     await planner.locator('[data-dmc="310"]').click();
     await planner.locator("#clearPathButton").click();
+    assert.equal(await planner.locator("#pathAlgorithmZonesDone").innerText(), "-", "Editing clears obsolete construction statistics");
+    assert.equal(await planner.locator("#pathAlgorithmRestarts").innerText(), "-");
     await planner.locator("#diagonalMode").selectOption("upper");
     const canvasCell = async x => planner.locator("#patternCanvas").click({ position: { x: 26 + (x + 0.5) * 18, y: 35 } });
     await canvasCell(2);
@@ -297,6 +387,60 @@ async function run() {
     assert.equal(await planner.evaluate(() => currentPath().length), 3);
     assert.equal(await planner.evaluate(() => currentPath()[2].direction), -1);
     assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor(), false)), "");
+
+    const betterOldRoute = structuredClone(data);
+    betterOldRoute.project.name = betterOldRoute.pattern.project.name = "Restore a better saved route";
+    betterOldRoute.paths[0].points = [{ x: 6, y: 0 }, { x: 7, y: 2 }, { x: 6, y: 5 }, { x: 5, y: 2 }, { x: 0, y: 1 }];
+    betterOldRoute.pattern.grid.cells = betterOldRoute.pattern.grid.cells.map(cell => {
+      const dmc = betterOldRoute.paths.find(route => route.points.some(point => point.x === cell.x && point.y === cell.y))?.dmc;
+      return { ...cell, dmc: dmc || null, empty: !dmc, symbol: dmc === "310" ? "A" : dmc ? "B" : null };
+    });
+    await planner.locator('[data-step="load"]').click();
+    await planner.locator("#patternJsonFile").setInputFiles({ name: "better-old.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(betterOldRoute)) });
+    await planner.waitForFunction(() => loadedPattern?.project.name === "Restore a better saved route");
+    const previousBest = await planner.evaluate(() => currentPath());
+    await planner.evaluate(() => { pathWorkerHarness.messages = []; });
+    await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => !pathAlgorithmRunning && pathWorkerHarness.messages.some(message => message.type === "complete"));
+    const newConstruction = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
+    assertOrthogonalResult(newConstruction, betterOldRoute.paths[0].points);
+    assert.ok(await planner.evaluate(old => comparePathPerformance(old, currentPath()) < 0, previousBest), "This fixture's old route is strictly better");
+    assert.deepEqual(await planner.evaluate(() => currentPath()), newConstruction.path, "The newly constructed route is displayed even when it is not better");
+    assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), previousBest, "The better old route remains stored");
+    await planner.evaluate(() => plannerSaveQueue);
+    await planner.reload();
+    await planner.waitForFunction(() => !document.querySelector("main").inert);
+    await planner.locator('[data-step="paths"]').click();
+    assert.deepEqual(await planner.evaluate(() => currentPath()), newConstruction.path);
+    assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), previousBest);
+    assert.equal(await planner.locator("#restoreBestPathButton").isEnabled(), true);
+    await planner.locator("#restoreBestPathButton").click();
+    assert.deepEqual(await planner.evaluate(() => currentPath()), previousBest);
+    assert.equal(await planner.evaluate(() => StitchModel.validateRoute(currentPath(), cellsForSelectedColor())), "");
+    await planner.evaluate(() => plannerSaveQueue);
+    await planner.reload();
+    await planner.waitForFunction(() => !document.querySelector("main").inert);
+    assert.deepEqual(await planner.evaluate(() => currentPath()), previousBest, "The explicitly restored path is persisted");
+    await planner.locator('[data-step="paths"]').click();
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-restored-best.png"), fullPage: true });
+
+    await planner.evaluate(() => {
+      batchPlan = { pending: ["321"], results: [{ dmc: "310", score: pathPerformanceMetrics(currentPath()).score }] };
+      renderPathTool();
+    });
+    await observePathWorkers(planner, true);
+    await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
+    await planner.evaluate(() => pathWorkerHarness.workers[0].deliverNext());
+    await planner.waitForFunction(() => activePathOptimizerSnapshot?.method === "orthogonal-backtracking");
+    await planner.locator("#stopPathAlgorithmButton").click();
+    assert.deepEqual(await planner.evaluate(() => batchPlan.pending), ["321", "310"]);
+    assert.deepEqual(await planner.evaluate(() => batchPlan.results), [], "An interrupted regeneration invalidates its previous batch completion");
+    await planner.evaluate(() => { pathWorkerHarness.holdMessages = false; });
+    await planner.locator("#batchOptimizeButton").click();
+    await planner.waitForFunction(() => !pathAlgorithmRunning && !batchRunning && batchPlan.results.length === 2);
+    assert.equal(await planner.evaluate(() => areAllColorPathsComplete(loadedPattern, pathsByDmc)), true,
+      "Batch resume rebuilds the manually interrupted color as well as the other pending color");
 
     const importer = await context.newPage();
     await importer.goto(`${origin}/import-pattern.html`);
@@ -367,30 +511,26 @@ async function run() {
       console.log(`large real pattern restored through IndexedDB and file:// (${large.length} bytes)`);
       const route = save.pathsFile.paths.reduce((a, b) => a.points.length > b.points.length ? a : b);
       await planner.locator('[data-step="paths"]').click();
-      await planner.evaluate(dmc => { selectedDmc = dmc; pathStagnationLimitMs = 60000; renderPathTool(); }, route.dmc);
-      const initialZoneMetrics = await planner.evaluate(() => pathPerformanceMetrics(currentPath()));
+      await planner.evaluate(dmc => { selectedDmc = dmc; renderPathTool(); }, route.dmc);
+      await observePathWorkers(planner);
+      const largeInput = await planner.evaluate(() => ({ cells: cellsForSelectedColor(), constraints: constraintsByDmc[selectedDmc] || {}, cutThreshold }));
       await planner.locator("#optimizedPathButton").click();
-      await planner.waitForFunction(() => activePathOptimizerSnapshot?.zone?.status === "running", null, { timeout: 30000 });
-      assert.ok(await planner.evaluate(() => {
-        const zone = activePathOptimizerSnapshot.zone;
-        return zone.stagnationLimitMs === Math.min(600000, Math.max(5000, zone.unlockedDiagonals * 60));
-      }));
+      await planner.waitForFunction(() => !pathAlgorithmRunning, null, { timeout: 120000 });
+      const largeSnapshot = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
+      assert.ok(largeSnapshot, await planner.locator("#pathAlgorithmDistance").innerText());
+      assertOrthogonalResult(largeSnapshot, largeInput.cells, largeInput.constraints, largeInput.cutThreshold);
+      assert.deepEqual(await planner.evaluate(() => currentPath()), largeSnapshot.path);
       assert.notEqual(await planner.locator("#pathAlgorithmZone").innerText(), "-");
       assert.notEqual(await planner.locator("#pathAlgorithmTotalScore").innerText(), "-");
-      await planner.locator("#stopPathAlgorithmButton").click({ timeout: 10000 });
-      await planner.waitForFunction(() => !pathAlgorithmRunning);
       const result = await planner.evaluate(() => ({ count: currentPath().length,
         error: StitchModel.validateRoute(currentPath(), cellsForSelectedColor()), metrics: pathPerformanceMetrics(currentPath()),
-        initial: pathOptimizationBaselinesByDmc[selectedDmc], feedback: pathAlgorithmDistance.textContent }));
-      assert.equal(result.count, route.points.length * 2);
+        feedback: pathAlgorithmDistance.textContent }));
+      assert.equal(result.count, largeInput.cells.length * 2);
       assert.equal(result.error, "");
-      assert.ok(require("../src/stitch-model.js").compareZoneMetrics(result.metrics, initialZoneMetrics) <= 0.0001);
       assert.equal(result.metrics.zoneReturns, 0);
-      assert.ok(await planner.evaluate(() => Math.abs(pathPerformanceMetrics(currentPath()).score
-        - pathPerformanceMetrics(StitchModel.orient(currentPath(), cutThreshold, constraintsByDmc[selectedDmc], true)).score) < 1e-7));
       assert.doesNotMatch(result.feedback, /Erreur/);
       await planner.evaluate(() => plannerSaveQueue);
-      console.log(`large diagonal worker passed (${result.count} diagonals, zone returns ${initialZoneMetrics.zoneReturns} -> ${result.metrics.zoneReturns}, score ${result.metrics.score.toFixed(2)})`);
+      console.log(`large orthogonal builder passed (${result.count} diagonals, ${largeSnapshot.zone.completed} groups, ${largeSnapshot.restarts} candidate pairs, score ${result.metrics.score.toFixed(2)})`);
     }
     assert.deepEqual(errors, []);
     console.log("browser workflows passed: resume, undo/redo, session, batch, constraints, group editing, source overlay, responsive layout");

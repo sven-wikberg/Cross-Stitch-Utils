@@ -34,6 +34,7 @@ const pathAlgorithmZoneLimit = document.querySelector("#pathAlgorithmZoneLimit")
 const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
 const clearPathButton = document.querySelector("#clearPathButton");
+const restoreBestPathButton = document.querySelector("#restoreBestPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
 const pathExportStatus = document.querySelector("#pathExportStatus");
 const pathExportColorsText = document.querySelector("#pathExportColorsText");
@@ -109,6 +110,7 @@ let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
 let activePathOptimizerLastSavedAt = 0;
 let activePathOptimizerSnapshot = null;
+let pathConstructionSummaries = {};
 let optimizerGridFrame = null;
 let optimizerSnapshotFrame = null;
 let pendingOptimizerSnapshot = null;
@@ -365,8 +367,8 @@ function renderPatternGrid() {
 function renderPathGridStatus(metrics = activePathOptimizerSnapshot?.metrics) {
   const snapshot = pathAlgorithmRunning && activePathOptimizerSnapshot;
   const zone = snapshot?.zone;
-  const timing = Number.isFinite(zone?.stagnationLimitMs)
-    ? ` - ${formatMetric(zone.unlockedCrosses)} croix a optimiser - sans gain ${formatAlgorithmTime(zone.lastImprovementMs)} / ${formatAlgorithmTime(zone.stagnationLimitMs)}` : "";
+  const timing = Number.isFinite(zone?.unlockedCrosses)
+    ? ` - ${formatMetric(zone.unlockedCrosses)} croix` : "";
   pathGridStatus.textContent = snapshot && Number.isFinite(metrics?.score)
     ? `${snapshot.phase}${timing} - DMC ${selectedDmc} - score total ${formatMetric(metrics.score)}`
     : `Couleur selectionnee: DMC ${selectedDmc}.`;
@@ -466,6 +468,7 @@ function pointCenter(point, cellSize) {
 }
 
 function renderPathBuilder() {
+  restoreBestPathButton.disabled = pathAlgorithmRunning || !bestCompletePathForColor(selectedDmc).length;
   stopPathAlgorithmButton.classList.toggle("hidden", !activePathOptimizerWorker);
   stopPathAlgorithmButton.disabled = !activePathOptimizerWorker;
   pathStagnationLimit.disabled = pathAlgorithmRunning;
@@ -501,6 +504,12 @@ function renderPathBuilder() {
 function renderPathDistanceFeedback() {
   resetAlgorithmLiveMetrics();
   const path = currentPath();
+  const summary = pathConstructionSummaries[selectedDmc];
+  if (summary?.route === path && summary.count === path.length) {
+    showAlgorithmFeedback(summary.label, summary.snapshot.progress, summary.snapshot.metrics.score, null, summary.snapshot.metrics);
+    updateAlgorithmLiveMetrics(summary.snapshot);
+    return;
+  }
   if (path.length === 0) {
     const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
     if (bestPath?.length) {
@@ -512,10 +521,8 @@ function renderPathDistanceFeedback() {
     return;
   }
 
-  const bestPath = Array.isArray(bestPathsByDmc[selectedDmc]) ? bestPathsByDmc[selectedDmc] : null;
   const currentScore = pathRealisticScore(path);
-  const bestScore = bestPath ? pathRealisticScore(bestPath) : currentScore;
-  showAlgorithmFeedback("Chemin actuel", 100, bestScore, currentScore, pathPerformanceMetrics(path));
+  showAlgorithmFeedback("Chemin actuel", 100, currentScore, null, pathPerformanceMetrics(path));
 }
 
 function renderPathMetrics() {
@@ -1624,7 +1631,7 @@ function showPathSavedStatus() {
 
 function renderPlanningOptions() {
   batchOptimizeButton.disabled = !loadedPattern || pathAlgorithmRunning;
-  batchOptimizeButton.textContent = batchPlan.pending.length ? "Reprendre les couleurs restantes" : "Optimiser toutes les couleurs";
+  batchOptimizeButton.textContent = batchPlan.pending.length ? "Reprendre les couleurs restantes" : "Generer toutes les couleurs";
   document.querySelector("#batchStatus").textContent = batchPlan.pending.length || batchPlan.results.length
     ? `${batchPlan.results.length} terminees - ${batchPlan.pending.length} restantes${batchRunning ? " - calcul en cours" : ""}` : "";
   const results = document.querySelector("#batchResults");
@@ -1672,6 +1679,7 @@ function updateConstraints(constraints) {
 }
 
 function invalidateBatchResult(dmc) {
+  delete pathConstructionSummaries[dmc];
   if (!batchPlan.results.some(result => result.dmc === dmc)) return;
   batchPlan.results = batchPlan.results.filter(result => result.dmc !== dmc);
   if (!batchPlan.pending.includes(dmc)) batchPlan.pending.push(dmc);
@@ -1738,6 +1746,7 @@ patternJsonFileInput.addEventListener("change", async () => {
     batchPlan = { pending: [], results: [] };
     batchRunning = false;
     bestPathsByDmc = clonePaths(pathsByDmc);
+    pathConstructionSummaries = {};
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathOptimizationBaselinesByDmc = {};
     pathProgress.load = true;
@@ -1887,6 +1896,8 @@ function startAdvancedPathSearch() {
   }
 
   const dmc = selectedDmc;
+  delete pathConstructionSummaries[dmc];
+  if (isCompletePathForColor(loadedPattern, pathsByDmc, dmc)) rememberBestPath(dmc, pathsByDmc[dmc]);
   const startingPath = bestCompletePathForColor(dmc);
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
     pathOptimizationBaselinesByDmc[dmc] = pathRealisticScore(startingPath);
@@ -1899,7 +1910,7 @@ function startAdvancedPathSearch() {
   activePathOptimizerSnapshot = null;
   pathAlgorithmRunning = true;
   resetAlgorithmLiveMetrics();
-  showAlgorithmFeedback("Preparation de la recherche approfondie", 0, null);
+  showAlgorithmFeedback("Preparation du parcours par retours", 0, null);
   renderPathTool();
 
   worker.addEventListener("message", (event) => {
@@ -1925,7 +1936,7 @@ function startAdvancedPathSearch() {
     if (message.type === "complete") {
       clearPendingOptimizerSnapshot();
       applyAdvancedPathSnapshot(dmc, message);
-      finishAdvancedPathSearch("Recherche approfondie terminee", message, true);
+      finishAdvancedPathSearch("Parcours par retours termine", message, true);
     }
   });
 
@@ -1958,6 +1969,7 @@ function flushAdvancedPathSnapshot() {
 }
 
 function bestCompletePathForColor(dmc) {
+  if (!loadedPattern || !dmc) return [];
   const candidates = [
     Array.isArray(pathsByDmc[dmc]) ? pathsByDmc[dmc] : [],
     Array.isArray(bestPathsByDmc[dmc]) ? bestPathsByDmc[dmc] : []
@@ -1979,10 +1991,12 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
   }
 
   let pathChanged = false;
-  if (Array.isArray(snapshot.path) && isCompletePathForColor(loadedPattern, { [dmc]: snapshot.path }, dmc)) {
-    const result = rememberBestPath(dmc, snapshot.path);
-    pathsByDmc[dmc] = result.path;
-    pathChanged = result.improved;
+  if (Array.isArray(snapshot.path) && !StitchModel.validateRoute(snapshot.path, cellsForColor(dmc), false)) {
+    invalidateBatchResult(dmc);
+    if (isCompletePathForColor(loadedPattern, { [dmc]: snapshot.path }, dmc)) rememberBestPath(dmc, snapshot.path);
+    // A new construction must remain visible even when an older stored route scores better.
+    pathsByDmc[dmc] = snapshot.path.map(copyPoint);
+    pathChanged = true;
     pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   }
 
@@ -2022,6 +2036,12 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
   pathAlgorithmRunning = false;
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
+  if (finishedDmc && finalSnapshot) {
+    const saved = { ...finalSnapshot, path: undefined, unitLinks: undefined,
+      metrics: pathPerformanceMetrics(pathsByDmc[finishedDmc] || [], finishedDmc) };
+    pathConstructionSummaries[finishedDmc] = { route: pathsByDmc[finishedDmc], count: pathsByDmc[finishedDmc]?.length || 0,
+      label, snapshot: saved };
+  }
   savePathPlannerState();
   renderPathTool();
 
@@ -2037,15 +2057,14 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
   );
   updateAlgorithmLiveMetrics(finalSnapshot);
   activePathOptimizerSnapshot = null;
-  if (batchRunning) {
+  if (batchRunning || batchPlan.pending.includes(finishedDmc)) {
     if (completed) {
       batchPlan.pending = batchPlan.pending.filter((dmc) => dmc !== finishedDmc);
+      batchPlan.results = batchPlan.results.filter(result => result.dmc !== finishedDmc);
       batchPlan.results.push({ dmc: finishedDmc, initial: finalSnapshot?.initialMetrics?.score, score: metrics.realisticScore, cuts: metrics.cuts, zoneReturns: metrics.zoneReturns });
-      if (batchPlan.pending.length) setTimeout(runNextBatchColor, 50);
+      if (batchRunning && batchPlan.pending.length) setTimeout(runNextBatchColor, 50);
       else batchRunning = false;
-    } else {
-      batchRunning = false;
-    }
+    } else batchRunning = false;
     savePathPlannerState();
     renderPlanningOptions();
   }
@@ -2059,19 +2078,7 @@ function stopAdvancedPathSearch() {
 
   activePathOptimizerWorker.terminate();
   flushAdvancedPathSnapshot();
-  const dmc = activePathOptimizerDmc;
-  const path = bestCompletePathForColor(dmc);
-  if (path.length) {
-    try {
-      const oriented = StitchModel.orient(path, cutThreshold, constraintsByDmc[dmc] || {}, true);
-      applyAdvancedPathSnapshot(dmc, { ...activePathOptimizerSnapshot, path: oriented,
-        metrics: pathPerformanceMetrics(oriented, dmc), phase: "Derniere optimisation des sens" });
-    } catch (error) {
-      finishAdvancedPathSearch(`Recherche arretee, meilleur chemin conserve. Verification des sens: ${error.message}`, null, false);
-      return;
-    }
-  }
-  finishAdvancedPathSearch("Recherche arretee, meilleur chemin conserve", null, false);
+  finishAdvancedPathSearch("Construction arretee, parcours conserve", null, false);
 }
 
 function showAdvancedPathFeedback(snapshot) {
@@ -2079,7 +2086,7 @@ function showAdvancedPathFeedback(snapshot) {
   const metrics = snapshot.metrics || pathPerformanceMetrics(path);
   renderPathGridStatus(metrics);
   showAlgorithmFeedback(
-    snapshot.phase || "Recherche approfondie",
+    snapshot.phase || "Parcours par retours",
     snapshot.progress || 0,
     path.length > 1 ? metrics.realisticScore : snapshot.metrics?.score,
     null,
@@ -2110,7 +2117,7 @@ function updateAlgorithmLiveMetrics(snapshot) {
 
   pathAlgorithmElapsed.textContent = formatAlgorithmTime(snapshot.elapsedMs);
   pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
-  pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
+  pathAlgorithmImprovements.textContent = String(snapshot.diagnostics?.entryExitChanges ?? 0);
   pathAlgorithmLastImprovement.textContent = `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs)}`;
 }
 
@@ -2157,6 +2164,18 @@ stopPathAlgorithmButton.addEventListener("click", () => {
   stopAdvancedPathSearch();
 });
 
+restoreBestPathButton.addEventListener("click", () => {
+  if (pathAlgorithmRunning || !selectedDmc) return;
+  const path = bestCompletePathForColor(selectedDmc);
+  if (!path.length) return;
+  delete pathConstructionSummaries[selectedDmc];
+  pathsByDmc[selectedDmc] = path;
+  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
+  pathProgress.export = false;
+  savePathPlannerState();
+  renderPathTool();
+});
+
 pathStagnationLimit.addEventListener("change", () => {
   pathStagnationLimitMs = normalizePathStagnationLimit(pathStagnationLimit.value) || DEFAULT_PATH_STAGNATION_LIMIT;
   pathStagnationLimit.value = String(pathStagnationLimitMs);
@@ -2167,6 +2186,7 @@ pathStagnationLimit.addEventListener("change", () => {
 cutThresholdInput.addEventListener("change", () => {
   const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
   cutThreshold = normalized;
+  pathConstructionSummaries = {};
   pathOptimizationBaselinesByDmc = {};
   batchPlan = { pending: [], results: [] };
   cutThresholdInput.value = String(cutThreshold);
@@ -2265,6 +2285,7 @@ resetPathToolButton.addEventListener("click", () => {
   selectedDmc = null;
   pathsByDmc = {};
   bestPathsByDmc = {};
+  pathConstructionSummaries = {};
   constraintsByDmc = {};
   batchPlan = { pending: [], results: [] };
   batchRunning = false;
