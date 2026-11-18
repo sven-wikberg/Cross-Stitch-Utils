@@ -749,15 +749,16 @@ async function run() {
     assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "60000");
 
     const bridge = structuredClone(data);
-    bridge.project.name = bridge.pattern.project.name = "Singleton bridges";
-    bridge.paths[0].points = [...Array.from({ length: 9 }, (_, x) => ({ x, y: 2 })), ...[0, 4, 8].map(x => ({ x, y: 0 }))];
+    bridge.project.name = bridge.pattern.project.name = "Small block bridges";
+    bridge.paths[0].points = [...Array.from({ length: 12 }, (_, x) => ({ x, y: 2 })),
+      ...[0, 5, 10].flatMap(x => [{ x, y: 0 }, { x: x + 1, y: 0 }])];
     bridge.pattern.grid.cells = bridge.pattern.grid.cells.map(cell => {
       const dmc = bridge.paths.find(route => route.points.some(point => point.x === cell.x && point.y === cell.y))?.dmc;
       return { ...cell, dmc: dmc || null, empty: !dmc, symbol: dmc === "310" ? "A" : dmc ? "B" : null };
     });
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "bridge.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(bridge)) });
-    await planner.waitForFunction(() => loadedPattern?.project.name === "Singleton bridges");
+    await planner.waitForFunction(() => loadedPattern?.project.name === "Small block bridges");
     await observePathWorkers(planner, true, 300);
     await planner.locator("#optimizedPathButton").click();
     await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
@@ -767,20 +768,25 @@ async function run() {
     const viewBeforeInsertion = await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height }));
     await deliverWorkerMessages(planner, 0, insertionIndex);
     assert.ok(await planner.evaluate(() => activePathOptimizerSnapshot.insertions > 0 && pathAlgorithmRunning));
-    assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Insertion de cases isolees/);
-    assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 23);
+    assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Insertion de petits blocs/);
+    assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 35);
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
     assert.ok(await planner.evaluate(() => pathImprovementCanvas.getContext("2d")
       .getImageData(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height).data.some((value, i) => i % 4 === 3 && value > 0)),
       "Inserted connections draw visible highlight pixels");
     assert.deepEqual(await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height })), viewBeforeInsertion,
       "An insertion preview does not move or resize the view");
-    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-singleton-insertion.png"), fullPage: true });
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-small-block-insertion.png"), fullPage: true });
     const pendingInsertionMessages = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.length);
     await deliverWorkerMessages(planner, 0, pendingInsertionMessages - 1);
     const bridgeResult = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
     assertBlockResult(bridgeResult, bridge.paths[0].points, {}, 12, false);
     assert.ok(bridgeResult.insertions >= 2);
+    for (const x of [0, 5, 10]) {
+      const indices = bridgeResult.path.flatMap((point, i) => point.y === 0 && point.x >= x && point.x <= x + 1 ? [i] : []);
+      assert.equal(indices.length, 4);
+      assert.equal(indices.at(-1) - indices[0], 3, "Each inserted two-cross block remains contiguous and complete");
+    }
     assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();

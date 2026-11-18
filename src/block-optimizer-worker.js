@@ -138,38 +138,44 @@
       const owners = new Map(), contacts = new Map();
       const groups = builder.orthogonalComponents(cells);
       groups.forEach((group, id) => group.forEach(cell => owners.set(model.cellKey(cell), id)));
-      for (const group of groups) if (group.length === 1) {
-        const cell = group[0], nearby = [];
-        for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+      const maxCrosses = 16;
+      groups.forEach((group, source) => {
+        if (group.length > maxCrosses) return;
+        const nearby = new Set();
+        for (const cell of group) for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
           const key = `${cell.x + dx},${cell.y + dy}`, id = owners.get(key);
-          if (id !== undefined && groups[id].length > 1) nearby.push(key);
+          if (id !== undefined && groups[id].length > group.length) nearby.add(key);
         }
-        if (nearby.length) contacts.set(model.cellKey(cell), nearby);
-      }
-      return { owners, contacts, groups };
+        if (nearby.size) contacts.set(source, [...nearby]);
+      });
+      return { owners, contacts, groups, maxCrosses };
     }
-    function* singletonInsertions(problem, route) {
-      const { owners, contacts } = problem.insertions;
+    function* blockInsertions(problem, route) {
+      const { owners, contacts, groups } = problem.insertions;
       if (!contacts.size) return;
-      const path = route.path, indices = new Map(), candidates = [];
+      const path = route.path, indices = new Map(), spans = new Map(), candidates = [];
       const locked = problem.constraints.lockedPrefix?.length || (problem.constraints.start ? 1 : 0);
       path.forEach((point, i) => {
         const key = model.cellKey(point);
         if (!indices.has(key)) indices.set(key, []);
         indices.get(key).push(i);
+        const id = owners.get(key);
+        if (!spans.has(id)) spans.set(id, { start: i, end: i, count: 0 });
+        const span = spans.get(id); span.end = i + 1; span.count++;
       });
-      for (const [key, nearby] of contacts) {
-        const positions = indices.get(key), from = positions?.[0];
-        if (positions?.length !== 2 || positions[1] !== from + 1 || from < locked) continue;
+      for (const [id, nearby] of contacts) {
+        const span = spans.get(id), crossCount = groups[id].length;
+        if (!span || span.count !== crossCount * 2 || span.end - span.start !== span.count || span.start < locked) continue;
+        const from = span.start, end = span.end;
         const gaps = new Set();
         for (const neighbor of nearby) for (const at of indices.get(neighbor) || []) {
           for (const to of [at, at + 1]) {
-            if (to < locked || !to || to >= path.length || (to >= from && to <= from + 2)) continue;
+            if (to < locked || !to || to >= path.length || (to >= from && to <= end)) continue;
             const before = owners.get(model.cellKey(path[to - 1])), after = owners.get(model.cellKey(path[to]));
             if (before === after) gaps.add(to);
           }
         }
-        for (const to of gaps) candidates.push({ from, to });
+        for (const to of gaps) candidates.push({ from, end, to, crossCount });
       }
       if (!candidates.length) return;
       const fixed = new Map((problem.constraints.lockedPrefix || []).map(point => [model.key(point), point.direction]));
@@ -212,16 +218,16 @@
       }
       // Nearby unit opportunities first; this is only an ordering, never an acceptance rule.
       for (const candidate of candidates) {
-        const { from, to } = candidate;
-        candidate.localScore = Math.min(...join(join(leaves[to - 1], range(from, from + 2)), leaves[to]).scores);
+        const { from, end, to } = candidate, fragment = range(from, end);
+        candidate.localScore = Math.min(...join(join(leaves[to - 1], fragment), leaves[to]).scores) - Math.min(...fragment.scores);
       }
       candidates.sort((a, b) => a.localScore - b.localScore);
-      for (const { from, to } of candidates) {
+      for (const { from, end, to, crossCount } of candidates) {
         const pieces = from < to
-          ? [[0, from], [from + 2, to], [from, from + 2], [to, path.length]]
-          : [[0, to], [from, from + 2], [to, from], [from + 2, path.length]];
+          ? [[0, from], [end, to], [from, end], [to, path.length]]
+          : [[0, to], [from, end], [to, from], [end, path.length]];
         const summary = pieces.reduce((value, [a, b]) => join(value, range(a, b)), null);
-        yield { from, to, score: Math.min(...summary.scores), materialize() {
+        yield { from, end, to, crossCount, score: Math.min(...summary.scores), materialize() {
           const sequence = [], units = []; let previous = -2;
           for (const [a, b] of pieces) for (let i = a; i < b; i++) {
             sequence.push(path[i]); units.push(previous + 1 === i && Boolean(route.unitLinks[i])); previous = i;
@@ -516,10 +522,10 @@
         while (insertionPending) {
           if (expired()) { finish(); return; }
           insertionPending = false;
-          for (const candidate of singletonInsertions(problem, best)) {
+          for (const candidate of blockInsertions(problem, best)) {
             if (expired()) { finish(); return; }
             attempts++; insertionAttempts++;
-            phase = `Insertion de cases isolees : ${insertionAttempts} essais, ${insertions} ameliorations`;
+            phase = `Insertion de petits blocs : ${insertionAttempts} essais, ${insertions} ameliorations`;
             if (candidate.score < bestMetrics.score - epsilon) {
               const route = candidate.materialize();
               if (route && !model.validateRoute(route.path, problem.cells) && model.satisfiesConstraints(route.path, problem.constraints)) {
@@ -527,7 +533,7 @@
                 if (metrics.score < bestMetrics.score - epsilon) {
                   best = route; bestMetrics = metrics; changed = true; improvements++; insertions++;
                   lastImprovement = clock(); insertionPending = true;
-                  phase = `Insertion de cases isolees : ${insertionAttempts} essais, ${insertions} ameliorations`;
+                  phase = `Insertion de petits blocs : ${insertionAttempts} essais, ${insertions} ameliorations`;
                   emit(); break;
                 }
               }
@@ -611,7 +617,7 @@
         progress: 100, reason, order: actualOrder };
       report(final); return final;
     }
-    return { prepareProblem, evaluateOrder, materialize, singletonInsertions, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
+    return { prepareProblem, evaluateOrder, materialize, blockInsertions, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
   }
   function workerMain(createModel, createBuilder, createOptimizer) {
     self.onmessage = event => {

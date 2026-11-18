@@ -576,7 +576,7 @@ test("isolated crosses interrupt a large block only when the complete route impr
     engine.prepareProblem({ points: bridgeCells }).seed.path.filter(point => point.y === 2).map(model.key),
     "insertion preserves the internal diagonal order instead of sewing any diagonal twice");
   const improved = reports.filter(snapshot => snapshot.insertions > 0 && snapshot.path);
-  assert.ok(improved.length > 0 && improved.some(snapshot => /Insertion de cases isolees/.test(snapshot.phase)),
+  assert.ok(improved.length > 0 && improved.some(snapshot => /Insertion de petits blocs/.test(snapshot.phase)),
     "the existing live preview receives the new best route and the insertion phase");
   for (let i = 1; i < reports.length; i++) {
     assert.ok(reports[i].metrics.score <= reports[i - 1].metrics.score + 1e-8);
@@ -585,9 +585,12 @@ test("isolated crosses interrupt a large block only when the complete route impr
 });
 
 test("range-transfer insertion scores equal exhaustive sewing-direction scores", () => {
-  const cells = [...rectangle(2, 1, 1, 2), { x: 0, y: 1 }, { x: 3, y: 1 }, { x: 1, y: 4 }];
-  let checked = 0, earlier = 0, later = 0;
-  for (const reverse of [false, true]) for (const constrained of [false, true]) {
+  const fixtures = [
+    [...rectangle(2, 1, 1, 2), { x: 0, y: 1 }, { x: 3, y: 1 }, { x: 1, y: 4 }],
+    [...rectangle(3, 1, 1, 2), ...rectangle(2, 1, 1, 0), { x: 7, y: 1 }]
+  ];
+  let checked = 0, earlier = 0, later = 0, multiCell = 0;
+  for (const cells of fixtures) for (const reverse of [false, true]) for (const constrained of [false, true]) {
     const engine = optimizer(), base = engine.prepareProblem({ points: cells });
     const seed = engine.materialize(base, reverse ? base.orders[0].slice().reverse() : base.orders[0]);
     const constraints = constrained ? { lockedPrefix: seed.path.slice(0, 1), start: seed.path[0], forcedCuts: [seed.path.at(-1)] } : {};
@@ -595,7 +598,7 @@ test("range-transfer insertion scores equal exhaustive sewing-direction scores",
     const route = { path: seed.path.map(p => ({ ...p, ...(constraints.forcedCuts?.some(c => model.key(c) === model.key(p)) ? { cutBefore: true } : {}) })),
       unitLinks: seed.unitLinks };
     const before = structuredClone(route);
-    for (const candidate of engine.singletonInsertions(problem, route)) {
+    for (const candidate of engine.blockInsertions(problem, route)) {
       const moved = candidate.materialize();
       if (!moved) { assert.equal(candidate.score, Infinity); continue; }
       assertPath(moved, cells, constraints, 1);
@@ -608,10 +611,12 @@ test("range-transfer insertion scores equal exhaustive sewing-direction scores",
       close(candidate.score, oracle, "exact relocation score including old-location reconnection and cuts");
       close(measure(moved.path, 1).score, oracle, "materialized directions");
       checked++; if (candidate.from < candidate.to) later++; else earlier++;
+      if (candidate.crossCount > 1) multiCell++;
     }
     assert.deepEqual(route, before, "candidate evaluation never edits its incumbent");
   }
   assert.ok(checked >= 12 && earlier && later, "exercise both move directions and endpoint removals");
+  assert.ok(multiCell > 0, "also exhaustively verify variable-length block moves");
 });
 
 test("insertions respect completed and half-completed locked crosses, starts and manual cuts", () => {
@@ -627,7 +632,7 @@ test("insertions respect completed and half-completed locked crosses, starts and
     assert.deepEqual(result.path.slice(0, prefixLength).map(p => [model.key(p), p.direction]),
       initial.slice(0, prefixLength).map(p => [model.key(p), p.direction]));
     const problem = engine.prepareProblem(options);
-    for (const candidate of engine.singletonInsertions(problem, { path: result.path, unitLinks: result.unitLinks })) {
+    for (const candidate of engine.blockInsertions(problem, { path: result.path, unitLinks: result.unitLinks })) {
       assert.ok(candidate.from >= Math.max(prefixLength, 1) && candidate.to >= Math.max(prefixLength, 1));
     }
   }
@@ -649,11 +654,11 @@ test("interleaved historical routes survive relaunch and an immediately expired 
   assert.ok(new Set(second.order).size < second.order.length);
 });
 
-test("only orthogonally isolated complete crosses are candidates and tied moves are not accepted", () => {
+test("insertions require distinct blocks and a larger host, and tied moves are not accepted", () => {
   for (const cells of [rectangle(4, 2), [{ x: 0, y: 0 }, { x: 1, y: 1 }],
-    [...rectangle(4, 1), ...rectangle(2, 1, 0, 2)]]) {
+    [...rectangle(4, 1), ...rectangle(4, 1, 0, 2)]]) {
     const engine = optimizer(), problem = engine.prepareProblem({ points: cells });
-    assert.deepEqual([...engine.singletonInsertions(problem, engine.materialize(problem, problem.orders[0]))], []);
+    assert.deepEqual([...engine.blockInsertions(problem, engine.materialize(problem, problem.orders[0]))], []);
   }
   const cells = [...rectangle(5, 1, 0, 2), ...[0, 2, 4].map(x => ({ x, y: 0 }))];
   const result = optimizer(1).optimizePath({ points: cells, stagnationLimitMs: 100000 });
@@ -661,4 +666,105 @@ test("only orthogonally isolated complete crosses are candidates and tied moves 
   assert.ok(result.insertionAttempts > 0);
   assert.equal(result.insertions, 0, "equal-score moves cannot oscillate or reset inactivity");
   close(result.metrics.score, result.initialMetrics.score, "already unit-optimal route");
+});
+
+function smallBlockBridge(size) {
+  return [...rectangle(size * 3 + 6, 1, 0, 2), ...[0, size + 3, size * 2 + 6].flatMap(x => rectangle(size, 1, x, 0))];
+}
+
+test("small complete blocks are inserted intact with strict gains, up to the sixteen-cross limit", () => {
+  for (const size of [2, 3, 4, 8, 16]) {
+    const cells = smallBlockBridge(size), engine = optimizer(1);
+    const problem = engine.prepareProblem({ points: cells }), base = engine.materialize(problem, problem.orders[0]);
+    const candidates = [...engine.blockInsertions(problem, base)];
+    assert.ok(candidates.length > 0 && candidates.every(candidate => candidate.crossCount === size));
+    for (const candidate of candidates) {
+      assert.equal(candidate.end - candidate.from, size * 2);
+      const moved = candidate.materialize();
+      if (!moved) { assert.equal(candidate.score, Infinity); continue; }
+      assertPath(moved, cells);
+      close(candidate.score, measure(moved.path, 10).score, "full variable-length relocation score");
+      const original = base.path.slice(candidate.from, candidate.end).map(model.key);
+      const newStart = moved.path.findIndex(point => model.key(point) === original[0]);
+      assert.deepEqual(moved.path.slice(newStart, newStart + original.length).map(model.key), original,
+        "the complete small-block sequence is moved without reversal or missing diagonals");
+      assert.deepEqual(moved.unitLinks.slice(newStart + 1, newStart + original.length),
+        base.unitLinks.slice(candidate.from + 1, candidate.end), "internal unit constraints travel with the block");
+    }
+    const result = engine.optimizePath({ points: cells, stagnationLimitMs: 100000 });
+    assertPath(result, cells);
+    assert.ok(result.insertions >= 2 && result.metrics.score < result.initialMetrics.score);
+    close(result.metrics.score, cells.length * 2 - 1, "all-unit optimum for this bridge fixture");
+    const next = optimizer(500).optimizePath({ points: cells, initialPath: result.path, stagnationLimitMs: 1 });
+    assertPath(next, cells);
+    assert.deepEqual(next.path, result.path, "relaunch preserves inserted multi-cell blocks");
+  }
+});
+
+test("large, split and partially locked blocks are never moved as complete small blocks", () => {
+  const engine = optimizer();
+  for (const size of [16, 17]) {
+    const cells = [...rectangle(20, 1, 0, 2), ...rectangle(size, 1)];
+    const problem = engine.prepareProblem({ points: cells });
+    const candidates = [...engine.blockInsertions(problem, engine.materialize(problem, problem.orders[0]))];
+    assert.equal(candidates.length > 0, size === 16);
+    assert.equal(problem.insertions.maxCrosses, 16);
+  }
+  const host = rectangle(5, 1, 0, 2), small = rectangle(2, 1), cells = [...host, ...small];
+  const initialPath = model.orient([...small.slice(0, 1), ...host, ...small.slice(1)].flatMap(cell =>
+    [action(cell), action(cell, "upper")]), 10, {}, true);
+  const split = engine.prepareProblem({ points: cells, initialPath });
+  const splitRoute = { path: initialPath, unitLinks: initialPath.map(() => false) };
+  assert.deepEqual([...engine.blockInsertions(split, splitRoute)], [], "a block interrupted by another is not treated as contiguous");
+  const base = engine.prepareProblem({ points: cells });
+  const smallId = base.blocks.find(block => block.cells.length === 2).id;
+  const route = engine.materialize(base, [smallId, ...base.orders[0].filter(id => id !== smallId)]);
+  for (const prefixLength of [1, 2, 3, 4]) {
+    const constraints = { lockedPrefix: route.path.slice(0, prefixLength), start: route.path[0] };
+    const problem = engine.prepareProblem({ points: cells, initialPath: route.path, constraints });
+    assert.deepEqual([...engine.blockInsertions(problem, route)], [], "even one locked diagonal protects the whole source block");
+  }
+});
+
+test("multi-cell insertions preserve starts, locked host diagonals, manual cuts and immutable inputs", () => {
+  const cells = smallBlockBridge(3), engine = optimizer(100);
+  const original = engine.prepareProblem({ points: cells }).seed.path;
+  const constraints = { lockedPrefix: original.slice(0, 2), start: original[0],
+    forcedCuts: [original.find(point => point.y === 0 && point.diagonal === "upper")] };
+  const options = deepFreeze({ points: cells, initialPath: original, constraints, cutThreshold: 2, stagnationLimitMs: 100000 });
+  const before = structuredClone(options), reports = [];
+  const result = engine.optimizePath(options, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  assertPath(result, cells, constraints, 2);
+  assert.ok(result.insertions > 0);
+  assert.deepEqual(result.path.slice(0, 2).map(p => [model.key(p), p.direction]),
+    original.slice(0, 2).map(p => [model.key(p), p.direction]));
+  for (let i = 1; i < reports.length; i++) {
+    assert.ok(reports[i].metrics.score <= reports[i - 1].metrics.score + 1e-8);
+    if (reports[i].insertions > reports[i - 1].insertions) assert.ok(reports[i].metrics.score < reports[i - 1].metrics.score - 1e-8);
+  }
+  assert.deepEqual(options, before);
+});
+
+test("bent and solid small blocks retain all internal diagonals during insertion", () => {
+  for (const small of [[{ x: 4, y: 0 }, { x: 5, y: 0 }, { x: 4, y: 1 }], rectangle(2, 2, 4, 0)]) {
+    const cells = [...rectangle(9, 2, 0, 3), ...small], engine = optimizer();
+    const problem = engine.prepareProblem({ points: cells }), base = engine.materialize(problem, problem.orders[0]);
+    const candidates = [...engine.blockInsertions(problem, base)];
+    assert.ok(candidates.length > 0);
+    let valid = 0;
+    for (const candidate of candidates) {
+      assert.equal(candidate.crossCount, small.length);
+      const moved = candidate.materialize();
+      if (!moved) { assert.equal(candidate.score, Infinity); continue; }
+      assertPath(moved, cells);
+      close(candidate.score, measure(moved.path, 10).score, "two-dimensional block score");
+      const sequence = base.path.slice(candidate.from, candidate.end).map(model.key);
+      const at = moved.path.findIndex(point => model.key(point) === sequence[0]);
+      assert.deepEqual(moved.path.slice(at, at + sequence.length).map(model.key), sequence);
+      valid++;
+    }
+    assert.ok(valid > 0);
+  }
 });
