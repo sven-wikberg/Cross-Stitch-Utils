@@ -27,12 +27,6 @@ const pathWorkColor = document.querySelector("#pathWorkColor");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
-const optimizeRegionButton = document.querySelector("#optimizeRegionButton");
-const pathRegionStatus = document.querySelector("#pathRegionStatus");
-const pathSelectMode = document.querySelector("#pathSelectMode");
-const pathClearSelection = document.querySelector("#pathClearSelection");
-const regionApi = createRegionOptimizer(StitchModel, createOrthogonalPathBuilder);
-let selectedPathRegion = null, regionGesture = null, regionInfoCache = null, activePathOptimizerRegion = null;
 const stopPathAlgorithmButton = document.querySelector("#stopPathAlgorithmButton");
 const pathStagnationLimit = document.querySelector("#pathStagnationLimit");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
@@ -406,14 +400,12 @@ function renderPatternGrid(canvasOnly = false) {
     pathColorLegend.innerHTML = "";
     selectedColorLabel.textContent = "Aucune couleur selectionnee";
     viewportPattern = null; comparisonPaths.clear(); comparisonMode = "after";
-    selectedPathRegion = null; regionGesture = null; renderRegionControls();
     renderSearchVisuals();
     return;
   }
 
   if (activePathStep !== "paths") return;
   if (viewportPattern !== loadedPattern) {
-    selectedPathRegion = null; regionGesture = null;
     viewportPattern = loadedPattern; comparisonPaths.clear(); comparisonMode = "after"; overviewCache = null;
     pathViewport.setGrid(loadedPattern.grid.width, loadedPattern.grid.height);
   }
@@ -464,7 +456,6 @@ function renderPatternGrid(canvasOnly = false) {
   }
 
   drawSelectedPath(context, cellSize);
-  drawPathRegion(context, cellSize);
   context.restore();
   drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   renderPathImprovement(cellSize);
@@ -480,45 +471,6 @@ function beginViewportDrawing(context) {
   context.save(); context.beginPath();
   context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, view.width - GRID_RULER_SIZE, view.height - GRID_RULER_SIZE); context.clip();
   context.translate(-view.x * view.scale, -view.y * view.scale);
-}
-
-function regionInfo() {
-  if (!selectedPathRegion || !loadedPattern || !selectedDmc) return { complete: false, diagonals: 0, crosses: 0, runs: [] };
-  const path = currentPath(), constraints = constraintsByDmc[selectedDmc];
-  if (regionInfoCache?.path !== path || regionInfoCache.length !== path.length || regionInfoCache.constraints !== constraints
-      || regionInfoCache.rect !== selectedPathRegion || regionInfoCache.pattern !== loadedPattern || regionInfoCache.dmc !== selectedDmc) {
-    regionInfoCache = { path, length: path.length, constraints, rect: selectedPathRegion, pattern: loadedPattern, dmc: selectedDmc,
-      complete: isPathComplete(selectedDmc) && StitchModel.satisfiesConstraints(path, constraints),
-      ...regionApi.selection(path, selectedPathRegion, constraints),
-      crosses: cellsForColor(selectedDmc).filter(p => regionApi.contains(selectedPathRegion, p)).length };
-  }
-  return regionInfoCache;
-}
-
-function renderRegionControls() {
-  const info = regionInfo(), rect = selectedPathRegion;
-  optimizeRegionButton.disabled = pathAlgorithmRunning || !rect || !info.complete || !info.diagonals || Boolean(regionGesture);
-  pathClearSelection.disabled = pathAlgorithmRunning || !rect;
-  pathSelectMode.disabled = pathAlgorithmRunning || comparisonMode === "before" || !loadedPattern;
-  pathSelectMode.setAttribute("aria-pressed", String(inspectionMode === "select" && !pathAlgorithmRunning && comparisonMode !== "before"));
-  patternCanvas.classList.toggle("is-selecting", inspectionMode === "select" && !pathAlgorithmRunning && comparisonMode !== "before");
-  pathRegionStatus.textContent = !rect ? "Aucune zone selectionnee." : `Zone ${rect.minX + 1}-${rect.maxX} / ${rect.minY + 1}-${rect.maxY} : ${info.crosses} croix. `
-    + (!info.crosses ? "Selection vide." : !info.complete ? "Chemin complet requis." : !info.diagonals ? "Diagonales verrouillees."
-      : `${info.diagonals} diagonales modifiables, ${info.runs.length} passage${info.runs.length > 1 ? "s" : ""}.`);
-}
-
-function drawPathRegion(context, cellSize) {
-  const rect = selectedPathRegion;
-  if (!rect) return;
-  const x = GRID_RULER_SIZE + rect.minX * cellSize, y = GRID_RULER_SIZE + rect.minY * cellSize;
-  const w = (rect.maxX - rect.minX) * cellSize, h = (rect.maxY - rect.minY) * cellSize;
-  context.save(); context.setLineDash([]); context.strokeStyle = "#ffffff"; context.lineWidth = 4;
-  context.strokeRect(x, y, w, h); context.strokeStyle = "#1267b2"; context.lineWidth = 2;
-  context.setLineDash([7, 4]); context.strokeRect(x, y, w, h); context.setLineDash([]);
-  if (!pathAlgorithmRunning && comparisonMode !== "before") for (const [px, py] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
-    context.fillStyle = "#ffffff"; context.fillRect(px - 3, py - 3, 6, 6); context.strokeRect(px - 3, py - 3, 6, 6);
-  }
-  context.restore();
 }
 
 function displayedPath() {
@@ -701,7 +653,6 @@ function renderInspectionControls() {
   document.querySelector("#pathPanMode").setAttribute("aria-pressed", String(pan));
   patternCanvas.classList.toggle("is-pan", pan);
   document.querySelector("#pathFocusGain").disabled = !pathImprovement || pathImprovement.dmc !== selectedDmc;
-  renderRegionControls();
 }
 
 function renderOverview() {
@@ -1461,32 +1412,14 @@ patternJsonFileInput.addEventListener("change", async () => {
 });
 
 patternCanvas.addEventListener("pointerdown", (event) => {
-  if (loadedPattern && inspectionMode === "select" && !pathAlgorithmRunning && comparisonMode !== "before"
-      && event.button === 0 && !event.altKey && !regionGesture) {
-    const pixel = canvasEventPoint(event), point = pathViewport.toWorld(pixel), grid = loadedPattern.grid;
-    if (pixel.x < GRID_RULER_SIZE || pixel.y < GRID_RULER_SIZE || point.x < 0 || point.y < 0 || point.x >= grid.width || point.y >= grid.height) return;
-    event.preventDefault(); patternCanvas.focus({ preventScroll: true });
-    const rect = selectedPathRegion, gap = 9 / pathViewport.state.scale;
-    let anchor = null, resizeOffset = { x: 0, y: 0 };
-    if (rect) for (const [x, y, ax, ay] of [
-      [rect.minX, rect.minY, rect.maxX - 1, rect.maxY - 1], [rect.maxX, rect.minY, rect.minX, rect.maxY - 1],
-      [rect.minX, rect.maxY, rect.maxX - 1, rect.minY], [rect.maxX, rect.maxY, rect.minX, rect.minY]
-    ]) if (Math.hypot(point.x - x, point.y - y) <= gap) {
-      anchor = { x: ax, y: ay }; resizeOffset = { x: Number(x === rect.maxX), y: Number(y === rect.maxY) }; break;
-    }
-    const moving = rect && !anchor && regionApi.contains(rect, point);
-    regionGesture = { id: event.pointerId, anchor: anchor || point, start: point, original: rect, moving, resizeOffset, resizing: Boolean(anchor) };
-    if (!moving && !anchor) selectedPathRegion = regionApi.rectangle(point, point, grid.width, grid.height);
-    patternCanvas.setPointerCapture(event.pointerId); queueViewportRender(); return;
-  }
-  if (loadedPattern && !isDrawingPath && !regionGesture && (event.button === 0 || event.button === 1)
+  if (loadedPattern && !isDrawingPath && (event.button === 0 || event.button === 1)
       && (inspectionMode === "pan" || pathAlgorithmRunning || comparisonMode === "before" || event.button === 1 || event.altKey)) {
     event.preventDefault(); patternCanvas.focus({ preventScroll: true });
     viewPointers.set(event.pointerId, canvasEventPoint(event));
     panGesture = pointerGesture(); patternCanvas.setPointerCapture(event.pointerId);
     patternCanvas.classList.add("is-panning"); return;
   }
-  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning || isDrawingPath || regionGesture || event.button !== 0) {
+  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning || isDrawingPath || event.button !== 0) {
     return;
   }
 
@@ -1505,19 +1438,6 @@ patternCanvas.addEventListener("pointerdown", (event) => {
 });
 
 patternCanvas.addEventListener("pointermove", (event) => {
-  if (regionGesture?.id === event.pointerId) {
-    event.preventDefault();
-    const point = pathViewport.toWorld(canvasEventPoint(event)), grid = loadedPattern.grid;
-    if (regionGesture.moving) {
-      const rect = regionGesture.original;
-      const dx = Math.max(-rect.minX, Math.min(grid.width - rect.maxX, Math.round(point.x - regionGesture.start.x)));
-      const dy = Math.max(-rect.minY, Math.min(grid.height - rect.maxY, Math.round(point.y - regionGesture.start.y)));
-      selectedPathRegion = { minX: rect.minX + dx, maxX: rect.maxX + dx, minY: rect.minY + dy, maxY: rect.maxY + dy };
-    } else selectedPathRegion = regionApi.rectangle(regionGesture.anchor, regionGesture.resizing
-      ? { x: Math.round(point.x) - regionGesture.resizeOffset.x, y: Math.round(point.y) - regionGesture.resizeOffset.y }
-      : point, grid.width, grid.height);
-    queueViewportRender(); return;
-  }
   if (viewPointers.has(event.pointerId)) {
     event.preventDefault(); viewPointers.set(event.pointerId, canvasEventPoint(event));
     const next = pointerGesture();
@@ -1543,7 +1463,6 @@ patternCanvas.addEventListener("pointermove", (event) => {
 });
 
 patternCanvas.addEventListener("pointerup", (event) => {
-  if (regionGesture?.id === event.pointerId) { regionGesture = null; queueViewportRender(); }
   finishViewportPointer(event);
   if (isDrawingPath) {
     finishPathEdit();
@@ -1571,9 +1490,6 @@ function finishInterruptedPathDrawing() {
   renderPathBuilder();
 }
 for (const name of ["pointercancel", "lostpointercapture"]) patternCanvas.addEventListener(name, event => {
-  if (regionGesture?.id === event.pointerId) {
-    selectedPathRegion = regionGesture.original; regionGesture = null; queueViewportRender();
-  }
   finishViewportPointer(event); finishInterruptedPathDrawing();
 });
 
@@ -1592,22 +1508,17 @@ let inspectFrame = null, pendingInspection = null;
 function queueConnectionInspection(point) {
   pendingInspection = point;
   if (inspectFrame !== null) return;
-  inspectFrame = requestAnimationFrame(() => { inspectFrame = null; if (loadedPattern && !panGesture && !isDrawingPath && !regionGesture) inspectConnection(pendingInspection); });
+  inspectFrame = requestAnimationFrame(() => { inspectFrame = null; if (loadedPattern && !panGesture && !isDrawingPath) inspectConnection(pendingInspection); });
 }
 patternCanvas.addEventListener("wheel", event => {
-  if (!loadedPattern || isDrawingPath || panGesture || regionGesture) return;
+  if (!loadedPattern || isDrawingPath || panGesture) return;
   event.preventDefault();
   const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? patternCanvas.height : 1);
   pathViewport.zoom(Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.003), canvasEventPoint(event));
   queueViewportRender();
 }, { passive: false });
 patternCanvas.addEventListener("keydown", event => {
-  if (event.key === "Escape" && !pathAlgorithmRunning) {
-    if (regionGesture) { selectedPathRegion = regionGesture.original; regionGesture = null; }
-    else selectedPathRegion = null;
-    event.preventDefault(); queueViewportRender(); return;
-  }
-  if (!loadedPattern || isDrawingPath || regionGesture || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (!loadedPattern || isDrawingPath || event.ctrlKey || event.metaKey || event.altKey) return;
   if (["+", "="].includes(event.key)) pathViewport.zoom(1.4);
   else if (event.key === "-") pathViewport.zoom(1 / 1.4);
   else if (event.key === "Home") pathViewport.fit();
@@ -1622,8 +1533,6 @@ document.querySelector("#pathZoomOut").addEventListener("click", () => { pathVie
 document.querySelector("#pathFitView").addEventListener("click", () => { pathViewport.fit(); queueViewportRender(); });
 document.querySelector("#pathPanMode").addEventListener("click", () => { inspectionMode = "pan"; renderInspectionControls(); });
 document.querySelector("#pathDrawMode").addEventListener("click", () => { inspectionMode = "draw"; renderInspectionControls(); });
-pathSelectMode.addEventListener("click", () => { inspectionMode = "select"; renderInspectionControls(); });
-pathClearSelection.addEventListener("click", () => { if (!pathAlgorithmRunning) { selectedPathRegion = null; regionGesture = null; queueViewportRender(); } });
 for (const [button, mode] of [[pathViewBefore, "before"], [pathViewAfter, "after"]]) button.addEventListener("click", () => {
   if (isDrawingPath || panGesture) return;
   comparisonMode = mode; pathInspection.textContent = ""; queueViewportRender();
@@ -1668,15 +1577,14 @@ pathColorLegend.addEventListener("click", (event) => {
   renderPathTool();
 });
 
-function startAdvancedPathSearch(region = null) {
+function startAdvancedPathSearch() {
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
     return;
   }
 
   let worker = null;
   try {
-    if (region && (!regionInfo().complete || !regionInfo().diagonals)) return;
-    worker = region ? window.createRegionOptimizerWorker?.() : window.createPathOptimizerWorker?.();
+    worker = window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
     return;
@@ -1687,8 +1595,7 @@ function startAdvancedPathSearch(region = null) {
   }
 
   const dmc = selectedDmc;
-  if (!region) selectedPathRegion = null;
-  beginPathEdit(`${region ? "Optimisation locale" : "Optimisation"} DMC ${dmc}`);
+  beginPathEdit(`Optimisation DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1702,8 +1609,7 @@ function startAdvancedPathSearch(region = null) {
     }
     rememberBestPath(dmc, pathsByDmc[dmc]);
   }
-  const startingPath = region ? currentPath().map(p => ({ ...p })) : bestCompletePathForColor(dmc);
-  activePathOptimizerRegion = region ? { rect: { ...region }, initial: startingPath, constraints: structuredClone(constraintsByDmc[dmc] || {}) } : null;
+  const startingPath = bestCompletePathForColor(dmc);
   captureComparison(dmc, startingPath);
   if (startingPath.length) trackSearchScore({ stage: "search", elapsedMs: 0, metrics: pathPerformanceMetrics(startingPath, dmc) });
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
@@ -1762,7 +1668,7 @@ function startAdvancedPathSearch(region = null) {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch(activePathOptimizerRegion ? "Optimisation de la selection terminee" : "Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch("Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1779,8 +1685,7 @@ function startAdvancedPathSearch(region = null) {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
-    constraints: constraintsByDmc[dmc] || {},
-    ...(region ? { region: { ...region } } : {})
+    constraints: constraintsByDmc[dmc] || {}
   });
 }
 
@@ -1835,13 +1740,6 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
 
   let pathChanged = false;
   if (Array.isArray(snapshot.path) && !StitchModel.validateRoute(snapshot.path, cellsForColor(dmc), false)) {
-    const local = activePathOptimizerRegion;
-    if (local && (!regionApi.preservesOutside(local.initial, snapshot.path, local.rect, local.constraints)
-        || pathPerformanceMetrics(snapshot.path, dmc).score > pathPerformanceMetrics(activePathOptimizerBestPath, dmc).score + 1e-8)) {
-      stopAdvancedPathSearch();
-      showAlgorithmFeedback("Proposition locale rejetee : parcours conserve.");
-      return;
-    }
     const complete = isCompletePathForColor(loadedPattern, { [dmc]: snapshot.path }, dmc);
     const acceptComplete = complete && constraintApi.satisfiesConstraints(snapshot.path, constraintsByDmc[dmc])
       && (!activePathOptimizerBestPath.length || comparePathPerformance(snapshot.path, activePathOptimizerBestPath, dmc) <= 0);
@@ -1851,9 +1749,8 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
       return point.x === current.x && point.y === current.y && point.diagonal === current.diagonal
         && point.direction === current.direction && Boolean(point.cutBefore) === Boolean(current.cutBefore);
     });
-    const localGain = !local || pathPerformanceMetrics(snapshot.path, dmc).score < pathPerformanceMetrics(activePathOptimizerBestPath, dmc).score - 1e-8;
-    if ((acceptComplete || acceptPartial) && (!local || (!unchanged && localGain))) invalidateBatchResult(dmc);
-    if ((acceptComplete || acceptPartial) && !unchanged && localGain) {
+    if (acceptComplete || acceptPartial) invalidateBatchResult(dmc);
+    if ((acceptComplete || acceptPartial) && !unchanged) {
       pathsByDmc[dmc] = snapshot.path.map(copyPoint);
       if (acceptComplete) {
         recordPathImprovement(dmc, activePathOptimizerBestPath.length ? activePathOptimizerBestPath : comparisonPaths.get(dmc)?.path || [],
@@ -1891,7 +1788,6 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
 function finishAdvancedPathSearch(label, snapshot, completed) {
   clearPendingOptimizerSnapshot();
   const finishedDmc = activePathOptimizerDmc;
-  const finishedRegion = activePathOptimizerRegion;
   const finalSnapshot = activePathOptimizerSnapshot || snapshot;
   if (completed && (!isCompletePathForColor(loadedPattern, pathsByDmc, finishedDmc)
       || !constraintApi.satisfiesConstraints(pathsByDmc[finishedDmc], constraintsByDmc[finishedDmc]))) {
@@ -1907,7 +1803,6 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
   activePathOptimizerRunId = null;
   activePathOptimizerDmc = null;
   activePathOptimizerBestPath = [];
-  activePathOptimizerRegion = null;
   activePathOptimizerNeedsSave = false;
   pathAlgorithmRunning = false;
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
@@ -1927,7 +1822,7 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
   showAlgorithmFeedback(label);
   updateAlgorithmLiveMetrics(finalSnapshot);
   activePathOptimizerSnapshot = null;
-  if (!finishedRegion && (batchRunning || batchPlan.pending.includes(finishedDmc))) {
+  if (batchRunning || batchPlan.pending.includes(finishedDmc)) {
     if (completed) {
       batchPlan.pending = batchPlan.pending.filter((dmc) => dmc !== finishedDmc);
       batchPlan.results = batchPlan.results.filter(result => result.dmc !== finishedDmc);
@@ -1954,8 +1849,6 @@ function stopAdvancedPathSearch() {
 
 function optimizerPhaseLabel(snapshot) {
   if (snapshot?.stage === "relay" && pathAlgorithmRunning) return `Recherche de relais : passe ${snapshot.relayPasses || 1}`;
-  if (snapshot?.region) return pathAlgorithmRunning
-    ? `Selection : passage ${snapshot.region.activeVisit || 1} / ${snapshot.region.visits}` : "Optimisation de la selection terminee";
   return PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning).phase;
 }
 
@@ -2021,11 +1914,6 @@ function showAlgorithmFeedback(phase) {
 optimizedPathButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch();
-});
-optimizeRegionButton.addEventListener("click", () => {
-  if (!selectedPathRegion || optimizeRegionButton.disabled) return;
-  batchRunning = false;
-  startAdvancedPathSearch(selectedPathRegion);
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {

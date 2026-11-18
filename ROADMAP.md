@@ -105,22 +105,11 @@ regles de delai par zone sont remplacees par les tests du delai global actuel.
 74 tests fonctionnels, les parcours navigateur et le benchmark de qualite sont
 valides. Sauvegardes et patterns associes verifies identiques octet par octet.
 
-## Optimisation locale
+## Recherche par zone retiree
 
-Statut : termine. Selection rectangulaire, independante du cadrage de la vue.
-
-- [x] Selection par glisser, deplacement et redimensionnement du rectangle.
-- [x] Optimisation de la couleur courante dans la selection, sur un chemin complet.
-- [x] Conservation exacte des diagonales exterieures, de leur ordre, de leur sens et de leurs coupes.
-- [x] Evaluation des raccordements aux voisins exterieurs et acceptation des seuls gains du score global.
-- [x] Suivi visuel, arret, comparaison avant/apres et annulation de l'operation.
-- [x] Tests unitaires, navigateur, grand pattern et verification des sauvegardes.
-
-La recherche initiale traite les passages separement ; les relais au plateau
-peuvent maintenant echanger leurs diagonales sans deplacer une action exterieure. Les blocs coupes
-par le rectangle ne sont pas ajoutes en entier. La recherche locale part du
-parcours visible ; les autres couleurs et la progression de l'outil 3 restent
-inchangees. Le bouton global efface le rectangle et conserve son fonctionnement.
+La selection rectangulaire, l'optimisation locale et leur moteur ont ete retires
+a la demande de l'utilisateur. L'optimisation globale, les relais au plateau,
+le zoom, le deplacement et la comparaison avant/apres restent disponibles.
 
 ## Relais au plateau
 
@@ -128,7 +117,7 @@ inchangees. Le bouton global efface le rectangle et conserve son fonctionnement.
 - [x] Tester deplacements et permutations, meme pour une seule diagonale.
 - [x] Reevaluer les sens et tous les raccordements, y compris l'ancien emplacement.
 - [x] Reprendre la recherche apres un gain strict du score global.
-- [x] Conserver les contraintes et l'exterieur exact de la selection.
+- [x] Conserver les contraintes et le prefixe verrouille.
 - [x] Afficher la passe, son avancement, les relais retenus et leur surbrillance.
 - [x] Verifier contre une enumeration des sens et sur des plateaux reproductibles.
 

@@ -42,10 +42,9 @@
       return pieces => Math.min(...pieces.reduce((value, [a, b]) => join(value, range(a, b)), null).scores);
     }
     function* candidates(options, report = () => {}) {
-      const { path, constraints = {}, region = null } = options, threshold = options.cutThreshold || 10;
+      const { path, constraints = {} } = options, threshold = options.cutThreshold || 10;
       const locked = Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start)));
-      const inside = p => !region || p.x >= region.minX && p.x < region.maxX && p.y >= region.minY && p.y < region.maxY;
-      const fixed = i => i < locked || !inside(path[i]);
+      const fixed = i => i < locked;
       const started = clock(), budget = Math.max(1, options.budgetMs || 15000), expired = () => clock() - started >= budget;
       const links = [];
       for (let i = 1; i < path.length; i++) {
@@ -61,9 +60,8 @@
       if (!links.length) return;
       const score = transfers(path, threshold, fixed), byKey = new Map(path.map((p, i) => [model.key(p), i]));
       const fixedPoints = path.filter((_, i) => fixed(i));
-      const prefixCounts = [0], bins = new Map(), binSize = 8;
+      const bins = new Map(), binSize = 8;
       path.forEach((p, i) => {
-        prefixCounts.push(prefixCounts.at(-1) + Number(fixed(i)));
         if (fixed(i)) return;
         const key = `${Math.floor(p.x / binSize)},${Math.floor(p.y / binSize)}`;
         if (!bins.has(key)) bins.set(key, []);
@@ -112,9 +110,7 @@
         for (const from of nearby(a, b)) {
           if (expired()) { timedOut = true; break; }
           if (from === to || from === to - 1) continue;
-          const lo = Math.min(from, to), hi = Math.max(from, to);
-          // Relocation cannot shift an outside or locked slot; swaps can cross separate selected visits.
-          if (to >= locked && prefixCounts[from < to ? hi : hi + 1] === prefixCounts[lo]) {
+          if (to >= locked) {
             const pieces = from < to ? [[0, from], [from + 1, to], [from, from + 1], [to, path.length]]
               : [[0, to], [from, from + 1], [to, from], [from + 1, path.length]];
             const rank = i => i === from ? (from < to ? to - 1 : to)

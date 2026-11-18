@@ -18,6 +18,9 @@ async function run() {
   try {
     await page.goto(pathToFileURL(path.join(root, "plan-paths.html")).href);
     await page.waitForFunction(() => !document.querySelector("main").inert);
+    assert.equal(await page.locator("#optimizeRegionButton, #pathRegionStatus, #pathSelectMode, #pathClearSelection").count(), 0);
+    assert.equal(await page.evaluate(() => typeof window.createRegionOptimizerWorker), "undefined");
+    assert.equal(await page.locator('script[src*="region-optimizer"]').count(), 0);
     await page.locator("#patternJsonFile").setInputFiles({ name: "relay.pattern.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(pattern)) });
     await page.waitForFunction(() => loadedPattern?.project.name === "Relais au plateau");
     await page.locator("#cutThresholdInput").fill("3"); await page.locator("#cutThresholdInput").dispatchEvent("change");

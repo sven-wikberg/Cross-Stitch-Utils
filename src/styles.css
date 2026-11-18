@@ -718,8 +718,6 @@ select:focus {
 #pathZoomLevel { min-width: 55px; text-align: center; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 #patternCanvas.is-pan { cursor: grab; }
 #patternCanvas.is-panning { cursor: grabbing; }
-#patternCanvas.is-selecting { cursor: crosshair; }
-#pathRegionStatus { overflow-wrap: anywhere; }
 .path-overview-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; min-height: 100px; }
 #pathsPanel #pathOverview { width: 160px; height: 100px; flex-shrink: 0; background: #f4f6f4; cursor: pointer; touch-action: none; }
 #pathInspection { min-width: 0; color: var(--muted); font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; }
