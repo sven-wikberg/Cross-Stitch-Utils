@@ -134,6 +134,103 @@
       }
       return result;
     }
+    function insertionContext(cells) {
+      const owners = new Map(), contacts = new Map();
+      const groups = builder.orthogonalComponents(cells);
+      groups.forEach((group, id) => group.forEach(cell => owners.set(model.cellKey(cell), id)));
+      for (const group of groups) if (group.length === 1) {
+        const cell = group[0], nearby = [];
+        for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+          const key = `${cell.x + dx},${cell.y + dy}`, id = owners.get(key);
+          if (id !== undefined && groups[id].length > 1) nearby.push(key);
+        }
+        if (nearby.length) contacts.set(model.cellKey(cell), nearby);
+      }
+      return { owners, contacts, groups };
+    }
+    function* singletonInsertions(problem, route) {
+      const { owners, contacts } = problem.insertions;
+      if (!contacts.size) return;
+      const path = route.path, indices = new Map(), candidates = [];
+      const locked = problem.constraints.lockedPrefix?.length || (problem.constraints.start ? 1 : 0);
+      path.forEach((point, i) => {
+        const key = model.cellKey(point);
+        if (!indices.has(key)) indices.set(key, []);
+        indices.get(key).push(i);
+      });
+      for (const [key, nearby] of contacts) {
+        const positions = indices.get(key), from = positions?.[0];
+        if (positions?.length !== 2 || positions[1] !== from + 1 || from < locked) continue;
+        const gaps = new Set();
+        for (const neighbor of nearby) for (const at of indices.get(neighbor) || []) {
+          for (const to of [at, at + 1]) {
+            if (to < locked || !to || to >= path.length || (to >= from && to <= from + 2)) continue;
+            const before = owners.get(model.cellKey(path[to - 1])), after = owners.get(model.cellKey(path[to]));
+            if (before === after) gaps.add(to);
+          }
+        }
+        for (const to of gaps) candidates.push({ from, to });
+      }
+      if (!candidates.length) return;
+      const fixed = new Map((problem.constraints.lockedPrefix || []).map(point => [model.key(point), point.direction]));
+      if (problem.constraints.start) fixed.set(model.key(problem.constraints.start), problem.constraints.start.direction);
+      const leaves = path.map((point, i) => {
+        const variants = [1, -1].map(direction => ({ ...normalized(point, problem.cuts), direction }));
+        const required = fixed.get(model.key(point));
+        return { first: variants, last: variants, start: i, end: i + 1,
+          scores: [required === -1 ? Infinity : 0, Infinity, Infinity, required === 1 ? Infinity : 0] };
+      });
+      function join(left, right) {
+        if (!left || !right) return left || right;
+        const unit = left.end === right.start && route.unitLinks[right.start];
+        const edges = [0, 1, 2, 3].map(i => {
+          const a = left.last[i >> 1], b = right.first[i & 1], distance = model.distance(a, b);
+          return !distance || (unit && distance !== 1) ? Infinity
+            : distance + Number(b.cutBefore || distance > problem.threshold) * problem.threshold * 3;
+        });
+        const scores = [Infinity, Infinity, Infinity, Infinity];
+        for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) {
+          for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) {
+            scores[a * 2 + b] = Math.min(scores[a * 2 + b], left.scores[a * 2 + x] + edges[x * 2 + y] + right.scores[y * 2 + b]);
+          }
+        }
+        return { first: left.first, last: right.last, start: left.start, end: right.end, scores };
+      }
+      // Range transfers let each relocation re-evaluate all sewing directions without rescanning the whole path.
+      let size = 1;
+      while (size < path.length) size *= 2;
+      const tree = new Array(size * 2);
+      leaves.forEach((leaf, i) => { tree[size + i] = leaf; });
+      for (let i = size - 1; i > 0; i--) tree[i] = join(tree[i * 2], tree[i * 2 + 1]);
+      function range(start, end) {
+        let left = null, right = null;
+        for (start += size, end += size; start < end; start >>= 1, end >>= 1) {
+          if (start & 1) left = join(left, tree[start++]);
+          if (end & 1) right = join(tree[--end], right);
+        }
+        return join(left, right);
+      }
+      // Nearby unit opportunities first; this is only an ordering, never an acceptance rule.
+      for (const candidate of candidates) {
+        const { from, to } = candidate;
+        candidate.localScore = Math.min(...join(join(leaves[to - 1], range(from, from + 2)), leaves[to]).scores);
+      }
+      candidates.sort((a, b) => a.localScore - b.localScore);
+      for (const { from, to } of candidates) {
+        const pieces = from < to
+          ? [[0, from], [from + 2, to], [from, from + 2], [to, path.length]]
+          : [[0, to], [from, from + 2], [to, from], [from + 2, path.length]];
+        const summary = pieces.reduce((value, [a, b]) => join(value, range(a, b)), null);
+        yield { from, to, score: Math.min(...summary.scores), materialize() {
+          const sequence = [], units = []; let previous = -2;
+          for (const [a, b] of pieces) for (let i = a; i < b; i++) {
+            sequence.push(path[i]); units.push(previous + 1 === i && Boolean(route.unitLinks[i])); previous = i;
+          }
+          const oriented = builder.orientUnitPath(sequence, units, problem.constraints, problem.threshold);
+          return oriented ? { path: oriented.path, unitLinks: units } : null;
+        } };
+      }
+    }
     function prepareProblem(options, report = () => {}) {
       const cells = options.points || [], threshold = Math.max(1, options.cutThreshold || 10);
       const constraints = { ...(options.constraints || {}), forcedCuts: [...new Map([
@@ -150,7 +247,7 @@
         seedUnits: seed.unitLinks.slice(group.start, group.end).map((unit, i) => i > 0 && unit), bounds: boundsOf(group.cells) });
       blocks.forEach((block, id) => { block.id = id; });
       const fixedCount = Number(seed.prefixLength > 0) + Number(seed.blocks[0]?.resume || false);
-      const problem = { cells, blocks, constraints, cuts, threshold, fixedCount, seed,
+      const problem = { cells, blocks, constraints, cuts, threshold, fixedCount, seed, insertions: insertionContext(cells),
         orders: [blocks.map(block => block.id)], neighbors: new Map(), transitionCache: new Map(), cacheElements: 0,
         incumbent: { path: seed.path, unitLinks: seed.unitLinks, order: blocks.map(block => block.id), metrics: seed.metrics } };
       for (const block of blocks) addConfig(problem, block, { sequence: block.seedSequence, units: block.seedUnits });
@@ -158,6 +255,10 @@
       // Keep a compatible historical route as a candidate, including its exact endpoint choices.
       const initial = (options.initialPath || []).map(point => normalized(point, cuts));
       if (initial.length && !model.validateRoute(initial, cells) && model.satisfiesConstraints(initial, constraints)) {
+        const originalOwners = problem.insertions.owners;
+        problem.historical = { path: initial, metrics: model.createZones(cells).measure(initial, threshold),
+          unitLinks: initial.map((point, i) => i > 0 && i >= seed.prefixLength && model.distance(initial[i - 1], point) === 1
+            && originalOwners.get(model.cellKey(initial[i - 1])) === originalOwners.get(model.cellKey(point))) };
         const owners = new Map();
         blocks.filter(block => !block.anchor).forEach(block => block.seedSequence.forEach(point => owners.set(model.key(point), block.id)));
         const parts = [], seen = new Set(); let compatible = true;
@@ -186,9 +287,11 @@
           if (compareMetrics(metrics, problem.incumbent.metrics) < 0) problem.incumbent = { path: initial, unitLinks: units, order, metrics };
         }
       }
+      const visible = problem.historical && compareMetrics(problem.historical.metrics, problem.incumbent.metrics) < 0
+        ? problem.historical : problem.incumbent;
       report({ stage: "configuration", phase: "Preparation des entrees et sorties", progress: 10,
-        path: problem.incumbent.path, unitLinks: problem.incumbent.unitLinks, metrics: problem.incumbent.metrics,
-        initialMetrics: problem.incumbent.metrics, blocks: { total: seed.blocks.length, prepared: 0 } });
+        path: visible.path, unitLinks: visible.unitLinks, metrics: visible.metrics,
+        initialMetrics: visible.metrics, blocks: { total: seed.blocks.length, prepared: 0 } });
       const freeBlocks = blocks.filter(block => !block.anchor);
       const unitContacts = findUnitContacts(blocks);
       problem.unitContacts = unitContacts.contacts;
@@ -357,6 +460,7 @@
     function optimizePath(options, report = () => {}) {
       const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
+      let insertionAttempts = 0, insertions = 0, insertionPending = true;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -381,7 +485,7 @@
         report({ method: "block-optimization", stage, phase, blocks, metrics: bestMetrics, initialMetrics,
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
-          attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length,
+          attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
           progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
@@ -389,7 +493,7 @@
         if (!better(value.score, value.cuts, bestMetrics.score, bestMetrics.cuts)) return false;
         const route = materialize(problem, order), metrics = zones.measure(route.path, problem.threshold);
         if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
-        best = route; bestOrder = order.slice(); bestMetrics = metrics; changed = true; improvements++; lastImprovement = clock();
+        best = route; bestOrder = order.slice(); bestMetrics = metrics; changed = true; improvements++; lastImprovement = clock(); insertionPending = true;
         emit(); return true;
       }
       for (const order of [...problem.unitOrders, ...problem.orders]) consider(order, evaluateOrder(problem, order));
@@ -402,13 +506,47 @@
       const freeCount = problem.blocks.length - problem.fixedCount;
       let reason = "inactivity";
       const expired = () => clock() - lastImprovement >= limit;
+      function tryInsertions() {
+        if (!insertionPending || !problem.insertions.contacts.size) return;
+        const previousPhase = phase, initialInsertions = insertions;
+        const finish = () => {
+          if (insertions > initialInsertions && changed) emit(true);
+          phase = previousPhase;
+        };
+        while (insertionPending) {
+          if (expired()) { finish(); return; }
+          insertionPending = false;
+          for (const candidate of singletonInsertions(problem, best)) {
+            if (expired()) { finish(); return; }
+            attempts++; insertionAttempts++;
+            phase = `Insertion de cases isolees : ${insertionAttempts} essais, ${insertions} ameliorations`;
+            if (candidate.score < bestMetrics.score - epsilon) {
+              const route = candidate.materialize();
+              if (route && !model.validateRoute(route.path, problem.cells) && model.satisfiesConstraints(route.path, problem.constraints)) {
+                const metrics = zones.measure(route.path, problem.threshold);
+                if (metrics.score < bestMetrics.score - epsilon) {
+                  best = route; bestMetrics = metrics; changed = true; improvements++; insertions++;
+                  lastImprovement = clock(); insertionPending = true;
+                  phase = `Insertion de cases isolees : ${insertionAttempts} essais, ${insertions} ameliorations`;
+                  emit(); break;
+                }
+              }
+            }
+            emit();
+          }
+        }
+        finish();
+      }
+      tryInsertions();
       if (freeCount <= 7) {
         reason = "exhaustive";
         const permutation = bestOrder.slice(problem.fixedCount), prefix = bestOrder.slice(0, problem.fixedCount);
         function visit(depth) {
           if (expired()) { reason = "inactivity"; return; }
           if (depth === permutation.length) {
-            const order = prefix.concat(permutation); attempts++; consider(order, evaluateOrder(problem, order, false, false)); emit(); return;
+            const order = prefix.concat(permutation); attempts++;
+            if (consider(order, evaluateOrder(problem, order, false, false))) tryInsertions();
+            emit(); return;
           }
           const previous = depth ? permutation[depth - 1] : prefix.at(-1);
           const preferred = problem.unitNeighbors.get(previous) || [];
@@ -452,7 +590,10 @@
           }
           candidate ||= mutate(working);
           const next = evaluateOrder(problem, candidate, false, false); attempts++;
-          if (better(next.score, next.cuts, value.score, value.cuts)) { working = candidate; value = next; misses = 0; consider(candidate, next); }
+          if (better(next.score, next.cuts, value.score, value.cuts)) {
+            working = candidate; value = next; misses = 0;
+            if (consider(candidate, next)) tryInsertions();
+          }
           else misses++;
           if (misses >= Math.max(100, freeCount)) {
             working = bestOrder.slice(); for (let i = 0; i < 4; i++) working = mutate(working, true);
@@ -461,14 +602,16 @@
           emit();
         }
       }
-      stage = "complete"; phase = reason === "exhaustive" ? "Liaisons optimisees : tous les ordres testes" : "Optimisation terminee : delai sans amelioration atteint";
+      stage = "complete"; phase = reason === "exhaustive" ? "Liaisons optimisees : ordres et insertions testes" : "Optimisation terminee : delai sans amelioration atteint";
+      const actionOwners = new Map(problem.blocks.flatMap(block => block.seedSequence.map(point => [model.key(point), block.id])));
+      const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
-        stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length,
-        progress: 100, reason, order: bestOrder };
+        stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
+        progress: 100, reason, order: actualOrder };
       report(final); return final;
     }
-    return { prepareProblem, evaluateOrder, materialize, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
+    return { prepareProblem, evaluateOrder, materialize, singletonInsertions, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
   }
   function workerMain(createModel, createBuilder, createOptimizer) {
     self.onmessage = event => {

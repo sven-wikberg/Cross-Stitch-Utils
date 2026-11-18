@@ -556,3 +556,109 @@ test("oversized inter-block matrices are evaluated exactly without exceeding the
   assert.equal(problem.cacheElements, 0);
   assert.equal(problem.transitionCache.size, 0);
 });
+
+const bridgeCells = [...rectangle(9, 1, 0, 2), ...[0, 4, 8].map(x => ({ x, y: 0 }))];
+
+test("isolated crosses interrupt a large block only when the complete route improves", () => {
+  const engine = optimizer(100), reports = [];
+  const result = engine.optimizePath({ points: bridgeCells, stagnationLimitMs: 1000000 }, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  assertPath(result, bridgeCells);
+  close(result.initialMetrics.score, 27, "original contiguous-block score");
+  close(result.metrics.score, 23, "insertion reaches the absolute unit-distance lower bound");
+  assert.equal(result.insertions, 2);
+  assert.ok(result.insertionAttempts > result.insertions);
+  assert.ok(new Set(result.order).size < result.order.length, "the large block is now visited in several pieces");
+  assert.ok(result.path.some((point, i, path) => point.y === 0 && i > 0 && i + 2 < path.length
+    && path[i - 1].y === 2 && path[i + 2].y === 2), "a complete isolated cross sits inside the central route");
+  assert.deepEqual(result.path.filter(point => point.y === 2).map(model.key),
+    engine.prepareProblem({ points: bridgeCells }).seed.path.filter(point => point.y === 2).map(model.key),
+    "insertion preserves the internal diagonal order instead of sewing any diagonal twice");
+  const improved = reports.filter(snapshot => snapshot.insertions > 0 && snapshot.path);
+  assert.ok(improved.length > 0 && improved.some(snapshot => /Insertion de cases isolees/.test(snapshot.phase)),
+    "the existing live preview receives the new best route and the insertion phase");
+  for (let i = 1; i < reports.length; i++) {
+    assert.ok(reports[i].metrics.score <= reports[i - 1].metrics.score + 1e-8);
+    if (reports[i].insertions > reports[i - 1].insertions) assert.ok(reports[i].metrics.score < reports[i - 1].metrics.score - 1e-8);
+  }
+});
+
+test("range-transfer insertion scores equal exhaustive sewing-direction scores", () => {
+  const cells = [...rectangle(2, 1, 1, 2), { x: 0, y: 1 }, { x: 3, y: 1 }, { x: 1, y: 4 }];
+  let checked = 0, earlier = 0, later = 0;
+  for (const reverse of [false, true]) for (const constrained of [false, true]) {
+    const engine = optimizer(), base = engine.prepareProblem({ points: cells });
+    const seed = engine.materialize(base, reverse ? base.orders[0].slice().reverse() : base.orders[0]);
+    const constraints = constrained ? { lockedPrefix: seed.path.slice(0, 1), start: seed.path[0], forcedCuts: [seed.path.at(-1)] } : {};
+    const problem = engine.prepareProblem({ points: cells, initialPath: seed.path, constraints, cutThreshold: 1 });
+    const route = { path: seed.path.map(p => ({ ...p, ...(constraints.forcedCuts?.some(c => model.key(c) === model.key(p)) ? { cutBefore: true } : {}) })),
+      unitLinks: seed.unitLinks };
+    const before = structuredClone(route);
+    for (const candidate of engine.singletonInsertions(problem, route)) {
+      const moved = candidate.materialize();
+      if (!moved) { assert.equal(candidate.score, Infinity); continue; }
+      assertPath(moved, cells, constraints, 1);
+      let oracle = Infinity;
+      for (let mask = 0; mask < 2 ** moved.path.length; mask++) {
+        const path = moved.path.map((point, i) => ({ ...point, direction: mask & (1 << i) ? -1 : 1 }));
+        if (!model.satisfiesConstraints(path, constraints) || path.some((point, i) => moved.unitLinks[i] && distance(path[i - 1], point) !== 1)) continue;
+        oracle = Math.min(oracle, measure(path, 1).score);
+      }
+      close(candidate.score, oracle, "exact relocation score including old-location reconnection and cuts");
+      close(measure(moved.path, 1).score, oracle, "materialized directions");
+      checked++; if (candidate.from < candidate.to) later++; else earlier++;
+    }
+    assert.deepEqual(route, before, "candidate evaluation never edits its incumbent");
+  }
+  assert.ok(checked >= 12 && earlier && later, "exercise both move directions and endpoint removals");
+});
+
+test("insertions respect completed and half-completed locked crosses, starts and manual cuts", () => {
+  const engine = optimizer(1);
+  const initial = engine.optimizePath({ points: bridgeCells, stagnationLimitMs: 100000 }).path;
+  const firstSatellite = initial.findIndex(point => point.y === 0);
+  for (const prefixLength of [0, 1, firstSatellite + 1, firstSatellite + 2, initial.length - 1, initial.length]) {
+    const constraints = { lockedPrefix: initial.slice(0, prefixLength), start: initial[0], forcedCuts: [initial[firstSatellite + 1]] };
+    const options = { points: bridgeCells, initialPath: initial, constraints, cutThreshold: 2, stagnationLimitMs: 10000 };
+    const result = optimizer(1).optimizePath(options);
+    assertPath(result, bridgeCells, constraints, 2);
+    assert.ok(result.metrics.score <= result.initialMetrics.score + 1e-8);
+    assert.deepEqual(result.path.slice(0, prefixLength).map(p => [model.key(p), p.direction]),
+      initial.slice(0, prefixLength).map(p => [model.key(p), p.direction]));
+    const problem = engine.prepareProblem(options);
+    for (const candidate of engine.singletonInsertions(problem, { path: result.path, unitLinks: result.unitLinks })) {
+      assert.ok(candidate.from >= Math.max(prefixLength, 1) && candidate.to >= Math.max(prefixLength, 1));
+    }
+  }
+});
+
+test("interleaved historical routes survive relaunch and an immediately expired search budget", () => {
+  const first = optimizer(1).optimizePath({ points: bridgeCells, stagnationLimitMs: 100000 });
+  const options = deepFreeze({ points: bridgeCells, initialPath: first.path, stagnationLimitMs: 1 });
+  const reports = [], second = optimizer(500).optimizePath(options, snapshot => {
+    if (snapshot.path) reports.push(snapshot);
+  });
+  assertPath(second, bridgeCells);
+  close(second.initialMetrics.score, first.metrics.score, "retained interleaved baseline");
+  assert.deepEqual(second.path, first.path);
+  for (const report of reports) {
+    assert.equal(report.path.length, first.path.length);
+    assert.ok(report.metrics.score <= first.metrics.score + 1e-8, "neither preparation nor termination regresses the preview");
+  }
+  assert.ok(new Set(second.order).size < second.order.length);
+});
+
+test("only orthogonally isolated complete crosses are candidates and tied moves are not accepted", () => {
+  for (const cells of [rectangle(4, 2), [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+    [...rectangle(4, 1), ...rectangle(2, 1, 0, 2)]]) {
+    const engine = optimizer(), problem = engine.prepareProblem({ points: cells });
+    assert.deepEqual([...engine.singletonInsertions(problem, engine.materialize(problem, problem.orders[0]))], []);
+  }
+  const cells = [...rectangle(5, 1, 0, 2), ...[0, 2, 4].map(x => ({ x, y: 0 }))];
+  const result = optimizer(1).optimizePath({ points: cells, stagnationLimitMs: 100000 });
+  assertPath(result, cells);
+  assert.ok(result.insertionAttempts > 0);
+  assert.equal(result.insertions, 0, "equal-score moves cannot oscillate or reset inactivity");
+  close(result.metrics.score, result.initialMetrics.score, "already unit-optimal route");
+});

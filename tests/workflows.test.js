@@ -748,6 +748,51 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => currentPath()), timedResult.path);
     assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "60000");
 
+    const bridge = structuredClone(data);
+    bridge.project.name = bridge.pattern.project.name = "Singleton bridges";
+    bridge.paths[0].points = [...Array.from({ length: 9 }, (_, x) => ({ x, y: 2 })), ...[0, 4, 8].map(x => ({ x, y: 0 }))];
+    bridge.pattern.grid.cells = bridge.pattern.grid.cells.map(cell => {
+      const dmc = bridge.paths.find(route => route.points.some(point => point.x === cell.x && point.y === cell.y))?.dmc;
+      return { ...cell, dmc: dmc || null, empty: !dmc, symbol: dmc === "310" ? "A" : dmc ? "B" : null };
+    });
+    await planner.locator('[data-step="load"]').click();
+    await planner.locator("#patternJsonFile").setInputFiles({ name: "bridge.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(bridge)) });
+    await planner.waitForFunction(() => loadedPattern?.project.name === "Singleton bridges");
+    await observePathWorkers(planner, true, 300);
+    await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
+    const insertionIndex = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.findIndex(message =>
+      message.stage === "search" && message.insertions > 0 && message.path));
+    assert.ok(insertionIndex >= 0, "Insertion improvements produce a live worker preview before completion");
+    const viewBeforeInsertion = await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height }));
+    await deliverWorkerMessages(planner, 0, insertionIndex);
+    assert.ok(await planner.evaluate(() => activePathOptimizerSnapshot.insertions > 0 && pathAlgorithmRunning));
+    assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Insertion de cases isolees/);
+    assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 23);
+    assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
+    assert.ok(await planner.evaluate(() => pathImprovementCanvas.getContext("2d")
+      .getImageData(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height).data.some((value, i) => i % 4 === 3 && value > 0)),
+      "Inserted connections draw visible highlight pixels");
+    assert.deepEqual(await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height })), viewBeforeInsertion,
+      "An insertion preview does not move or resize the view");
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-singleton-insertion.png"), fullPage: true });
+    const pendingInsertionMessages = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.length);
+    await deliverWorkerMessages(planner, 0, pendingInsertionMessages - 1);
+    const bridgeResult = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
+    assertBlockResult(bridgeResult, bridge.paths[0].points, {}, 12, false);
+    assert.ok(bridgeResult.insertions >= 2);
+    assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
+    await planner.evaluate(() => plannerSaveQueue);
+    await planner.reload();
+    await planner.waitForFunction(() => !document.querySelector("main").inert);
+    await planner.locator('[data-step="paths"]').click();
+    assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
+    await observePathWorkers(planner);
+    await planner.locator("#optimizedPathButton").click();
+    await planner.waitForFunction(() => !pathAlgorithmRunning && pathWorkerHarness.messages.some(message => message.type === "complete"));
+    assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path, "Reloading and rerunning retains the interleaved best");
+    assertSearchSnapshots(await planner.evaluate(() => pathWorkerHarness.messages), bridge.paths[0].points);
+
     const importer = await context.newPage();
     await importer.goto(`${origin}/import-pattern.html`);
     await importer.evaluate(() => {
