@@ -22,10 +22,19 @@ Statut : termine, verifie sur ordinateur, mobile et grand pattern.
 
 ## Priorite 1 : proteger le travail
 
-- [ ] Confirmation pour Vider et Reset.
-- [ ] Vrai historique d'annulation des operations, pas seulement retrait de la derniere diagonale.
-- [ ] Recuperation du meilleur chemin apres une suppression accidentelle.
-- [ ] Tests de suppression, annulation, rechargement et restauration.
+Statut : termine. Historique local persistant, par operation et par couleur affectee.
+
+- [x] Confirmation pour Vider et Reset.
+- [x] Vrai historique d'annulation des operations, pas seulement retrait de la derniere diagonale.
+- [x] Recuperation du meilleur chemin apres une suppression accidentelle.
+- [x] Tests de suppression, annulation, rechargement et restauration.
+
+Annuler/Retablir est disponible dans l'en-tete, y compris apres Reset.
+Un glisser ou une optimisation forme une seule operation. Le meilleur chemin
+reste separe de l'historique et Vider ne le supprime plus. Les contraintes
+associees sont conservees ; leur remplacement lors d'une restauration est confirme.
+L'historique est borne a 50 operations et environ 16 Mio par pile, avec au moins
+la derniere operation conservee. Charger un nouveau fichier commence un nouvel historique.
 
 ## Priorite 2 : clarifier l'interface
 
@@ -57,7 +66,7 @@ Statut : termine, verifie sur ordinateur, mobile et grand pattern.
 
 ## Ordre propose
 
-Recherche plus visuelle (demande actuelle), puis protection du travail,
+Recherche plus visuelle et protection du travail terminees. Suite proposee :
 allegement de l'interface, combinaison des optimisations et inspection detaillee.
 
 Chaque chantier doit etre valide separement avant de passer au suivant.

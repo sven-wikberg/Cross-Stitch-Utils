@@ -40,6 +40,7 @@ const pathAlgorithmZoneCrosses = document.querySelector("#pathAlgorithmZoneCross
 const pathAlgorithmZoneLimit = document.querySelector("#pathAlgorithmZoneLimit");
 const cutThresholdInput = document.querySelector("#cutThresholdInput");
 const undoPathPointButton = document.querySelector("#undoPathPointButton");
+const redoPathActionButton = document.querySelector("#redoPathActionButton");
 const clearPathButton = document.querySelector("#clearPathButton");
 const restoreBestPathButton = document.querySelector("#restoreBestPathButton");
 const savePathAndNextButton = document.querySelector("#savePathAndNextButton");
@@ -104,6 +105,8 @@ let storedState = migratePlannerState(loadStoredState());
 let loadedPattern = storedState.pattern;
 let pathsByDmc = storedState.pathsByDmc;
 let bestPathsByDmc = storedState.bestPathsByDmc;
+let bestPathConstraintsByDmc = storedState.bestPathConstraintsByDmc || {};
+let pathEditHistory = createPathEditHistory(storedState.editHistory);
 let pathProgress = {
   load: Boolean(loadedPattern),
   paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, storedState.pathsByDmc),
@@ -149,7 +152,7 @@ function migratePlannerState(state) {
   }
   if (state?.pattern && state.pathObjectiveVersion !== PATH_OBJECTIVE_VERSION) {
     state = { ...state, pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
-      pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
+      editHistory: undefined, pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
   }
   if (!state?.pattern || state.pathSchemaVersion === 2) return state;
   const threshold = state.cutThreshold || 10, oldConstraints = state.constraintsByDmc || {};
@@ -162,7 +165,8 @@ function migratePlannerState(state) {
     forcedCuts: points.filter(p => p.cutBefore).map(copyPoint)
   }]));
   return { ...state, pathSchemaVersion: 2, pathsByDmc: paths, bestPathsByDmc: convert(state.bestPathsByDmc),
-    constraintsByDmc: constraints, pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
+    editHistory: undefined, bestPathConstraintsByDmc: {}, constraintsByDmc: constraints,
+    pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
 }
 
 function loadStoredState() {
@@ -185,6 +189,8 @@ function loadStoredState() {
         pattern: parsed.pattern,
         pathsByDmc: parsed.pathsByDmc && typeof parsed.pathsByDmc === "object" ? parsed.pathsByDmc : {},
         bestPathsByDmc: parsed.bestPathsByDmc && typeof parsed.bestPathsByDmc === "object" ? parsed.bestPathsByDmc : {},
+        bestPathConstraintsByDmc: parsed.bestPathConstraintsByDmc || {},
+        editHistory: parsed.editHistory,
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
         cutThreshold: normalizeCutThreshold(parsed.cutThreshold),
         pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs),
@@ -200,21 +206,26 @@ function loadStoredState() {
   }
 }
 
-function savePathPlannerState() {
-  const snapshot = loadedPattern ? structuredClone({
+function plannerDraft() {
+  return {
     pathSchemaVersion: 2,
     pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
     pathTimingVersion: PATH_TIMING_VERSION,
     pattern: loadedPattern,
     pathsByDmc,
     bestPathsByDmc,
+    bestPathConstraintsByDmc,
     selectedDmc,
     cutThreshold,
     pathStagnationLimitMs,
     constraintsByDmc,
     batchPlan,
     pathOptimizationBaselinesByDmc
-  }) : null;
+  };
+}
+
+function savePathPlannerState() {
+  const snapshot = structuredClone({ ...plannerDraft(), editHistory: pathEditHistory.toJSON() });
   plannerSavePending++;
   plannerSaveQueue = plannerSaveQueue.catch(() => {}).then(async () => {
     await window.PathPlannerStore.write(snapshot);
@@ -227,6 +238,74 @@ function savePathPlannerState() {
     pathSaveStatus.title = error.message;
   }).finally(() => { plannerSavePending--; });
   return plannerSaveQueue;
+}
+
+function capturePathEdit(scope) {
+  if (scope.type === "project") return plannerDraft();
+  if (scope.type === "settings") return { cutThreshold, pathOptimizationBaselinesByDmc, batchPlan };
+  return { path: pathsByDmc[scope.dmc] || [], constraints: constraintsByDmc[scope.dmc] || {},
+    baseline: pathOptimizationBaselinesByDmc[scope.dmc], batchPlan };
+}
+
+function beginPathEdit(label, scope = { type: "color", dmc: selectedDmc }) {
+  pathEditHistory.begin(scope, label, capturePathEdit(scope));
+}
+
+function finishPathEdit() {
+  const scope = pathEditHistory.pending?.scope;
+  if (!scope) return;
+  if (scope.type === "color") rememberBestPath(scope.dmc, pathsByDmc[scope.dmc]);
+  pathEditHistory.commit(capturePathEdit(scope));
+}
+
+function renderPathHistory() {
+  for (const [button, name, label] of [[undoPathPointButton, "Annuler", pathEditHistory.undoLabel],
+    [redoPathActionButton, "Retablir", pathEditHistory.redoLabel]]) {
+    button.disabled = pathAlgorithmRunning || isDrawingPath || !label;
+    button.title = label ? `${name} : ${label}` : name;
+    button.setAttribute("aria-label", button.title);
+  }
+}
+
+function applyPlannerDraft(state) {
+  loadedPattern = state.pattern;
+  pathsByDmc = state.pathsByDmc || {};
+  bestPathsByDmc = state.bestPathsByDmc || {};
+  bestPathConstraintsByDmc = state.bestPathConstraintsByDmc || {};
+  selectedDmc = state.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
+  cutThreshold = normalizeCutThreshold(state.cutThreshold) || DEFAULT_CUT_THRESHOLD;
+  pathStagnationLimitMs = normalizePathStagnationLimit(state.pathStagnationLimitMs) || DEFAULT_PATH_STAGNATION_LIMIT;
+  constraintsByDmc = state.constraintsByDmc || {};
+  batchPlan = state.batchPlan || { pending: [], results: [] };
+  pathOptimizationBaselinesByDmc = state.pathOptimizationBaselinesByDmc || {};
+}
+
+function travelPathHistory(direction) {
+  if (pathAlgorithmRunning || isDrawingPath) return;
+  const action = pathEditHistory[direction](capturePathEdit);
+  if (!action) return;
+  const { scope, before } = action;
+  if (scope.type === "project") applyPlannerDraft(before);
+  else if (scope.type === "settings") {
+    cutThreshold = before.cutThreshold;
+    pathOptimizationBaselinesByDmc = before.pathOptimizationBaselinesByDmc;
+    batchPlan = before.batchPlan;
+  } else {
+    selectedDmc = scope.dmc;
+    pathsByDmc[selectedDmc] = before.path;
+    constraintsByDmc[selectedDmc] = before.constraints;
+    if (before.baseline === undefined) delete pathOptimizationBaselinesByDmc[selectedDmc];
+    else pathOptimizationBaselinesByDmc[selectedDmc] = before.baseline;
+    batchPlan = before.batchPlan;
+  }
+  batchRunning = false;
+  pathProgress = { load: Boolean(loadedPattern), paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, pathsByDmc), export: false };
+  activePathStep = loadedPattern ? "paths" : "load";
+  pathConstructionSummaries = {};
+  scoreHistory = []; scoreHistoryDmc = null;
+  clearPathImprovement();
+  savePathPlannerState();
+  renderPathTool();
 }
 
 function normalizeCutThreshold(value) {
@@ -260,6 +339,7 @@ function renderPathTool() {
   pathStepEyebrow.textContent = label.eyebrow;
   pathStepTitle.textContent = label.title;
   resetPathToolButton.disabled = pathAlgorithmRunning;
+  renderPathHistory();
   cutThresholdInput.value = String(cutThreshold);
   pathStagnationLimit.value = String(pathStagnationLimitMs);
 
@@ -610,7 +690,7 @@ function pointCenter(point, cellSize) {
 }
 
 function renderPathBuilder() {
-  restoreBestPathButton.disabled = pathAlgorithmRunning || !bestCompletePathForColor(selectedDmc).length;
+  restoreBestPathButton.disabled = pathAlgorithmRunning || !recoverableBestPath(selectedDmc);
   stopPathAlgorithmButton.classList.toggle("hidden", !activePathOptimizerWorker);
   stopPathAlgorithmButton.disabled = !activePathOptimizerWorker;
   pathStagnationLimit.disabled = pathAlgorithmRunning;
@@ -620,7 +700,6 @@ function renderPathBuilder() {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     optimizedPathButton.disabled = true;
-    undoPathPointButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
     return;
@@ -634,7 +713,6 @@ function renderPathBuilder() {
     ? `Chemin complet: ${path.length} / ${expected} diagonales.`
     : `Chemin en cours: ${path.length} / ${expected} diagonales.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
-  undoPathPointButton.disabled = path.length === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
 
@@ -1115,6 +1193,7 @@ function rememberBestPath(dmc, candidatePath) {
   if (improved) {
     bestPathsByDmc[dmc] = candidatePath.map(copyPoint);
   }
+  bestPathConstraintsByDmc[dmc] = structuredClone(constraintsByDmc[dmc] || {});
 
   const bestPath = improved ? bestPathsByDmc[dmc] : currentBest || candidatePath;
   return {
@@ -1815,10 +1894,10 @@ batchOptimizeButton.addEventListener("click", () => {
 
 function updateConstraints(constraints) {
   constraintsByDmc[selectedDmc] = constraints;
-  delete bestPathsByDmc[selectedDmc];
   delete pathOptimizationBaselinesByDmc[selectedDmc];
   invalidateBatchResult(selectedDmc);
   pathProgress.export = false;
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
 }
@@ -1843,10 +1922,13 @@ function editPathConstraint(cell) {
     const next = { ...constraints, start, lockedPrefix: [] };
     const sequence = [start, ...path.filter(p => StitchModel.key(p) !== StitchModel.key(start))];
     try {
-      pathsByDmc[selectedDmc] = StitchModel.orient(sequence, cutThreshold, next);
+      const oriented = StitchModel.orient(sequence, cutThreshold, next);
+      beginPathEdit(`Depart DMC ${selectedDmc}`);
+      pathsByDmc[selectedDmc] = oriented;
       updateConstraints(next);
     } catch (error) { alert(error.message); }
   } else if (index >= 0) {
+    beginPathEdit(`Coupe DMC ${selectedDmc}`);
     path[index].cutBefore = !path[index].cutBefore;
     constraints.forcedCuts = path.filter(p => p.cutBefore).map(copyPoint);
     updateConstraints(constraints);
@@ -1854,24 +1936,19 @@ function editPathConstraint(cell) {
 }
 
 lockedPrefixCount.addEventListener("change", () => {
+  if (pathAlgorithmRunning || !selectedDmc) return;
+  beginPathEdit(`Verrouillage DMC ${selectedDmc}`);
   const count = Math.min(currentPath().length, Math.max(0, Math.floor(Number(lockedPrefixCount.value) || 0)));
   const constraints = constraintsByDmc[selectedDmc] || {};
   updateConstraints({ ...constraints, lockedPrefix: currentPath().slice(0, count).map(copyPoint), start: count ? copyPoint(currentPath()[0]) : constraints.start });
 });
 
 document.querySelector("#clearConstraintsButton").addEventListener("click", () => {
+  if (pathAlgorithmRunning || !selectedDmc) return;
+  beginPathEdit(`Contraintes DMC ${selectedDmc}`);
   currentPath().forEach(p => delete p.cutBefore);
   updateConstraints({});
 });
-
-function trimConstraints() {
-  const constraints = constraintsByDmc[selectedDmc];
-  if (!constraints) return;
-  const path = currentPath();
-  constraints.lockedPrefix = (constraints.lockedPrefix || []).slice(0, path.length);
-  constraints.forcedCuts = path.filter(p => p.cutBefore).map(copyPoint);
-  if (!path.length) delete constraints.start;
-}
 
 patternJsonFileInput.addEventListener("change", async () => {
   if (activePathOptimizerWorker) {
@@ -1893,6 +1970,8 @@ patternJsonFileInput.addEventListener("change", async () => {
     batchPlan = { pending: [], results: [] };
     batchRunning = false;
     bestPathsByDmc = clonePaths(pathsByDmc);
+    bestPathConstraintsByDmc = structuredClone(constraintsByDmc);
+    pathEditHistory = createPathEditHistory();
     pathConstructionSummaries = {};
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
     pathOptimizationBaselinesByDmc = {};
@@ -1911,7 +1990,7 @@ patternJsonFileInput.addEventListener("change", async () => {
 });
 
 patternCanvas.addEventListener("pointerdown", (event) => {
-  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
+  if (!loadedPattern || !selectedDmc || pathAlgorithmRunning || isDrawingPath || event.button !== 0) {
     return;
   }
 
@@ -1921,6 +2000,7 @@ patternCanvas.addEventListener("pointerdown", (event) => {
   }
 
   event.preventDefault();
+  beginPathEdit(`Trace DMC ${selectedDmc}`);
   isDrawingPath = true;
   lastDrawnCellKey = null;
   lastPointerCell = cellFromCanvasEvent(event);
@@ -1944,19 +2024,33 @@ patternCanvas.addEventListener("pointermove", (event) => {
 });
 
 patternCanvas.addEventListener("pointerup", (event) => {
+  if (isDrawingPath) {
+    finishPathEdit();
+    savePathPlannerState();
+  }
   isDrawingPath = false;
   lastDrawnCellKey = null;
   lastPointerCell = null;
   if (patternCanvas.hasPointerCapture(event.pointerId)) {
     patternCanvas.releasePointerCapture(event.pointerId);
   }
+  renderPathHistory();
+  renderPathBuilder();
 });
 
-patternCanvas.addEventListener("pointercancel", () => {
+function finishInterruptedPathDrawing() {
+  if (isDrawingPath) {
+    finishPathEdit();
+    savePathPlannerState();
+  }
   isDrawingPath = false;
   lastDrawnCellKey = null;
   lastPointerCell = null;
-});
+  renderPathHistory();
+  renderPathBuilder();
+}
+patternCanvas.addEventListener("pointercancel", finishInterruptedPathDrawing);
+patternCanvas.addEventListener("lostpointercapture", finishInterruptedPathDrawing);
 
 pathColorLegend.addEventListener("click", (event) => {
   if (pathAlgorithmRunning) {
@@ -1979,6 +2073,7 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
   }
 
   const baselinePath = currentPath();
+  beginPathEdit(`${label} DMC ${selectedDmc}`);
   if (pathOptimizationBaselinesByDmc[selectedDmc] === undefined && baselinePath.length > 1) {
     pathOptimizationBaselinesByDmc[selectedDmc] = pathRealisticScore(baselinePath);
   }
@@ -2021,6 +2116,8 @@ async function applyAsyncPathAlgorithm(buildPath, label = "Recherche 2-opt") {
     showPathSavedStatus();
   } finally {
     pathAlgorithmRunning = false;
+    finishPathEdit();
+    savePathPlannerState();
     renderPathTool();
   }
 }
@@ -2043,6 +2140,7 @@ function startAdvancedPathSearch() {
   }
 
   const dmc = selectedDmc;
+  beginPathEdit(`Optimisation DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -2075,6 +2173,7 @@ function startAdvancedPathSearch() {
   activePathOptimizerSnapshot = null;
   activePathOptimizerBestPath = startingPath;
   pathAlgorithmRunning = true;
+  savePathPlannerState();
   resetAlgorithmLiveMetrics();
   showAlgorithmFeedback("Preparation de l'optimisation des blocs", 0,
     startingPath.length ? pathPerformanceMetrics(startingPath, dmc).score : null);
@@ -2160,6 +2259,15 @@ function bestCompletePathForColor(dmc) {
   }
 
   return candidates.sort((a, b) => comparePathPerformance(a, b, dmc))[0].map(copyPoint);
+}
+
+function recoverableBestPath(dmc) {
+  if (!loadedPattern || !dmc || !isCompletePathForColor(loadedPattern, bestPathsByDmc, dmc)) return null;
+  const path = bestPathsByDmc[dmc];
+  const constraints = bestPathConstraintsByDmc[dmc] || (constraintApi.satisfiesConstraints(path, constraintsByDmc[dmc])
+    ? constraintsByDmc[dmc] || {} : { forcedCuts: path.filter(p => p.cutBefore).map(copyPoint) });
+  if (!constraintApi.satisfiesConstraints(path, constraints)) return null;
+  return { path, constraints };
 }
 
 function applyAdvancedPathSnapshot(dmc, snapshot) {
@@ -2255,6 +2363,7 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
     pathConstructionSummaries[finishedDmc] = { route: pathsByDmc[finishedDmc], count: pathsByDmc[finishedDmc]?.length || 0,
       label, snapshot: saved };
   }
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
 
@@ -2387,13 +2496,19 @@ stopPathAlgorithmButton.addEventListener("click", () => {
 
 restoreBestPathButton.addEventListener("click", () => {
   if (pathAlgorithmRunning || !selectedDmc) return;
-  const path = bestCompletePathForColor(selectedDmc);
-  if (!path.length) return;
+  const saved = recoverableBestPath(selectedDmc);
+  if (!saved) return;
+  const constraintSignature = value => JSON.stringify({ start: value?.start || null,
+    lockedPrefix: value?.lockedPrefix || [], forcedCuts: value?.forcedCuts || [] });
+  if (constraintSignature(saved.constraints) !== constraintSignature(constraintsByDmc[selectedDmc])
+      && !confirm(`Restaurer le meilleur chemin DMC ${selectedDmc} avec ses contraintes enregistrees ? Les contraintes actuelles seront remplacees.`)) return;
+  beginPathEdit(`Restauration DMC ${selectedDmc}`);
   invalidateBatchResult(selectedDmc);
-  pathsByDmc[selectedDmc] = path;
-  rememberBestPath(selectedDmc, path);
+  pathsByDmc[selectedDmc] = saved.path.map(copyPoint);
+  constraintsByDmc[selectedDmc] = structuredClone(saved.constraints);
   pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
   pathProgress.export = false;
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
 });
@@ -2412,6 +2527,8 @@ pathWorkColor.addEventListener("input", () => {
 });
 
 cutThresholdInput.addEventListener("change", () => {
+  if (pathAlgorithmRunning) return;
+  beginPathEdit("Distance de coupe", { type: "settings" });
   clearPathImprovement();
   const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
   cutThreshold = normalized;
@@ -2419,28 +2536,33 @@ cutThresholdInput.addEventListener("change", () => {
   pathOptimizationBaselinesByDmc = {};
   batchPlan = { pending: [], results: [] };
   cutThresholdInput.value = String(cutThreshold);
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
   showPathSavedStatus();
 });
 
-undoPathPointButton.addEventListener("click", () => {
-  invalidateBatchResult(selectedDmc);
-  currentPath().pop();
-  trimConstraints();
-  pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
-  pathProgress.export = false;
-  savePathPlannerState();
-  renderPathTool();
+undoPathPointButton.addEventListener("click", () => travelPathHistory("undo"));
+redoPathActionButton.addEventListener("click", () => travelPathHistory("redo"));
+document.addEventListener("keydown", event => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest("input, textarea, select, [contenteditable=true]")) return;
+  const key = event.key.toLowerCase();
+  if (key !== "z" && key !== "y") return;
+  event.preventDefault();
+  travelPathHistory(key === "y" || event.shiftKey ? "redo" : "undo");
 });
 
 clearPathButton.addEventListener("click", () => {
+  if (pathAlgorithmRunning || !selectedDmc || !currentPath().length) return;
+  if (!confirm(`Vider le chemin DMC ${selectedDmc} et ses contraintes ? Le meilleur chemin restera disponible et cette action pourra etre annulee.`)) return;
+  beginPathEdit(`Vider DMC ${selectedDmc}`);
+  rememberBestPath(selectedDmc, currentPath());
   invalidateBatchResult(selectedDmc);
   delete constraintsByDmc[selectedDmc];
   pathsByDmc[selectedDmc] = [];
-  delete bestPathsByDmc[selectedDmc];
   pathProgress.paths = false;
   pathProgress.export = false;
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
 });
@@ -2502,6 +2624,9 @@ window.addEventListener("resize", () => {
 });
 
 resetPathToolButton.addEventListener("click", () => {
+  if (pathAlgorithmRunning || !loadedPattern) return;
+  if (!confirm("Reinitialiser l'outil 2 et fermer le projet actuel ? Cette action pourra etre annulee. Les fichiers exportes et la progression de l'outil 3 ne seront pas touches.")) return;
+  beginPathEdit("Reinitialiser le projet", { type: "project" });
   scoreHistory = []; scoreHistoryDmc = null;
   clearPendingOptimizerSnapshot();
   clearPathImprovement();
@@ -2518,6 +2643,7 @@ resetPathToolButton.addEventListener("click", () => {
   selectedDmc = null;
   pathsByDmc = {};
   bestPathsByDmc = {};
+  bestPathConstraintsByDmc = {};
   pathConstructionSummaries = {};
   constraintsByDmc = {};
   batchPlan = { pending: [], results: [] };
@@ -2533,6 +2659,7 @@ resetPathToolButton.addEventListener("click", () => {
   patternJsonFileInput.value = "";
   loadError.hidden = true;
   localStorage.removeItem(PATH_PLANNER_STORAGE_KEY);
+  finishPathEdit();
   savePathPlannerState();
   renderPathTool();
 });
@@ -2544,18 +2671,13 @@ async function restorePlannerDraft() {
     const savedState = await window.PathPlannerStore.read();
     const state = migratePlannerState(savedState);
     if (state) {
-      if (!validateFinalPattern(state.pattern).valid) throw new Error("Brouillon de chemins invalide.");
-      loadedPattern = state.pattern;
-      pathsByDmc = state.pathsByDmc || {};
-      bestPathsByDmc = state.bestPathsByDmc || {};
-      selectedDmc = state.selectedDmc || loadedPattern.colors[0]?.dmc;
-      cutThreshold = normalizeCutThreshold(state.cutThreshold) || DEFAULT_CUT_THRESHOLD;
-      pathStagnationLimitMs = normalizePathStagnationLimit(state.pathStagnationLimitMs) || DEFAULT_PATH_STAGNATION_LIMIT;
-      constraintsByDmc = state.constraintsByDmc || {};
-      batchPlan = state.batchPlan || { pending: [], results: [] };
-      pathOptimizationBaselinesByDmc = state.pathOptimizationBaselinesByDmc || {};
-      pathProgress = { load: true, paths: areAllColorPathsComplete(loadedPattern, pathsByDmc), export: false };
-      if (state !== savedState) await savePathPlannerState();
+      if (state.pattern && !validateFinalPattern(state.pattern).valid) throw new Error("Brouillon de chemins invalide.");
+      applyPlannerDraft(state);
+      pathEditHistory = createPathEditHistory(state.editHistory);
+      const interrupted = Boolean(pathEditHistory.pending);
+      pathEditHistory.recover(capturePathEdit);
+      pathProgress = { load: Boolean(loadedPattern), paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, pathsByDmc), export: false };
+      if (state !== savedState || interrupted) await savePathPlannerState();
     } else if (loadedPattern) savePathPlannerState();
   } catch (error) { pathSaveStatus.textContent = error.message; }
   finally { document.querySelector("main").inert = false; renderPathTool(); }

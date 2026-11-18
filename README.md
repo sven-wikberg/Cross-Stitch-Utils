@@ -10,6 +10,10 @@ Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application
 
 La [feuille de route de l'outil 2](ROADMAP.md) regroupe les ameliorations prevues et leur avancement.
 
+Dans l'outil 2, Vider et Reset demandent confirmation. Les fleches Annuler/Retablir de l'en-tete (Ctrl+Z, Ctrl+Maj+Z ou Ctrl+Y hors champs de saisie) agissent sur des operations entieres : un glisser, une optimisation par couleur, une modification de contraintes, une distance de coupe, un effacement ou une restauration. L'historique persiste dans IndexedDB apres rechargement, y compris pour annuler un Reset ou une operation interrompue au dernier etat sauvegarde. Il conserve au plus 50 operations et environ 16 Mio par pile, sauf la derniere operation qui reste toujours disponible. Charger un nouveau fichier commence un nouvel historique.
+
+Le meilleur chemin est conserve a part : Vider ou annuler une optimisation ne le supprime pas. Restaurer le meilleur chemin restaure aussi ses contraintes, avec confirmation si elles remplacent les contraintes actuelles. Ces protections sont locales au navigateur ; elles ne sont pas ajoutees aux exports, ne synchronisent pas l'historique entre machines et ne modifient jamais la progression de l'outil 3.
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.
@@ -122,6 +126,8 @@ node tests/zone-optimization.test.js
 node tests/zone-timing.test.js
 node tests/spatial-candidates.test.js
 node tests/workflows.test.js
+node --test tests/path-edit-history.test.js
+node tests/planner-safety.test.js
 node tests/session-view.test.js
 ```
 

@@ -153,13 +153,15 @@
       </aside>
 
       <section class="workspace" aria-labelledby="path-step-title">
-        <div class="topbar">
+        <div class="topbar planner-topbar">
           <div>
             <p id="pathStepEyebrow" class="eyebrow">Etape 1</p>
             <h2 id="path-step-title">Charger le pattern</h2>
           </div>
           <div class="topbar-actions">
             <span id="pathSaveStatus" class="status-pill">Brouillon</span>
+            <button id="undoPathPointButton" class="icon-button path-history-button" type="button" title="Annuler" aria-label="Annuler" disabled>&#8630;</button>
+            <button id="redoPathActionButton" class="icon-button path-history-button" type="button" title="Retablir" aria-label="Retablir" disabled>&#8631;</button>
             <button id="resetPathToolButton" class="icon-button" type="button" title="Reinitialiser">
               <span aria-hidden="true">Reset</span>
               <span class="sr-only">Reinitialiser</span>
@@ -247,7 +249,6 @@
               <div class="path-builder-panel">
                 <div id="pathBuildStatus" class="coverage-status invalid">Selectionne les cases de la couleur.</div>
                 <div class="actions split-actions">
-                  <button id="undoPathPointButton" class="secondary-button" type="button">Annuler</button>
                   <button id="clearPathButton" class="secondary-button" type="button">Vider</button>
                 </div>
                 <button id="restoreBestPathButton" class="secondary-button" type="button" disabled>Restaurer le meilleur chemin</button>
@@ -320,6 +321,7 @@
     <script src="src/block-optimizer-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
+    <script src="src/path-edit-history.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/path-planner.js"></script>
   </body>
