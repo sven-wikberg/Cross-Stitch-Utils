@@ -41,6 +41,12 @@ L'outil 2, `Definir les chemins`, est disponible dans `plan-paths.html`.
 
 L'outil 3, `Suivre la broderie`, est disponible dans `stitch-progress.html`.
 
+## Pattern de test
+
+[`data/examples/grands-ilots.pattern.json`](data/examples/grands-ilots.pattern.json) se charge directement dans l'outil 2. La grille mesure 120 x 110 cases et contient 3 259 croix d'une seule couleur, DMC 310, sans chemin precalcule. [Apercu du motif](data/examples/grands-ilots.png).
+
+Les neuf ilots, de gauche a droite puis de haut en bas : U (268 croix), damier (313), rectangle plein (1 008), cadre (252), deux blocs relies par un pont (426), peigne (312), diagonale (25), serpentin (342) et losange (313). Le damier et la diagonale sont chacun une seule zone, car les cases qui se touchent par un coin sont adjacentes. Les espaces entre formes permettent aussi de tester les liaisons et les coupes.
+
 ## Synchronisation de la progression
 
 L'outil 3 conserve une seule progression active dans `data/progress-state.json`. Le pattern et ses chemins, immuables, sont conserves une fois dans `data/patterns/<sha256>.json`. Les synchronisations suivantes ne transmettent que la petite progression et les reglages de vue. Les anciens fichiers `builtin-progress.js` et les sauvegardes JSON completes restent lisibles.
