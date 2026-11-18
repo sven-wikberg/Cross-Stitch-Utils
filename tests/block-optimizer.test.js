@@ -432,3 +432,127 @@ test("3259-cross benchmark preserves all 345 blocks and exact internal unit link
   for (let i = 1; i < reports.length; i++) assert.ok(compare(reports[i].metrics, reports[i - 1].metrics) <= 0);
   assert.deepEqual(points, before);
 });
+
+test("diagonal contacts and one-empty-cell orthogonal gaps expose true unit hole connections", () => {
+  for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+    const cells = [{ x: 3, y: 3 }, { x: 3 + dx, y: 3 + dy }], engine = optimizer();
+    const problem = engine.prepareProblem({ points: cells });
+    assert.equal(problem.unitContacts.length, 1);
+    for (const order of [[0, 1], [1, 0]]) {
+      assert.ok(problem.unitNeighbors.get(order[0]).includes(order[1]));
+      const route = engine.materialize(problem, order);
+      assertPath(route, cells);
+      assert.equal(distance(route.path[1], route.path[2]), 1);
+      close(engine.evaluateOrder(problem, order).score, 3, "two crosses joined at unit distance");
+    }
+  }
+  for (const cells of [[{ x: 0, y: 0 }, { x: 3, y: 0 }], rectangle(3, 1)]) {
+    const problem = optimizer().prepareProblem({ points: cells });
+    assert.equal(problem.unitContacts.length, 0, "long gaps and contacts inside a block are not inter-block unit contacts");
+    assert.equal(problem.unitEdges.length, 0);
+  }
+});
+
+test("forced cuts and fixed sewing directions cannot masquerade as usable unit neighbors", () => {
+  const cells = [{ x: 3, y: 3 }, { x: 4, y: 4 }], engine = optimizer();
+  const cut = { forcedCuts: [action(cells[1])] }, problem = engine.prepareProblem({ points: cells, constraints: cut });
+  const a = problem.blocks.find(block => block.cells.some(cell => cell.x === 3)).id;
+  const b = problem.blocks.find(block => block.cells.some(cell => cell.x === 4)).id;
+  assert.equal(problem.unitContacts.length, 1);
+  assert.equal(problem.unitNeighbors.get(a).includes(b), false, "a forced cut is not a continuous unit connection");
+  const route = engine.materialize(problem, [a, b]);
+  assertPath(route, cells, cut);
+  close(engine.evaluateOrder(problem, [a, b]).score, 33, "forced cut penalty remains in the global score");
+  const locked = { lockedPrefix: [action(cells[0]), action(cells[0], "upper", -1)] };
+  const fixed = engine.prepareProblem({ points: cells, constraints: locked });
+  assert.equal(fixed.unitNeighbors.get(0).includes(1), false, "this locked exit hole cannot reach the next block in one unit");
+  assertPath(engine.materialize(fixed, fixed.orders[0]), cells, locked);
+});
+
+test("contact portals are retained beyond the old eight-portal cap", () => {
+  const line = rectangle(30, 1), neighbors = Array.from({ length: 14 }, (_, i) => ({ x: (i + 1) * 2, y: 2 }));
+  const cells = [...line, ...neighbors], engine = optimizer(), problem = engine.prepareProblem({ points: cells });
+  const block = problem.blocks.find(item => item.cells.length === 30);
+  const entries = new Set(block.transfers.map(transfer => model.cellKey(block.entries[transfer.entry])));
+  const exits = new Set(block.transfers.map(transfer => model.cellKey(block.exits[transfer.exit])));
+  for (const neighbor of neighbors) {
+    const portal = `${neighbor.x},0`;
+    assert.ok(entries.has(portal) && exits.has(portal), `contact ${portal} is a feasible entry and exit`);
+    const other = problem.blocks.find(item => item.cells.some(cell => model.cellKey(cell) === model.cellKey(neighbor)));
+    assert.ok(problem.unitNeighbors.get(block.id).includes(other.id));
+  }
+  assert.ok(entries.size > 8);
+  assertPath(engine.materialize(problem, problem.orders[0]), cells);
+});
+
+test("separate unit entry and exit contacts can be combined through an orthogonal block", () => {
+  const cells = [{ x: 1, y: 3 }, ...rectangle(2, 2, 3, 3), { x: 6, y: 4 }], engine = optimizer();
+  const problem = engine.prepareProblem({ points: cells });
+  const order = [1, 3, 6].map(x => problem.blocks.find(block => block.cells.some(cell => cell.x === x)).id);
+  const route = engine.materialize(problem, order);
+  assertPath(route, cells);
+  assertBlockUnits(problem, order, route);
+  assert.equal(distance(route.path[1], route.path[2]), 1);
+  assert.equal(distance(route.path[9], route.path[10]), 1);
+  assert.notEqual(model.cellKey(route.path[2]), model.cellKey(route.path[9]));
+  close(engine.evaluateOrder(problem, order).score, 11, "all eleven backside transitions are unit length");
+});
+
+test("unit-priority proposals never replace a globally better incumbent", () => {
+  const cells = [{ x: 6, y: 7 }, { x: 7, y: 8 }, { x: 6, y: 3 }, { x: 3, y: 1 },
+    { x: 5, y: 5 }, { x: 2, y: 12 }, { x: 8, y: 9 }, { x: 9, y: 4 }, { x: 0, y: 11 }];
+  const engine = optimizer(500), problem = engine.prepareProblem({ points: cells });
+  assert.ok(problem.unitOrders.length > 0 && problem.unitEdges.length > 0);
+  const baseline = engine.evaluateOrder(problem, problem.orders[0]), priority = engine.evaluateOrder(problem, problem.unitOrders[0]);
+  assert.ok(priority.score > baseline.score + 2, "the tempting unit-priority order is globally worse in this fixture");
+  const result = engine.optimizePath({ points: cells, stagnationLimitMs: 1 });
+  assertPath(result, cells);
+  assert.ok(result.metrics.score <= baseline.score + 1e-7 && result.metrics.score < priority.score);
+});
+
+test("search tries unit adjacency proposals while preserving the best total score", () => {
+  const cells = Array.from({ length: 9 }, (_, i) => ({ x: i * 2, y: 0 })), reports = [];
+  const result = optimizer(500).optimizePath({ points: cells, stagnationLimitMs: 12000 }, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  assert.equal(result.unitConnections, 16);
+  assert.ok(result.unitAttempts > 0 && result.attempts > result.unitAttempts, "ordinary global moves remain available too");
+  assertPath(result, cells);
+  close(result.metrics.score, 17, "all-unit incumbent is not sacrificed to the search heuristic");
+  for (const report of reports) close(report.metrics.score, 17, "visible best remains optimal for this chain");
+  const constraints = { lockedPrefix: model.expandCells(cells).slice(0, 2), forcedCuts: [action(cells[4])] };
+  const constrained = optimizer(500).optimizePath({ points: cells, constraints, stagnationLimitMs: 12000 });
+  assert.ok(constrained.unitAttempts > 0, "unit-priority relocation is also exercised after a fixed prefix");
+  assertPath(constrained, cells, constraints);
+});
+
+test("long contact boundaries use sparse internal transfers without dropping contact endpoints", { timeout: 30000 }, () => {
+  const cells = [...rectangle(270, 1), ...rectangle(270, 1, 0, 2)], engine = optimizer();
+  const problem = engine.prepareProblem({ points: cells });
+  assert.equal(problem.unitContacts.length, 270);
+  for (const block of problem.blocks) {
+    assert.equal(new Set(block.entries.map(model.cellKey)).size, 270);
+    assert.equal(block.costs, undefined, "large sparse matrices do not allocate a quadratic dense backing array");
+    assert.ok(block.transfers.length < 270 * 8);
+  }
+  const route = engine.materialize(problem, problem.orders[0]);
+  assertPath(route, cells);
+  close(engine.evaluateOrder(problem, problem.orders[0]).score, cells.length * 2 - 1, "unit contacts retained along the whole boundary");
+});
+
+test("oversized inter-block matrices are evaluated exactly without exceeding the cache budget", () => {
+  const count = 730;
+  const exits = Array.from({ length: count }, (_, i) => action({ x: i * 3, y: 0 }, "upper"));
+  const entries = Array.from({ length: count }, (_, i) => action({ x: i * 3 + 1, y: 1 }));
+  const problem = { fixedCount: 0, threshold: 10, transitionCache: new Map(), cacheElements: 0, blocks: [
+    { id: 0, entries: [action({ x: 0, y: 0 })], exits,
+      transfers: exits.map((_, i) => ({ entry: 0, exit: i, score: i * 0.01, cuts: 0 })) },
+    { id: 1, entries, exits: [action({ x: 0, y: 1 }, "upper")],
+      transfers: entries.map((_, i) => ({ entry: i, exit: 0, score: i * 0.02, cuts: 0 })) }
+  ] };
+  const result = optimizer().evaluateOrder(problem, [0, 1]);
+  close(result.score, 1, "exact uncached transfer minimum");
+  assert.equal(result.cuts, 0);
+  assert.equal(problem.cacheElements, 0);
+  assert.equal(problem.transitionCache.size, 0);
+});

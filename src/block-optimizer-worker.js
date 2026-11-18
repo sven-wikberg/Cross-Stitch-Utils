@@ -54,9 +54,10 @@
     const configUnits = (sequence, config) => config.units || sequence.map((_, i) => i > 0);
     function addConfig(problem, block, config, sequence = configSequence(block, config)) {
       if (!sequence?.length) return;
+      const summary = summarize(sequence, configUnits(sequence, config), problem.constraints, problem.threshold, problem.cuts);
+      if (!summary.scores.some(Number.isFinite)) return;
       block.configs.push(config);
-      block.records.push({ ...summarize(sequence, configUnits(sequence, config), problem.constraints, problem.threshold, problem.cuts),
-        config: block.configs.length - 1 });
+      block.records.push({ ...summary, config: block.configs.length - 1 });
     }
     function finishBlock(block) {
       const entries = new Map(), exits = new Map();
@@ -68,15 +69,70 @@
       const entryIds = new Map(block.entries.map((point, i) => [nodeKey(point), i]));
       const exitIds = new Map(block.exits.map((point, i) => [nodeKey(point), i]));
       const size = block.entries.length * block.exits.length;
-      block.costs = new Float64Array(size).fill(Infinity); block.cutCounts = new Int32Array(size);
-      block.choices = new Int32Array(size).fill(-1);
+      block.transferByPair = new Map();
       for (const record of block.records) for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) {
-        const at = entryIds.get(nodeKey(record.first[a])) * block.exits.length + exitIds.get(nodeKey(record.last[b]));
-        if (better(record.scores[a * 2 + b], record.counts[a * 2 + b], block.costs[at], block.cutCounts[at])) {
-          block.costs[at] = record.scores[a * 2 + b]; block.cutCounts[at] = record.counts[a * 2 + b]; block.choices[at] = record.config;
+        const entry = entryIds.get(nodeKey(record.first[a])), exit = exitIds.get(nodeKey(record.last[b]));
+        const at = entry * block.exits.length + exit, old = block.transferByPair.get(at);
+        if (better(record.scores[a * 2 + b], record.counts[a * 2 + b], old?.score ?? Infinity, old?.cuts ?? 0)) {
+          block.transferByPair.set(at, { entry, exit, score: record.scores[a * 2 + b], cuts: record.counts[a * 2 + b], config: record.config });
+        }
+      }
+      block.transfers = [...block.transferByPair.values()];
+      // Large contact boundaries stay sparse; the DP visits only feasible transfers.
+      if (size <= 262144) {
+        block.costs = new Float64Array(size).fill(Infinity); block.cutCounts = new Int32Array(size);
+        block.choices = new Int32Array(size).fill(-1);
+        for (const [at, transfer] of block.transferByPair) {
+          block.costs[at] = transfer.score; block.cutCounts[at] = transfer.cuts; block.choices[at] = transfer.config;
         }
       }
       delete block.records;
+    }
+    function findUnitContacts(blocks) {
+      const byCell = new Map(), contacts = [];
+      const portals = new Map(blocks.map(block => [block.id, new Map()]));
+      for (const block of blocks) if (!block.anchor) for (const cell of block.cells) byCell.set(model.cellKey(cell), { block, cell });
+      for (const block of blocks) if (!block.anchor) for (const cell of block.cells) {
+        for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+          const other = byCell.get(`${cell.x + dx},${cell.y + dy}`);
+          if (!other || other.block.id <= block.id) continue;
+          contacts.push({ from: block.id, to: other.block.id, exit: cell, entry: other.cell });
+          portals.get(block.id).set(model.cellKey(cell), cell);
+          portals.get(other.block.id).set(model.cellKey(other.cell), other.cell);
+        }
+      }
+      return { contacts, portals };
+    }
+    function findUnitNeighbors(problem) {
+      const byHole = new Map(), neighbors = new Map(problem.blocks.map(block => [block.id, new Set()]));
+      for (const block of problem.blocks) for (const entry of new Set(block.transfers.map(transfer => transfer.entry))) {
+        const point = block.entries[entry];
+        if (point.cutBefore) continue;
+        const hole = model.holes(point).start, key = `${hole.x},${hole.y}`;
+        if (!byHole.has(key)) byHole.set(key, new Set());
+        byHole.get(key).add(block.id);
+      }
+      for (const block of problem.blocks) for (const exit of new Set(block.transfers.map(transfer => transfer.exit))) {
+        const hole = model.holes(block.exits[exit]).end;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          for (const id of byHole.get(`${hole.x + dx},${hole.y + dy}`) || []) {
+            if (id !== block.id) neighbors.get(block.id).add(id);
+          }
+        }
+      }
+      return new Map([...neighbors].map(([id, ids]) => [id, [...ids]]));
+    }
+    function unitPriorityOrder(problem, order) {
+      const result = order.slice(0, problem.fixedCount), remaining = new Set(order.slice(problem.fixedCount));
+      const rank = new Map(order.map((id, i) => [id, i]));
+      while (remaining.size) {
+        const previous = result.at(-1);
+        const candidates = (problem.unitNeighbors.get(previous) || []).filter(id => remaining.has(id));
+        candidates.sort((a, b) => rank.get(a) - rank.get(b));
+        const next = candidates[0] ?? (problem.neighbors.get(previous) || []).find(id => remaining.has(id)) ?? remaining.values().next().value;
+        result.push(next); remaining.delete(next);
+      }
+      return result;
     }
     function prepareProblem(options, report = () => {}) {
       const cells = options.points || [], threshold = Math.max(1, options.cutThreshold || 10);
@@ -134,6 +190,8 @@
         path: problem.incumbent.path, unitLinks: problem.incumbent.unitLinks, metrics: problem.incumbent.metrics,
         initialMetrics: problem.incumbent.metrics, blocks: { total: seed.blocks.length, prepared: 0 } });
       const freeBlocks = blocks.filter(block => !block.anchor);
+      const unitContacts = findUnitContacts(blocks);
+      problem.unitContacts = unitContacts.contacts;
       for (const block of freeBlocks) {
         const a = block.bounds;
         const nearby = freeBlocks.filter(other => other !== block).map(other => {
@@ -168,12 +226,40 @@
             for (const cell of block.cells) if (cell.x * dx + cell.y * dy > chosen.x * dx + chosen.y * dy) chosen = cell;
             add(chosen);
           }
-          for (const entry of block.resume ? [block.root] : portals) for (const exit of portals) {
+          const contacts = [...unitContacts.portals.get(block.id).values()], pairs = new Map();
+          const addPair = (entry, exit) => {
+            if (block.resume) entry = block.root;
+            if ((entry.x + entry.y - exit.x - exit.y) % 2 !== 0) return;
+            pairs.set(`${model.cellKey(entry)}:${model.cellKey(exit)}`, { entry, exit });
+          };
+          const allPortals = [...new Map([...contacts, ...portals].map(cell => [model.cellKey(cell), cell])).values()];
+          // Every contact gets a same-cell entry/exit traversal. Mixed endpoints are exhaustive for small
+          // pools and sampled for large boundaries, without a quadratic number of traversals.
+          for (const contact of contacts) addPair(contact, contact);
+          if (allPortals.length <= 16) {
+            for (const entry of allPortals) for (const exit of allPortals) addPair(entry, exit);
+          } else {
+            for (const contact of contacts) {
+              const compatible = portals.filter(portal => (portal.x + portal.y - contact.x - contact.y) % 2 === 0)
+                .sort((a, b) => Math.hypot(a.x - contact.x, a.y - contact.y) - Math.hypot(b.x - contact.x, b.y - contact.y));
+              for (const other of [...compatible.slice(0, 2), ...compatible.slice(-2)]) {
+                addPair(contact, other); addPair(other, contact);
+              }
+            }
+            for (const entry of portals) for (const exit of portals) addPair(entry, exit);
+          }
+          let done = 0;
+          for (const { entry, exit } of pairs.values()) {
             attempts++;
             let sequence = builder.buildSequence(block.cells, entry, exit);
-            if (!sequence) continue;
-            if (block.resume) sequence = sequence.slice(1);
-            addConfig(problem, block, { entry, exit }, sequence);
+            if (sequence) {
+              if (block.resume) sequence = sequence.slice(1);
+              addConfig(problem, block, { entry, exit }, sequence);
+            }
+            done++;
+            if (done % 16 === 0) report({ stage: "configuration", phase: `Bloc ${prepared + 1} / ${freeBlocks.length} : ${done} / ${pairs.size} configurations`,
+              blocks: { total: freeBlocks.length, prepared }, attempts,
+              progress: 10 + (prepared + done / pairs.size) / freeBlocks.length * 10 });
           }
         }
         finishBlock(block);
@@ -181,12 +267,19 @@
         report({ stage: "configuration", phase: `Entrees et sorties : ${prepared} / ${freeBlocks.length}`,
           blocks: { total: freeBlocks.length, prepared }, attempts, progress: 10 + (freeBlocks.length ? prepared / freeBlocks.length * 10 : 10) });
       }
+      problem.unitNeighbors = findUnitNeighbors(problem);
+      problem.unitEdges = [...problem.unitNeighbors].flatMap(([from, ids]) => ids
+        .filter(to => from >= fixedCount - 1 && to >= fixedCount).map(to => ({ from, to })));
+      problem.unitOrders = blocks.length - fixedCount > 7 && problem.unitEdges.length
+        ? problem.orders.map(order => unitPriorityOrder(problem, order)) : [];
       return problem;
     }
     function transitions(problem, a, b) {
       const key = a.id * problem.blocks.length + b.id, cached = problem.transitionCache.get(key);
       if (cached) { problem.transitionCache.delete(key); problem.transitionCache.set(key, cached); return cached; }
-      const size = a.exits.length * b.entries.length, costs = new Float64Array(size), cuts = new Int8Array(size);
+      const size = a.exits.length * b.entries.length;
+      if (size > 524288) return { costs: null, cuts: null };
+      const costs = new Float64Array(size), cuts = new Int8Array(size);
       for (let x = 0; x < a.exits.length; x++) for (let y = 0; y < b.entries.length; y++) {
         const at = x * b.entries.length + y, distance = model.distance(a.exits[x], b.entries[y]);
         cuts[at] = Number(b.entries[y].cutBefore || distance > problem.threshold);
@@ -212,7 +305,12 @@
         if (previous) {
           const links = transitions(problem, previous, block);
           for (let from = 0; from < scores.length; from++) for (let to = 0; to < e; to++) {
-            const at = from * e + to, score = scores[from] + links.costs[at], cuts = counts[from] + links.cuts[at];
+            const at = from * e + to;
+            const distance = links.costs ? 0 : model.distance(previous.exits[from], block.entries[to]);
+            const cut = links.cuts ? links.cuts[at] : Number(block.entries[to].cutBefore || distance > problem.threshold);
+            const cost = links.costs ? links.costs[at]
+              : !distance || (block.incomingUnit && distance !== 1) ? Infinity : distance + cut * problem.threshold * 3;
+            const score = scores[from] + cost, cuts = counts[from] + cut;
             if (better(score, cuts, entryScores[to], entryCuts[to])) {
               entryScores[to] = score; entryCuts[to] = cuts; if (trace) before[to] = from;
             }
@@ -220,8 +318,9 @@
         }
         const nextScores = new Float64Array(q).fill(Infinity), nextCuts = new Int32Array(q);
         const selected = trace ? new Int32Array(q).fill(-1) : null;
-        for (let from = 0; from < e; from++) for (let to = 0; to < q; to++) {
-          const at = from * q + to, score = entryScores[from] + block.costs[at], cuts = entryCuts[from] + block.cutCounts[at];
+        for (const transfer of block.transfers) {
+          const from = transfer.entry, to = transfer.exit;
+          const score = entryScores[from] + transfer.score, cuts = entryCuts[from] + transfer.cuts;
           if (better(score, cuts, nextScores[to], nextCuts[to])) {
             nextScores[to] = score; nextCuts[to] = cuts; if (trace) selected[to] = from;
           }
@@ -244,7 +343,7 @@
       const path = [], unitLinks = [];
       for (let i = 0; i < order.length; i++) {
         const block = problem.blocks[order[i]], choice = selections[i], at = choice.entry * block.exits.length + choice.exit;
-        const config = block.configs[block.choices[at]], sequence = configSequence(block, config), units = configUnits(sequence, config);
+        const config = block.configs[block.transferByPair.get(at).config], sequence = configSequence(block, config), units = configUnits(sequence, config);
         const oriented = builder.orientUnitPath(sequence, units, problem.constraints, problem.threshold, null, [],
           { first: block.entries[choice.entry].direction, last: block.exits[choice.exit].direction });
         if (!oriented) throw new Error("Sens de couture incompatibles avec la configuration choisie.");
@@ -257,7 +356,7 @@
     }
     function optimizePath(options, report = () => {}) {
       const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
-      let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, lastImprovement = started;
+      let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -282,7 +381,8 @@
         report({ method: "block-optimization", stage, phase, blocks, metrics: bestMetrics, initialMetrics,
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
-          attempts, improvements, restarts, progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
+          attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length,
+          progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
       function consider(order, value) {
@@ -292,7 +392,7 @@
         best = route; bestOrder = order.slice(); bestMetrics = metrics; changed = true; improvements++; lastImprovement = clock();
         emit(); return true;
       }
-      for (const order of problem.orders) consider(order, evaluateOrder(problem, order));
+      for (const order of [...problem.unitOrders, ...problem.orders]) consider(order, evaluateOrder(problem, order));
       // Even a tied incumbent is realized through the validated block transfer matrices.
       const realized = materialize(problem, bestOrder);
       if (compareMetrics(zones.measure(realized.path, problem.threshold), bestMetrics) <= epsilon) {
@@ -310,7 +410,11 @@
           if (depth === permutation.length) {
             const order = prefix.concat(permutation); attempts++; consider(order, evaluateOrder(problem, order, false, false)); emit(); return;
           }
-          for (let i = depth; i < permutation.length; i++) {
+          const previous = depth ? permutation[depth - 1] : prefix.at(-1);
+          const preferred = problem.unitNeighbors.get(previous) || [];
+          const choices = Array.from({ length: permutation.length - depth }, (_, i) => i + depth)
+            .sort((a, b) => Number(preferred.includes(permutation[b])) - Number(preferred.includes(permutation[a])));
+          for (const i of choices) {
             [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]]; visit(depth + 1);
             [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]];
             if (reason === "inactivity") return;
@@ -333,7 +437,21 @@
           return result;
         }
         while (!expired()) {
-          const candidate = mutate(working), next = evaluateOrder(problem, candidate, false, false); attempts++;
+          let candidate = null;
+          if (problem.unitEdges.length && attempts % 4 !== 3) {
+            const edge = problem.unitEdges[unitAttempts % problem.unitEdges.length]; unitAttempts++;
+            const from = working.indexOf(edge.from), to = working.indexOf(edge.to);
+            if (from + 1 !== to) {
+              candidate = working.slice();
+              if (unitAttempts % 2 || from < problem.fixedCount) {
+                candidate.splice(to, 1); candidate.splice(candidate.indexOf(edge.from) + 1, 0, edge.to);
+              } else {
+                candidate.splice(from, 1); candidate.splice(candidate.indexOf(edge.to), 0, edge.from);
+              }
+            }
+          }
+          candidate ||= mutate(working);
+          const next = evaluateOrder(problem, candidate, false, false); attempts++;
           if (better(next.score, next.cuts, value.score, value.cuts)) { working = candidate; value = next; misses = 0; consider(candidate, next); }
           else misses++;
           if (misses >= Math.max(100, freeCount)) {
@@ -346,7 +464,8 @@
       stage = "complete"; phase = reason === "exhaustive" ? "Liaisons optimisees : tous les ordres testes" : "Optimisation terminee : delai sans amelioration atteint";
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
-        stagnationLimitMs: limit, attempts, improvements, restarts, progress: 100, reason, order: bestOrder };
+        stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length,
+        progress: 100, reason, order: bestOrder };
       report(final); return final;
     }
     return { prepareProblem, evaluateOrder, materialize, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
