@@ -322,13 +322,19 @@ async function run() {
     assert.equal(await planner.locator("#optimizedPathButton").innerText(), "Optimiser les blocs");
     assert.match(await planner.locator('label[for="pathStagnationLimit"]').innerText(), /Arret sans amelioration/);
     assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "60000");
-    assert.equal(await planner.locator("#pathStagnationLimit option").evaluateAll(options => Math.min(...options.map(option => Number(option.value)))), 30000);
+    assert.equal(await planner.locator("#pathStagnationLimit option").evaluateAll(options => Math.min(...options.map(option => Number(option.value)))), 10000);
     for (const id of ["pathAlgorithmZoneLimit", "pathAlgorithmZoneInitial", "pathAlgorithmZoneScore"]) {
       assert.equal(await planner.locator(`#${id}`).count(), 0, `${id} is removed from the interface`);
     }
     await planner.locator("#patternJsonFile").setInputFiles({ name: "fixture.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Verification");
     assert.equal(await planner.locator("#pathStagnationLimit").isVisible(), true);
+    await planner.locator("#pathStagnationLimit").selectOption("10000");
+    await planner.evaluate(() => plannerSaveQueue);
+    await planner.reload();
+    await planner.waitForFunction(() => !document.querySelector("main").inert && loadedPattern?.project.name === "Verification");
+    await planner.locator('[data-step="paths"]').click();
+    assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "10000", "The 10-second delay survives reload");
     assert.equal(await planner.locator("#cutThresholdInput").inputValue(), "12");
     assert.equal(await planner.locator("#pathAlgorithmFeedback").isVisible(), false, "No stale search status before a run");
     assert.equal(await planner.locator("#pathDetails").getAttribute("open"), null);
@@ -356,7 +362,7 @@ async function run() {
     await observePathWorkers(planner, true);
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
-    assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].posted[0].stagnationLimitMs), 60000,
+    assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].posted[0].stagnationLimitMs), 10000,
       "Only the test worker transport shortens inactivity; the UI retains its production setting");
     assert.equal(await planner.evaluate(() => pathAlgorithmRunning && activePathOptimizerSnapshot === null), true);
     assert.equal(await planner.locator("#restoreBestPathButton").isEnabled(), false);
@@ -364,6 +370,7 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => [pathAlgorithmRunning, batchRunning, batchPlan.pending.length, batchPlan.results.length]), [false, false, 2, 0]);
     assert.deepEqual(await planner.evaluate(() => currentPath()), constrainedPath, "Stopping before any result does not erase or reorient the old path");
     assert.deepEqual(await planner.evaluate(() => bestPathsByDmc["310"]), constrainedPath);
+    await planner.locator("#pathStagnationLimit").selectOption("60000");
 
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => pathWorkerHarness.workers[1]?.pending.some(message => message.type === "complete"));
