@@ -84,6 +84,8 @@ Pour chaque ordre de blocs teste, une programmation dynamique choisit ensemble l
 
 Le critere principal est le score reel, puis le nombre de coupes et la distance. Les retours dans les anciens ilots ne sont plus prioritaires. Seul un nouveau meilleur resultat relance le delai sans amelioration; une relance aleatoire ou un changement de bloc ne le remet pas a zero. Le suivi affiche la preparation des blocs, les essais, les relances, les ameliorations, le temps ecoule, le delai sans gain et le score total. Le meilleur parcours complet reste affiche pendant la recherche; l'export reste bloque si le parcours est incomplet.
 
+Les raccordements ameliores sont mis en evidence en bleu, avec les anciens liens en gris pointille pendant environ 1,4 seconde. Une coupe modifiee conserve son trait rouge au centre de la surbrillance. Le gain depuis le dernier parcours affiche et la variation des coupes apparaissent au-dessus de la grille. Les diagonales et les trajets internes aux blocs sont plus epais. Les apercus rapides sont regroupes toutes les 750 ms, sans pause dans le moteur de calcul; l'arret et la fin du calcul appliquent immediatement le dernier resultat. Une couche canvas separee s'efface sans redessiner le pattern, deplacer la vue ni modifier les fichiers exportes.
+
 Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les blocs nouvellement construits, pas dans les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 
 Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le moteur actif est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. L'ancien `src/diagonal-optimizer-worker.js` et ses tests restent comme reference mais ne sont plus charges par l'outil 2. Les formats d'import/export restent inchanges.
@@ -98,6 +100,7 @@ Avant de remplacer un ancien etat local IndexedDB, sa copie est gardee sous `mig
 node tests/path-optimizer.test.js
 node tests/orthogonal-path.test.js
 node tests/block-optimizer.test.js
+node tests/path-visuals.test.js
 node tests/github-sync.test.js
 node tests/upgrades.test.js
 node tests/stitch-model.test.js

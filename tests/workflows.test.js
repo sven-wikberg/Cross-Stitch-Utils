@@ -468,9 +468,69 @@ async function run() {
       previousDisplay = display.path;
     }
     assert.ok(await planner.evaluate(old => comparePathPerformance(currentPath(), old) < 0, alternatingBefore), "The alternating fixture receives a better complete path");
+    assert.match(await planner.locator("#pathImprovementGain").innerText(), /^Gain : /,
+      "Retained worker improvements automatically update visual feedback");
+    const feedbackCheck = await planner.evaluate(before => {
+      const wrap = patternCanvas.closest(".pattern-canvas-wrap");
+      wrap.scrollTop = 45;
+      const location = { x: wrap.scrollLeft, y: wrap.scrollTop, pageX: scrollX, pageY: scrollY,
+        width: patternCanvas.width, height: patternCanvas.height };
+      const path = currentPath(), saved = JSON.stringify(path);
+      recordPathImprovement(selectedDmc, before, path);
+      renderPatternGrid();
+      const pixels = pathImprovementCanvas.getContext("2d").getImageData(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height).data;
+      let visible = 0, blue = 0, red = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3]) visible++;
+        if (pixels[i + 3] > 100 && pixels[i] < 40 && pixels[i + 1] > 90 && pixels[i + 2] > 180) blue++;
+        if (pixels[i + 3] > 100 && pixels[i] > 150 && pixels[i + 1] < 100 && pixels[i + 2] < 120) red++;
+      }
+      return { location, after: { x: wrap.scrollLeft, y: wrap.scrollTop, pageX: scrollX, pageY: scrollY,
+        width: patternCanvas.width, height: patternCanvas.height }, visible, blue, red,
+        added: pathImprovement.added.length, removed: pathImprovement.removed.length,
+        unchanged: saved === JSON.stringify(path), gain: pathImprovementGain.textContent,
+        active: pathImprovementCanvas.classList.contains("active"),
+        pointerEvents: getComputedStyle(pathImprovementCanvas).pointerEvents };
+    }, alternatingBefore);
+    assert.deepEqual(feedbackCheck.after, feedbackCheck.location, "Highlighting does not move the view or resize the pattern");
+    assert.ok(feedbackCheck.visible > 0 && feedbackCheck.removed > 0);
+    assert.ok(feedbackCheck.blue > 0 && feedbackCheck.red > 0, "Changed cuts have a blue highlight with a red core");
+    assert.ok(feedbackCheck.unchanged && feedbackCheck.active);
+    assert.equal(feedbackCheck.pointerEvents, "none", "The overlay never intercepts path editing");
+    assert.match(feedbackCheck.gain, /^Gain : /);
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-improvement.png"), fullPage: true });
+    const gainText = await planner.locator("#pathImprovementGain").innerText();
+    await planner.setViewportSize({ width: 390, height: 844 });
+    await planner.evaluate(() => new Promise(requestAnimationFrame));
+    assert.ok(await planner.evaluate(() => {
+      const gain = pathImprovementGain.getBoundingClientRect(), heading = pathImprovementGain.parentElement.getBoundingClientRect();
+      return gain.bottom <= heading.bottom + 1 && document.documentElement.scrollWidth <= innerWidth + 1;
+    }), "The reserved gain area fits without overlap or horizontal page overflow on mobile");
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-improvement-mobile.png"), fullPage: true });
+    await planner.setViewportSize({ width: 1600, height: 1000 });
+    await planner.evaluate(() => new Promise(requestAnimationFrame));
+    const originalPixels = await planner.evaluate(() => patternCanvas.toDataURL());
+    await planner.waitForFunction(() => !pathImprovementCanvas.classList.contains("active"));
+    assert.equal(await planner.evaluate(() => patternCanvas.toDataURL()), originalPixels, "Fading never redraws the base canvas");
+    assert.equal(await planner.locator("#pathImprovementGain").innerText(), gainText, "The last gain remains readable after its highlight fades");
+    assert.ok(await planner.evaluate(() => {
+      clearPendingOptimizerSnapshot();
+      optimizerLastRenderedAt = performance.now();
+      const worker = pathWorkerHarness.workers[0], route = currentPath().map(copyPoint);
+      const previousPhase = activePathOptimizerSnapshot.phase;
+      const message = { ...activePathOptimizerSnapshot, type: "progress", runId: activePathOptimizerRunId,
+        phase: "Dernier apercu groupe", path: route };
+      worker.pending.unshift(message, { ...message, path: undefined, elapsedMs: message.elapsedMs + 100 });
+      worker.deliverNext(); worker.deliverNext();
+      return optimizerSnapshotTimer !== null && optimizerSnapshotFrame === null
+        && activePathOptimizerSnapshot.phase === previousPhase && pendingOptimizerSnapshot.path === route
+        && pendingOptimizerSnapshot.elapsedMs === message.elapsedMs + 100;
+    }), "Rapid previews are coalesced without dropping the newest path when a timer-only update follows");
     const stoppedBest = await planner.evaluate(() => currentPath());
     const stoppedBaseline = await planner.evaluate(() => pathOptimizationBaselinesByDmc[selectedDmc]);
     await planner.locator("#stopPathAlgorithmButton").click();
+    assert.ok(await planner.evaluate(() => optimizerSnapshotTimer === null && pendingOptimizerSnapshot === null),
+      "Stop immediately flushes the latest preview and cancels its pending delay");
     assert.deepEqual(await planner.evaluate(() => currentPath()), stoppedBest);
     assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), stoppedBest);
     assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].terminated), true);

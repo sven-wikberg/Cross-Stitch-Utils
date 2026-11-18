@@ -628,6 +628,46 @@ select:focus {
   font-weight: 900;
 }
 
+.path-canvas-heading {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: 32px 36px;
+  gap: 4px;
+  margin-bottom: 8px;
+  background: #ffffff;
+}
+
+.path-canvas-heading .selected-color-label {
+  position: static;
+  margin: 0;
+}
+
+.path-improvement-gain {
+  display: block;
+  color: #006bb5;
+  font-size: 0.8rem;
+  line-height: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.path-canvas-stage { position: relative; width: max-content; }
+#pathImprovementCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease-out;
+}
+#pathImprovementCanvas.active { opacity: 1; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  #pathImprovementCanvas { transition: none; }
+}
+
 .zoom-controls {
   display: flex;
   align-items: center;

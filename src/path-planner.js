@@ -11,6 +11,8 @@ const resetPathToolButton = document.querySelector("#resetPathToolButton");
 const pathGridStatus = document.querySelector("#pathGridStatus");
 const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
+const pathImprovementCanvas = document.querySelector("#pathImprovementCanvas");
+const pathImprovementGain = document.querySelector("#pathImprovementGain");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
@@ -87,6 +89,9 @@ const DEFAULT_PATH_STAGNATION_LIMIT = 60000;
 const PATH_OBJECTIVE_VERSION = 3;
 const PATH_TIMING_VERSION = 1;
 const pathZoneCache = new WeakMap();
+const pathBlockCache = new WeakMap();
+const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
+const PATH_IMPROVEMENT_HOLD_MS = 1400;
 
 let storedState = migratePlannerState(loadStoredState());
 let loadedPattern = storedState.pattern;
@@ -116,7 +121,11 @@ let activePathOptimizerBestPath = [];
 let pathConstructionSummaries = {};
 let optimizerGridFrame = null;
 let optimizerSnapshotFrame = null;
+let optimizerSnapshotTimer = null;
+let optimizerLastRenderedAt = -Infinity;
 let pendingOptimizerSnapshot = null;
+let pathImprovement = null;
+let pathImprovementTimer = null;
 let constraintsByDmc = storedState.constraintsByDmc || {};
 let batchPlan = storedState.batchPlan || { pending: [], results: [] };
 let batchRunning = false;
@@ -273,6 +282,7 @@ function renderPathTool() {
 
 function renderLoadedPattern() {
   if (!loadedPattern) {
+    clearPathImprovement();
     loadStatus.className = "coverage-status invalid";
     loadStatus.textContent = "Aucun fichier charge.";
     loadedProjectText.textContent = "-";
@@ -351,6 +361,7 @@ function renderPatternGrid() {
 
   drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   drawSelectedPath(context, cellSize);
+  renderPathImprovement(cellSize);
   const zone = pathAlgorithmRunning && activePathOptimizerSnapshot?.stage === "construction"
     && activePathOptimizerSnapshot.zone;
   if (zone?.status === "running" && zone.bounds) {
@@ -382,14 +393,16 @@ function renderPathGridStatus(metrics = activePathOptimizerSnapshot?.metrics) {
 
 function drawSelectedPath(context, cellSize) {
   const path = currentPath(), colors = selectedPathDrawingColors();
+  const blocks = blocksForColor(selectedDmc);
   context.save(); context.lineCap = "round";
   const pixel = hole => ({ x: GRID_RULER_SIZE + hole.x * cellSize, y: GRID_RULER_SIZE + hole.y * cellSize });
   path.forEach((point, index) => {
-    if (index) drawPathSegment(context, path[index - 1], point, cellSize, colors);
+    if (index) drawPathSegment(context, path[index - 1], point, cellSize, colors,
+      PathVisuals.sameBlock(path[index - 1], point, blocks));
   });
   path.forEach((point, index) => {
     const holes = StitchModel.holes(point), from = pixel(holes.start), to = pixel(holes.end);
-    context.strokeStyle = colors.line; context.lineWidth = Math.max(1, cellSize * 0.14);
+    context.strokeStyle = colors.line; context.lineWidth = PathVisuals.strokeWidths(cellSize).front;
     context.setLineDash([]);
     context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
     if (index === path.length - 1) {
@@ -397,6 +410,75 @@ function drawSelectedPath(context, cellSize) {
       context.beginPath(); context.arc(to.x, to.y, Math.max(2, cellSize * 0.16), 0, Math.PI * 2); context.fill();
       context.strokeStyle = "#c63848"; context.strokeRect(from.x - 2, from.y - 2, 4, 4);
     }
+  });
+  context.restore();
+}
+
+function blocksForColor(dmc) {
+  if (!loadedPattern) return new Map();
+  if (!pathBlockCache.has(loadedPattern)) pathBlockCache.set(loadedPattern, new Map());
+  const cache = pathBlockCache.get(loadedPattern);
+  if (!cache.has(dmc)) cache.set(dmc, PathVisuals.blockIndex(cellsForColor(dmc)));
+  return cache.get(dmc);
+}
+
+function clearPathImprovement() {
+  clearTimeout(pathImprovementTimer);
+  pathImprovementTimer = null;
+  pathImprovement = null;
+  pathImprovementCanvas.classList.remove("active");
+  pathImprovementCanvas.width = 1;
+  pathImprovementCanvas.height = 1;
+  pathImprovementGain.textContent = "";
+}
+
+function recordPathImprovement(dmc, before, after) {
+  if (!before.length || before.length !== after.length) return;
+  const previous = pathPerformanceMetrics(before, dmc), next = pathPerformanceMetrics(after, dmc);
+  if (constraintApi.compareMetrics(next, previous) >= 0) return;
+  const scoreGain = Math.max(0, previous.score - next.score), cutsDelta = previous.cuts - next.cuts;
+  if (scoreGain < 1e-8 && cutsDelta <= 0) return;
+  clearTimeout(pathImprovementTimer);
+  pathImprovement = { ...PathVisuals.diffConnections(before, after, blocksForColor(dmc), cutThreshold),
+    pattern: loadedPattern, dmc, route: after, count: after.length, expiresAt: performance.now() + PATH_IMPROVEMENT_HOLD_MS };
+  const amount = scoreGain > 0 && scoreGain < 0.01 ? "< 0,01"
+    : scoreGain.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+  const cuts = Math.abs(cutsDelta);
+  pathImprovementGain.textContent = `Gain : ${amount}${cuts
+    ? ` | ${cuts} coupe${cuts > 1 ? "s" : ""} en ${cutsDelta > 0 ? "moins" : "plus"}` : ""}`;
+  // Only the lightweight overlay fades; no frame loop redraws the pattern or delays the worker.
+  pathImprovementCanvas.classList.add("active");
+  pathImprovementTimer = setTimeout(() => {
+    pathImprovementTimer = null;
+    pathImprovementCanvas.classList.remove("active");
+  }, PATH_IMPROVEMENT_HOLD_MS);
+}
+
+function renderPathImprovement(cellSize) {
+  if (!pathImprovement) return;
+  if (pathImprovement.pattern !== loadedPattern || pathImprovement.dmc !== selectedDmc
+      || pathImprovement.route !== currentPath() || pathImprovement.count !== currentPath().length || activePathStep !== "paths") {
+    clearPathImprovement(); return;
+  }
+  if (pathImprovementCanvas.width !== patternCanvas.width) pathImprovementCanvas.width = patternCanvas.width;
+  if (pathImprovementCanvas.height !== patternCanvas.height) pathImprovementCanvas.height = patternCanvas.height;
+  const context = pathImprovementCanvas.getContext("2d");
+  context.clearRect(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height);
+  if (performance.now() >= pathImprovement.expiresAt) return;
+  context.save(); context.lineCap = "round";
+  const draw = (link, color, width, dash) => {
+    context.strokeStyle = color; context.lineWidth = width; context.setLineDash(dash);
+    context.beginPath();
+    context.moveTo(GRID_RULER_SIZE + link.from.x * cellSize, GRID_RULER_SIZE + link.from.y * cellSize);
+    context.lineTo(GRID_RULER_SIZE + link.to.x * cellSize, GRID_RULER_SIZE + link.to.y * cellSize);
+    context.stroke();
+  };
+  const width = Math.max(2, Math.min(4, cellSize * 0.2));
+  pathImprovement.removed.forEach(link => draw(link, "#687580", Math.max(1.2, width * 0.65), [2, 4]));
+  pathImprovement.added.forEach(link => {
+    draw(link, "rgba(255,255,255,0.95)", width + 2, []);
+    draw(link, "#008be2", width, link.isCut ? pathCutDash(cellSize) : []);
+    if (link.isCut) draw(link, "#c63848", Math.max(1, width * 0.5), pathCutDash(cellSize));
   });
   context.restore();
 }
@@ -442,11 +524,11 @@ function pathPointStyle(cellSize) {
   };
 }
 
-function drawPathSegment(context, fromPoint, toPoint, cellSize, colors) {
+function drawPathSegment(context, fromPoint, toPoint, cellSize, colors, internal = false) {
   const from = StitchModel.holes(fromPoint).end, to = StitchModel.holes(toPoint).start;
   const isCut = isCutJump(fromPoint, toPoint);
   context.strokeStyle = isCut ? "#c63848" : colors.line;
-  context.lineWidth = Math.max(0.6, cellSize * (isCut ? 0.045 : 0.065));
+  context.lineWidth = PathVisuals.strokeWidths(cellSize, isCut, internal).back;
   context.setLineDash(isCut ? pathCutDash(cellSize) : [Math.max(1, cellSize * 0.15), Math.max(1, cellSize * 0.15)]);
   context.beginPath();
   context.moveTo(GRID_RULER_SIZE + from.x * cellSize, GRID_RULER_SIZE + from.y * cellSize);
@@ -654,7 +736,7 @@ function gridCellSize(width, height, availableWidth = 0) {
 }
 
 function availableGridWidth(canvas) {
-  const wrapper = canvas.parentElement;
+  const wrapper = canvas.closest(".pattern-canvas-wrap");
   if (!wrapper) {
     return 0;
   }
@@ -1688,6 +1770,7 @@ function updateConstraints(constraints) {
 }
 
 function invalidateBatchResult(dmc) {
+  if (!pathAlgorithmRunning && pathImprovement?.dmc === dmc) clearPathImprovement();
   delete pathConstructionSummaries[dmc];
   if (!batchPlan.results.some(result => result.dmc === dmc)) return;
   batchPlan.results = batchPlan.results.filter(result => result.dmc !== dmc);
@@ -1905,6 +1988,8 @@ function startAdvancedPathSearch() {
   }
 
   const dmc = selectedDmc;
+  clearPathImprovement();
+  optimizerLastRenderedAt = -Infinity;
   delete pathConstructionSummaries[dmc];
   const currentComplete = isCompletePathForColor(loadedPattern, pathsByDmc, dmc)
     && constraintApi.satisfiesConstraints(pathsByDmc[dmc], constraintsByDmc[dmc]);
@@ -1954,7 +2039,13 @@ function startAdvancedPathSearch() {
       // Timer-only updates must not discard a better path waiting to be rendered.
       pendingOptimizerSnapshot = !message.path && pendingOptimizerSnapshot?.path
         ? { ...message, path: pendingOptimizerSnapshot.path } : message;
-      if (optimizerSnapshotFrame === null) optimizerSnapshotFrame = requestAnimationFrame(flushAdvancedPathSnapshot);
+      if (optimizerSnapshotFrame === null && optimizerSnapshotTimer === null) {
+        const delay = Math.max(0, OPTIMIZER_PREVIEW_INTERVAL_MS - (performance.now() - optimizerLastRenderedAt));
+        optimizerSnapshotTimer = setTimeout(() => {
+          optimizerSnapshotTimer = null;
+          optimizerSnapshotFrame = requestAnimationFrame(flushAdvancedPathSnapshot);
+        }, delay);
+      }
       return;
     }
 
@@ -1983,6 +2074,8 @@ function startAdvancedPathSearch() {
 }
 
 function clearPendingOptimizerSnapshot() {
+  clearTimeout(optimizerSnapshotTimer);
+  optimizerSnapshotTimer = null;
   if (optimizerSnapshotFrame !== null) cancelAnimationFrame(optimizerSnapshotFrame);
   optimizerSnapshotFrame = null;
   pendingOptimizerSnapshot = null;
@@ -1991,7 +2084,10 @@ function clearPendingOptimizerSnapshot() {
 function flushAdvancedPathSnapshot() {
   const snapshot = pendingOptimizerSnapshot;
   clearPendingOptimizerSnapshot();
-  if (snapshot && activePathOptimizerDmc) applyAdvancedPathSnapshot(activePathOptimizerDmc, snapshot);
+  if (snapshot && activePathOptimizerDmc) {
+    optimizerLastRenderedAt = performance.now();
+    applyAdvancedPathSnapshot(activePathOptimizerDmc, snapshot);
+  }
 }
 
 function bestCompletePathForColor(dmc) {
@@ -2024,10 +2120,16 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
     const acceptComplete = complete && constraintApi.satisfiesConstraints(snapshot.path, constraintsByDmc[dmc])
       && (!activePathOptimizerBestPath.length || comparePathPerformance(snapshot.path, activePathOptimizerBestPath, dmc) <= 0);
     const acceptPartial = !complete && snapshot.stage === "construction" && !activePathOptimizerBestPath.length;
-    if (acceptComplete || acceptPartial) {
-      invalidateBatchResult(dmc);
+    const unchanged = snapshot.path.length === (pathsByDmc[dmc]?.length || 0) && snapshot.path.every((point, i) => {
+      const current = pathsByDmc[dmc][i];
+      return point.x === current.x && point.y === current.y && point.diagonal === current.diagonal
+        && point.direction === current.direction && Boolean(point.cutBefore) === Boolean(current.cutBefore);
+    });
+    if (acceptComplete || acceptPartial) invalidateBatchResult(dmc);
+    if ((acceptComplete || acceptPartial) && !unchanged) {
       pathsByDmc[dmc] = snapshot.path.map(copyPoint);
       if (acceptComplete) {
+        recordPathImprovement(dmc, activePathOptimizerBestPath, pathsByDmc[dmc]);
         activePathOptimizerBestPath = pathsByDmc[dmc];
         rememberBestPath(dmc, activePathOptimizerBestPath);
       }
@@ -2245,6 +2347,7 @@ pathStagnationLimit.addEventListener("change", () => {
 });
 
 cutThresholdInput.addEventListener("change", () => {
+  clearPathImprovement();
   const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
   cutThreshold = normalized;
   pathConstructionSummaries = {};
@@ -2334,6 +2437,8 @@ window.addEventListener("resize", () => {
 });
 
 resetPathToolButton.addEventListener("click", () => {
+  clearPendingOptimizerSnapshot();
+  clearPathImprovement();
   if (activePathOptimizerWorker) {
     activePathOptimizerWorker.terminate();
     activePathOptimizerWorker = null;

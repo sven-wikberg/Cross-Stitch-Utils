@@ -1,0 +1,48 @@
+(function (root) {
+  "use strict";
+  function createPathVisuals(model, builder) {
+    function blockIndex(cells) {
+      const index = new Map();
+      builder.orthogonalComponents(cells).forEach((block, id) => {
+        block.forEach(cell => index.set(model.cellKey(cell), id));
+      });
+      return index;
+    }
+    function sameBlock(a, b, index) {
+      const id = index.get(model.cellKey(a));
+      return id !== undefined && id === index.get(model.cellKey(b));
+    }
+    function connections(path, index, threshold) {
+      const result = new Map();
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1], b = path[i], distance = model.distance(a, b);
+        const isCut = Boolean(b.cutBefore) || distance > threshold;
+        if (!isCut && sameBlock(a, b, index) && distance === 1) continue;
+        const from = model.holes(a).end, to = model.holes(b).start;
+        const ends = [`${from.x},${from.y}`, `${to.x},${to.y}`].sort();
+        // Reversing an unchanged physical connection should not flash it again.
+        const key = `${ends[0]}:${ends[1]}:${Number(isCut)}`;
+        result.set(key, { from, to, isCut });
+      }
+      return result;
+    }
+    function diffConnections(before, after, index, threshold) {
+      const oldLinks = connections(before, index, threshold), newLinks = connections(after, index, threshold);
+      return {
+        added: [...newLinks].filter(([key]) => !oldLinks.has(key)).map(([, link]) => link),
+        removed: [...oldLinks].filter(([key]) => !newLinks.has(key)).map(([, link]) => link)
+      };
+    }
+    function strokeWidths(cellSize, isCut = false, internal = false) {
+      return {
+        front: Math.max(1.2, cellSize * 0.2),
+        back: Math.max(isCut ? 0.6 : internal ? 1 : 0.6, cellSize * (isCut ? 0.045 : internal ? 0.12 : 0.065))
+      };
+    }
+    return { blockIndex, sameBlock, connections, diffConnections, strokeWidths };
+  }
+  if (root.StitchModel && root.createOrthogonalPathBuilder) {
+    root.PathVisuals = createPathVisuals(root.StitchModel, root.createOrthogonalPathBuilder(root.StitchModel));
+  }
+  if (typeof module !== "undefined") module.exports = { createPathVisuals };
+})(typeof window === "undefined" ? globalThis : window);
