@@ -63,24 +63,53 @@
       const bins = new Map(), binSize = 8;
       path.forEach((p, i) => {
         if (fixed(i)) return;
-        const key = `${Math.floor(p.x / binSize)},${Math.floor(p.y / binSize)}`;
-        if (!bins.has(key)) bins.set(key, []);
-        bins.get(key).push(i);
+        const x = Math.floor(p.x / binSize), y = Math.floor(p.y / binSize), key = `${x},${y}`;
+        if (!bins.has(key)) bins.set(key, { x, y, indices: [] });
+        bins.get(key).indices.push(i);
       });
-      function nearby(a, b) {
-        const keys = new Set(), steps = Math.ceil(Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / binSize) + 1;
-        if (steps > bins.size * 2) for (const key of bins.keys()) keys.add(key);
-        else for (let s = 0; s <= steps; s++) {
-          const x = Math.floor((a.x + (b.x - a.x) * s / steps) / binSize), y = Math.floor((a.y + (b.y - a.y) * s / steps) / binSize);
-          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) keys.add(`${x + dx},${y + dy}`);
+      function nearby(a, b, link) {
+        const maximum = Math.max(2.5, link.length / 2), visited = new Set(), measured = [];
+        let radius = 2.5, work = 0;
+        const interrupted = () => {
+          if (++work % 64 === 0 && expired()) timedOut = true;
+          return timedOut;
+        };
+        while (true) {
+          if (expired()) { timedOut = true; return []; }
+          const minX = Math.floor((Math.min(a.x, b.x) - radius - 1) / binSize);
+          const maxX = Math.floor((Math.max(a.x, b.x) + radius) / binSize);
+          const minY = Math.floor((Math.min(a.y, b.y) - radius - 1) / binSize);
+          const maxY = Math.floor((Math.max(a.y, b.y) + radius) / binSize);
+          function scan(bin) {
+            if (!bin || visited.has(bin) || bin.x < minX || bin.x > maxX || bin.y < minY || bin.y > maxY) return;
+            // Every hole in this bin lies inside its circumscribed circle.
+            const center = { x: (bin.x + 0.5) * binSize, y: (bin.y + 0.5) * binSize };
+            if (segmentDistance(center, a, b) > radius + binSize * Math.SQRT1_2 + epsilon) return;
+            visited.add(bin);
+            for (const i of bin.indices) {
+              if (interrupted()) return;
+              if (i === link.at || i === link.at - 1) continue;
+              const holes = model.holes(path[i]);
+              const distance = Math.min(segmentDistance(holes.start, a, b), segmentDistance(holes.end, a, b));
+              measured.push({ i, distance });
+            }
+          }
+          const area = (maxX - minX + 1) * (maxY - minY + 1);
+          if (area > bins.size) {
+            for (const bin of bins.values()) { if (interrupted()) break; scan(bin); }
+          } else {
+            for (let y = minY; y <= maxY && !timedOut; y++) for (let x = minX; x <= maxX; x++) {
+              if (interrupted()) break;
+              scan(bins.get(`${x},${y}`));
+            }
+          }
+          if (timedOut) return [];
+          const found = measured.filter(item => item.distance <= radius);
+          if (found.length >= 64 || radius >= maximum) {
+            return found.sort((a, b) => a.distance - b.distance || a.i - b.i).slice(0, 64).map(item => item.i);
+          }
+          radius = Math.min(maximum, radius * 2);
         }
-        const found = [];
-        for (const key of keys) for (const i of bins.get(key) || []) {
-          const holes = model.holes(path[i]);
-          const distance = Math.min(segmentDistance(holes.start, a, b), segmentDistance(holes.end, a, b));
-          if (distance <= 2.5) found.push({ i, distance });
-        }
-        return found.sort((a, b) => a.distance - b.distance || a.i - b.i).slice(0, 64).map(item => item.i);
       }
       function legal(moved, rank) {
         return moved.every(i => {
@@ -108,9 +137,8 @@
       for (const link of links) {
         if (expired()) { timedOut = true; break; }
         const to = link.at, a = model.holes(path[to - 1]).end, b = model.holes(path[to]).start;
-        for (const from of nearby(a, b)) {
+        for (const from of nearby(a, b, link)) {
           if (expired()) { timedOut = true; break; }
-          if (from === to || from === to - 1) continue;
           if (to >= locked) {
             const pieces = from < to ? [[0, from], [from + 1, to], [from, from + 1], [to, path.length]]
               : [[0, to], [from, from + 1], [to, from], [from + 1, path.length]];

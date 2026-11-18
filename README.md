@@ -110,7 +110,7 @@ La couleur selectionnee utilise une couleur de travail commune et reglable au-de
 
 ### Relais au plateau
 
-Au plateau, le moteur global lance une recherche de relais avant de s'arreter. Les liaisons au dos de longueur superieure a la diagonale d'une case sont examinees par cout decroissant, coupes comprises. Un index spatial cherche jusqu'a 64 diagonales dont un trou passe a moins de 2,5 cases du segment. Pour chacune, le moteur teste le deplacement d'une seule diagonale entre les deux extremites, ainsi que son echange avec l'une des extremites. La case n'est jamais dupliquee : son ancien raccordement est repare et inclus dans le score.
+Au plateau, le moteur global lance une recherche de relais avant de s'arreter. Les liaisons au dos de longueur superieure a la diagonale d'une case sont examinees par cout decroissant, coupes comprises. Un index spatial cherche d'abord les diagonales dont un trou passe a 2,5 cases au plus du segment. S'il y en a moins de 64, le rayon double progressivement, sans depasser `max(2,5, longueur de la liaison / 2)`. L'elargissement s'arrete des que 64 candidats sont disponibles ou au plafond ; les 64 plus proches au maximum sont conserves, sans doublons, apres exclusion des diagonales verrouillees et des deux extremites de la liaison. Les mesures deja faites sont reutilisees et la collecte respecte le delai de la passe. Pour chacune, le moteur teste le deplacement d'une seule diagonale entre les deux extremites, ainsi que son echange avec l'une des extremites. La case n'est jamais dupliquee : son ancien raccordement est repare et inclus dans le score.
 
 Des matrices de segments reevaluent tous les sens pour chaque ordre candidat, avec les directions verrouillees. Le parcours complet n'est reconstruit que pour un gain potentiel ; precedences, trous de transition, coupes imposees et score global sont alors verifies. Seules les baisses strictes du score sont retenues. Apres un relais, la recherche habituelle reprend avec un nouveau delai sans amelioration, puis une nouvelle passe de relais commence au prochain plateau. Une passe sans gain termine le calcul. Chaque passe est bornee a 15 secondes au maximum (ou au delai choisi s'il est plus court, avec un minimum technique de 250 ms) ; elle peut donc s'arreter avant d'examiner tous les candidats. Le moteur reste heuristique, pas exhaustif.
 
@@ -153,6 +153,7 @@ node tests/path-zones.test.js
 node tests/path-orientation.test.js
 node tests/spatial-candidates.test.js
 node --test tests/relay-search.test.js
+node --test tests/relay-neighborhood.test.js
 node tests/planner-relay.test.js
 node tests/workflows.test.js
 node --test tests/path-edit-history.test.js
