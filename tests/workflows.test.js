@@ -559,6 +559,8 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => currentPath()), stoppedBest);
     assert.deepEqual(await planner.evaluate(() => bestPathsByDmc[selectedDmc]), stoppedBest);
     assert.equal(await planner.evaluate(() => pathWorkerHarness.workers[0].terminated), true);
+    assert.equal(await planner.evaluate(() => pathSearchCanvas.classList.contains("active")), false,
+      "Stopping clears the examined regions without removing the retained improvement");
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true,
       "Stopping preserves the last highlighted improvement");
     await planner.evaluate(() => plannerSaveQueue);
@@ -759,6 +761,15 @@ async function run() {
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "bridge.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(bridge)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Small block bridges");
+    const originalBridgeExport = await planner.evaluate(() => buildPathExport());
+    await planner.locator("#pathWorkColor").evaluate(input => {
+      input.value = "#007fa3"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const workDrawing = await planner.evaluate(() => selectedPathDrawingColors());
+    await planner.locator('[data-dmc="321"]').click();
+    assert.deepEqual(await planner.evaluate(() => selectedPathDrawingColors()), workDrawing, "All DMC colors use the same chosen work style");
+    await planner.locator('[data-dmc="310"]').click();
+    assert.deepEqual(await planner.evaluate(() => buildPathExport()), originalBridgeExport, "Display colors never change DMC data or export settings");
     await observePathWorkers(planner, true, 300);
     await planner.locator("#optimizedPathButton").click();
     await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
@@ -771,12 +782,41 @@ async function run() {
     assert.match(await planner.locator("#pathAlgorithmDistance").innerText(), /Insertion de petits blocs/);
     assert.equal(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).score), 35);
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
+    assert.ok(await planner.evaluate(() => pathSearchCanvas.classList.contains("active") && scoreHistory.length >= 2));
+    assert.match(await planner.locator("#pathSearchActivity").innerText(), /Insertion examinee/);
+    assert.ok(await planner.evaluate(() => pathScoreHistory.getContext("2d").getImageData(0, 0, 240, 40).data
+      .some((value, i, pixels) => i % 4 === 0 && value < 40 && pixels[i + 1] > 100 && pixels[i + 2] < 150 && pixels[i + 3] > 100)),
+      "The score chart contains a visible improvement trace");
+    assert.ok(await planner.evaluate(() => pathSearchCanvas.getContext("2d").getImageData(0, 0, pathSearchCanvas.width, pathSearchCanvas.height).data
+      .some((value, i, pixels) => i % 4 === 0 && value > 140 && pixels[i + 1] > 50 && pixels[i + 2] < 60 && pixels[i + 3] > 100)),
+      "The actual inspected regions have visible orange pixels");
+    const beforeProbeOnly = await planner.evaluate(() => ({ pixels: patternCanvas.toDataURL(), path: currentPath(),
+      scroll: [patternCanvas.parentElement.parentElement.scrollLeft, patternCanvas.parentElement.parentElement.scrollTop] }));
+    await planner.evaluate(() => applyAdvancedPathSnapshot(selectedDmc, { ...activePathOptimizerSnapshot, path: undefined,
+      activity: { kind: "order", regions: [{ minX: 3, minY: 1, maxX: 5, maxY: 3 }] } }));
+    assert.deepEqual(await planner.evaluate(() => ({ pixels: patternCanvas.toDataURL(), path: currentPath(),
+      scroll: [patternCanvas.parentElement.parentElement.scrollLeft, patternCanvas.parentElement.parentElement.scrollTop] })), beforeProbeOnly,
+      "Activity-only previews do not redraw the base pattern, edit the best path or move the view");
+    assert.equal(await planner.locator("#pathSearchCanvas").evaluate(canvas => getComputedStyle(canvas).pointerEvents), "none");
+    await planner.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await planner.locator("#pathSearchCanvas").evaluate(canvas => getComputedStyle(canvas).animationName), "none");
+    await planner.emulateMedia({ reducedMotion: "no-preference" });
     assert.ok(await planner.evaluate(() => pathImprovementCanvas.getContext("2d")
       .getImageData(0, 0, pathImprovementCanvas.width, pathImprovementCanvas.height).data.some((value, i) => i % 4 === 3 && value > 0)),
       "Inserted connections draw visible highlight pixels");
     assert.deepEqual(await planner.evaluate(() => ({ x: scrollX, y: scrollY, width: patternCanvas.width, height: patternCanvas.height })), viewBeforeInsertion,
       "An insertion preview does not move or resize the view");
     await planner.screenshot({ path: path.join(screenshotDirectory, "planner-small-block-insertion.png"), fullPage: true });
+    await planner.setViewportSize({ width: 390, height: 844 });
+    await planner.evaluate(() => new Promise(requestAnimationFrame));
+    assert.ok(await planner.evaluate(() => {
+      const heading = document.querySelector(".path-canvas-heading").getBoundingClientRect();
+      return [pathWorkColor, pathImprovementGain, pathSearchActivity, pathScoreHistory].every(element => {
+        const rect = element.getBoundingClientRect(); return rect.right <= heading.right + 1 && rect.bottom <= heading.bottom + 1;
+      }) && document.documentElement.scrollWidth <= innerWidth + 1;
+    }), "Work color, live status and chart fit the mobile heading");
+    await planner.screenshot({ path: path.join(screenshotDirectory, "planner-search-mobile.png"), fullPage: true });
+    await planner.setViewportSize({ width: 1600, height: 1000 });
     const pendingInsertionMessages = await planner.evaluate(() => pathWorkerHarness.workers[0].pending.length);
     await deliverWorkerMessages(planner, 0, pendingInsertionMessages - 1);
     const bridgeResult = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
@@ -788,11 +828,14 @@ async function run() {
       assert.equal(indices.at(-1) - indices[0], 3, "Each inserted two-cross block remains contiguous and complete");
     }
     assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
+    assert.equal(await planner.evaluate(() => pathSearchCanvas.classList.contains("active")), false, "Finishing clears trial regions, not retained gains");
+    assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
     await planner.evaluate(() => plannerSaveQueue);
     await planner.reload();
     await planner.waitForFunction(() => !document.querySelector("main").inert);
     await planner.locator('[data-step="paths"]').click();
     assert.deepEqual(await planner.evaluate(() => currentPath()), bridgeResult.path);
+    assert.equal(await planner.locator("#pathWorkColor").inputValue(), "#007fa3", "The work color survives reload independently of the project");
     await observePathWorkers(planner);
     await planner.locator("#optimizedPathButton").click();
     await planner.waitForFunction(() => !pathAlgorithmRunning && pathWorkerHarness.messages.some(message => message.type === "complete"));

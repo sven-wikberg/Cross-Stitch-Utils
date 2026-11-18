@@ -13,6 +13,10 @@ const selectedColorLabel = document.querySelector("#selectedColorLabel");
 const patternCanvas = document.querySelector("#patternCanvas");
 const pathImprovementCanvas = document.querySelector("#pathImprovementCanvas");
 const pathImprovementGain = document.querySelector("#pathImprovementGain");
+const pathSearchCanvas = document.querySelector("#pathSearchCanvas");
+const pathSearchActivity = document.querySelector("#pathSearchActivity");
+const pathScoreHistory = document.querySelector("#pathScoreHistory");
+const pathWorkColor = document.querySelector("#pathWorkColor");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
@@ -91,6 +95,10 @@ const PATH_TIMING_VERSION = 1;
 const pathZoneCache = new WeakMap();
 const pathBlockCache = new WeakMap();
 const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
+const WORK_COLOR_STORAGE_KEY = "cross-stitch-path-work-color";
+let workColor = PathVisuals.workPalette(localStorage.getItem(WORK_COLOR_STORAGE_KEY)).color;
+let scoreHistory = [], scoreHistoryDmc = null;
+pathWorkColor.value = workColor;
 
 let storedState = migratePlannerState(loadStoredState());
 let loadedPattern = storedState.pattern;
@@ -312,6 +320,7 @@ function renderPatternGrid() {
     selectedColorLabel.textContent = "Aucune couleur selectionnee";
     pathGridStatus.className = "coverage-status invalid";
     pathGridStatus.textContent = "Charge un pattern pour afficher la grille.";
+    renderSearchVisuals();
     return;
   }
 
@@ -326,9 +335,12 @@ function renderPatternGrid() {
     availableGridWidth(patternCanvas) - GRID_RULER_SIZE
   );
   const selectedColor = colorByDmc.get(selectedDmc);
+  const workPalette = PathVisuals.workPalette(workColor);
   selectedColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
+  selectedColorLabel.style.color = workPalette.line;
+  selectedColorLabel.style.backgroundColor = workPalette.fill;
   patternCanvas.width = GRID_RULER_SIZE + loadedPattern.grid.width * cellSize;
   patternCanvas.height = GRID_RULER_SIZE + loadedPattern.grid.height * cellSize;
   context.clearRect(0, 0, patternCanvas.width, patternCanvas.height);
@@ -340,7 +352,7 @@ function renderPatternGrid() {
     if (cell.empty) {
       context.fillStyle = "#ffffff";
     } else if (cell.dmc === selectedDmc) {
-      context.fillStyle = color?.hex || "#d9dddd";
+      context.fillStyle = workPalette.fill;
     } else {
       context.fillStyle = mutedHex(color?.hex || "#d9dddd");
     }
@@ -360,18 +372,7 @@ function renderPatternGrid() {
   drawGridRulers(context, loadedPattern.grid.width, loadedPattern.grid.height, cellSize);
   drawSelectedPath(context, cellSize);
   renderPathImprovement(cellSize);
-  const zone = pathAlgorithmRunning && activePathOptimizerSnapshot?.stage === "construction"
-    && activePathOptimizerSnapshot.zone;
-  if (zone?.status === "running" && zone.bounds) {
-    const { minX, minY, maxX, maxY } = zone.bounds;
-    const x = GRID_RULER_SIZE + minX * cellSize, y = GRID_RULER_SIZE + minY * cellSize;
-    context.save();
-    context.strokeStyle = "#ffffff"; context.lineWidth = 5;
-    context.strokeRect(x, y, (maxX - minX) * cellSize, (maxY - minY) * cellSize);
-    context.strokeStyle = "#007ea8"; context.lineWidth = 2;
-    context.strokeRect(x, y, (maxX - minX) * cellSize, (maxY - minY) * cellSize);
-    context.restore();
-  }
+  renderSearchVisuals();
 
   renderPathColorLegend();
   renderPathBuilder();
@@ -474,27 +475,84 @@ function renderPathImprovement(cellSize) {
 }
 
 function selectedPathDrawingColors() {
-  const selectedColor = loadedPattern?.colors.find((color) => color.dmc === selectedDmc);
-  const parsed = parseHexColor(selectedColor?.hex || "");
-  const isDark = parsed ? colorLuminance(parsed) < 105 : false;
-
-  if (isDark) {
-    return {
-      line: "#ffffff",
-      cutLine: "#ffb3bd",
-      pointFill: "#ffffff",
-      pointStroke: "#111517",
-      currentPointFill: "#ffedf0"
-    };
-  }
-
+  const palette = PathVisuals.workPalette(workColor);
   return {
-    line: "#222426",
+    line: palette.line,
     cutLine: "#b44b57",
-    pointFill: "#222426",
-    pointStroke: "#222426",
+    pointFill: palette.line,
+    pointStroke: palette.line,
     currentPointFill: "#ffffff"
   };
+}
+
+function trackSearchScore(snapshot) {
+  if (!Number.isFinite(snapshot.metrics?.score) || snapshot.stage === "construction") return;
+  const score = snapshot.metrics.score, last = scoreHistory.at(-1);
+  if (last && score >= last.score - 1e-8) return;
+  scoreHistory.push({ elapsed: snapshot.elapsedMs || 0, score });
+  if (scoreHistory.length > 240) scoreHistory = scoreHistory.filter((_, i) => i === 0 || i % 2 || i === scoreHistory.length - 1);
+}
+
+function renderScoreHistory() {
+  const context = pathScoreHistory.getContext("2d"), width = pathScoreHistory.width, height = pathScoreHistory.height;
+  context.clearRect(0, 0, width, height);
+  const history = scoreHistoryDmc === selectedDmc ? scoreHistory : [];
+  context.strokeStyle = "#dce5e3"; context.lineWidth = 1;
+  context.beginPath(); context.moveTo(3, height - 4); context.lineTo(width - 3, height - 4); context.stroke();
+  pathScoreHistory.setAttribute("aria-label", "Evolution du meilleur score");
+  if (!history.length) return;
+  const max = history[0].score, min = history.at(-1).score, span = Math.max(max - min, 1e-8);
+  const elapsed = Math.max(1, history.at(-1).elapsed - history[0].elapsed);
+  const points = history.map(p => ({ x: 4 + (width - 8) * (p.elapsed - history[0].elapsed) / elapsed,
+    y: max === min ? height / 2 : 4 + (height - 8) * (max - p.score) / span }));
+  context.strokeStyle = "#008b66"; context.lineWidth = 2.5; context.lineJoin = "round";
+  context.beginPath(); context.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(point => context.lineTo(point.x, point.y)); context.stroke();
+  const last = points.at(-1); context.fillStyle = "#008b66";
+  context.beginPath(); context.arc(last.x, last.y, 3, 0, Math.PI * 2); context.fill();
+  pathScoreHistory.setAttribute("aria-label", `Meilleur score : ${formatMetric(max)} vers ${formatMetric(min)}`);
+}
+
+function renderSearchVisuals() {
+  renderScoreHistory();
+  const snapshot = pathAlgorithmRunning && activePathOptimizerDmc === selectedDmc && activePathStep === "paths"
+    ? activePathOptimizerSnapshot : null;
+  const activity = snapshot?.activity || (snapshot?.stage === "construction" && snapshot.zone?.bounds
+    ? { kind: "construction", regions: [snapshot.zone.bounds] } : null);
+  const labels = { construction: "Construction du bloc", configuration: "Entrees et sorties examinees", order: "Liaisons entre blocs examinees",
+    insertion: `Insertion examinee : ${activity?.crossCount || 1} croix` };
+  pathSearchActivity.textContent = snapshot ? labels[activity?.kind] || "Recherche en cours"
+    : scoreHistoryDmc === selectedDmc && scoreHistory.length ? "Meilleur parcours conserve" : "Recherche inactive";
+  if (!snapshot || !activity?.regions?.length || !loadedPattern) {
+    pathSearchCanvas.classList.remove("active");
+    pathSearchCanvas.getContext("2d").clearRect(0, 0, pathSearchCanvas.width, pathSearchCanvas.height);
+    return;
+  }
+  if (pathSearchCanvas.width !== patternCanvas.width) pathSearchCanvas.width = patternCanvas.width;
+  if (pathSearchCanvas.height !== patternCanvas.height) pathSearchCanvas.height = patternCanvas.height;
+  const context = pathSearchCanvas.getContext("2d"), cellSize = (patternCanvas.width - GRID_RULER_SIZE) / loadedPattern.grid.width;
+  context.clearRect(0, 0, pathSearchCanvas.width, pathSearchCanvas.height);
+  context.save(); context.beginPath();
+  context.rect(GRID_RULER_SIZE, GRID_RULER_SIZE, patternCanvas.width - GRID_RULER_SIZE, patternCanvas.height - GRID_RULER_SIZE); context.clip();
+  const regions = activity.regions.filter(b => b && [b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite)).slice(0, 3);
+  const centers = regions.map(b => ({ x: GRID_RULER_SIZE + (b.minX + b.maxX) * cellSize / 2,
+    y: GRID_RULER_SIZE + (b.minY + b.maxY) * cellSize / 2 }));
+  if (centers.length > 1) {
+    context.strokeStyle = "#d48700"; context.lineWidth = 2; context.setLineDash([6, 5]);
+    context.beginPath(); context.moveTo(centers[0].x, centers[0].y);
+    centers.slice(1).forEach(p => context.lineTo(p.x, p.y)); context.stroke();
+  }
+  regions.forEach((b, i) => {
+    const x = GRID_RULER_SIZE + b.minX * cellSize, y = GRID_RULER_SIZE + b.minY * cellSize;
+    const width = (b.maxX - b.minX) * cellSize, height = (b.maxY - b.minY) * cellSize;
+    context.fillStyle = "rgba(245,166,35,0.14)"; context.fillRect(x, y, width, height);
+    context.setLineDash([]); context.strokeStyle = "#ffffff"; context.lineWidth = 5; context.strokeRect(x, y, width, height);
+    context.setLineDash([6, 4]); context.strokeStyle = "#b77300"; context.lineWidth = 2.5; context.strokeRect(x, y, width, height);
+    context.setLineDash([]); context.fillStyle = "#9b5e00"; context.fillRect(x + 2, y + 2, 18, 18);
+    context.fillStyle = "#ffffff"; context.font = "bold 11px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillText(String(i + 1), x + 11, y + 11);
+  });
+  context.restore(); pathSearchCanvas.classList.add("active");
 }
 
 function pathPointStyle(cellSize) {
@@ -1827,6 +1885,7 @@ patternJsonFileInput.addEventListener("change", async () => {
 
   try {
     const imported = await readSelectedPathInput(file);
+    scoreHistory = []; scoreHistoryDmc = null;
     loadedPattern = imported.pattern;
     pathsByDmc = imported.pathsByDmc;
     constraintsByDmc = imported.constraintsByDmc || {};
@@ -1984,6 +2043,7 @@ function startAdvancedPathSearch() {
   }
 
   const dmc = selectedDmc;
+  scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
   delete pathConstructionSummaries[dmc];
@@ -1996,6 +2056,7 @@ function startAdvancedPathSearch() {
     rememberBestPath(dmc, pathsByDmc[dmc]);
   }
   const startingPath = bestCompletePathForColor(dmc);
+  if (startingPath.length) trackSearchScore({ stage: "search", elapsedMs: 0, metrics: pathPerformanceMetrics(startingPath, dmc) });
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
     pathOptimizationBaselinesByDmc[dmc] = pathPerformanceMetrics(startingPath, dmc).score;
   }
@@ -2139,6 +2200,7 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
   activePathOptimizerSnapshot = { ...snapshot,
     initialMetrics: snapshot.initialMetrics || previousSnapshot?.initialMetrics,
     metrics: pathChanged || !previousSnapshot ? pathPerformanceMetrics(pathsByDmc[dmc] || [], dmc) : previousSnapshot.metrics };
+  trackSearchScore(activePathOptimizerSnapshot);
   pathProgress.export = false;
 
   if (pathChanged) {
@@ -2151,6 +2213,7 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
     });
   }
   if (baselineChanged && !pathChanged) renderPathMetrics();
+  if (!pathChanged) renderSearchVisuals();
   if (activePathOptimizerNeedsSave && snapshot.elapsedMs - activePathOptimizerLastSavedAt >= 3000) {
     activePathOptimizerLastSavedAt = snapshot.elapsedMs;
     activePathOptimizerNeedsSave = false;
@@ -2342,6 +2405,12 @@ pathStagnationLimit.addEventListener("change", () => {
   showPathSavedStatus();
 });
 
+pathWorkColor.addEventListener("input", () => {
+  workColor = PathVisuals.workPalette(pathWorkColor.value).color;
+  try { localStorage.setItem(WORK_COLOR_STORAGE_KEY, workColor); } catch { /* Display preferences must not block path editing. */ }
+  renderPatternGrid();
+});
+
 cutThresholdInput.addEventListener("change", () => {
   clearPathImprovement();
   const normalized = normalizeCutThreshold(cutThresholdInput.value) || DEFAULT_CUT_THRESHOLD;
@@ -2433,6 +2502,7 @@ window.addEventListener("resize", () => {
 });
 
 resetPathToolButton.addEventListener("click", () => {
+  scoreHistory = []; scoreHistoryDmc = null;
   clearPendingOptimizerSnapshot();
   clearPathImprovement();
   if (activePathOptimizerWorker) {

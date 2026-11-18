@@ -8,6 +8,8 @@ L'idee est de construire une boite a outils personnelle, synchronisee avec GitHu
 
 Les outils doivent rester faciles a utiliser au quotidien : ouvrir l'application, utiliser l'outil voulu, puis fermer simplement. La cible principale est un usage sur PC.
 
+La [feuille de route de l'outil 2](ROADMAP.md) regroupe les ameliorations prevues et leur avancement.
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.
@@ -93,6 +95,8 @@ Le suivi existant affiche la phase d'insertion de petits blocs, le score global 
 Le critere principal est le score reel, puis le nombre de coupes et la distance. Les retours dans les anciens ilots ne sont plus prioritaires. Seul un nouveau meilleur resultat relance le delai sans amelioration; une relance aleatoire ou un changement de bloc ne le remet pas a zero. Le suivi affiche la preparation des blocs, les essais, les relances, les ameliorations, le temps ecoule, le delai sans gain et le score total. Le meilleur parcours complet reste affiche pendant la recherche; l'export reste bloque si le parcours est incomplet.
 
 Les raccordements ameliores sont mis en evidence en bleu, avec les anciens liens en gris pointille, jusqu'a la prochaine amelioration. La derniere surbrillance reste visible a l'arret du calcul; changer de couleur, modifier le chemin ou relancer la recherche l'efface. Une coupe modifiee conserve son trait rouge au centre de la surbrillance. Le gain depuis le dernier parcours affiche et la variation des coupes apparaissent au-dessus de la grille. Les diagonales et les trajets internes aux blocs sont plus epais; les liaisons entre blocs utilisent un trait fonce plus marque avec un contour clair. Les coupes restent fines, rouges et pointillees. Les apercus rapides sont regroupes toutes les 750 ms, sans pause dans le moteur de calcul; l'arret et la fin du calcul appliquent immediatement le dernier resultat. Une couche canvas separee conserve la surbrillance sans animation continue, sans deplacer la vue ni modifier les fichiers exportes.
+
+La couleur selectionnee utilise une couleur de travail commune et reglable au-dessus de la grille, avec fond clair et diagonales contrastees. Ce choix est conserve localement dans le navigateur, sans modifier la palette DMC ni les fichiers exportes. Pendant le calcul, une couche distincte signale en orange jusqu'a trois regions du dernier essai observe (construction, entrees/sorties, ordre ou insertion). Les cadres et leur liaison indicative representent les regions examinees, pas un nouveau chemin accepte. Le meilleur parcours reste affiche dessous. Une pulsation CSS respecte la preference de reduction des animations; aucun recalcul de chemin ni dessin continu de la grille n'est necessaire. La courbe du meilleur score conserve au plus 240 echantillons de la recherche courante; elle n'est pas exportee. Les essais orange disparaissent a l'arret, alors que le dernier gain bleu reste visible.
 
 Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les portions de blocs nouvellement construites et non modifiees, pas dans les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 

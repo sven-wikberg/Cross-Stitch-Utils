@@ -7,6 +7,17 @@ const builder = createOrthogonalPathBuilder(model);
 const visuals = createPathVisuals(model, builder);
 const cell = (x, y = 0) => ({ x, y });
 
+test("a work palette is independent of DMC colors and keeps light fills with dark thread strokes", () => {
+  assert.equal(visuals.workPalette("invalid").color, "#157f83");
+  assert.equal(visuals.workPalette("#AABBCC").color, "#aabbcc");
+  for (const color of ["#ffffff", "#000000", "#ff0000", "#00ff00", "#0000ff", "#157f83"]) {
+    const palette = visuals.workPalette(color);
+    for (const key of ["fill", "line"]) assert.match(palette[key], /^#[0-9a-f]{6}$/);
+    for (const start of [1, 3, 5]) assert.ok(parseInt(palette.fill.slice(start, start + 2), 16)
+      > parseInt(palette.line.slice(start, start + 2), 16));
+  }
+});
+
 test("visual blocks use side adjacency only and do not change the cells", () => {
   const cells = [cell(0), cell(1), cell(2, 1), cell(8)], before = structuredClone(cells);
   const index = visuals.blockIndex(cells);

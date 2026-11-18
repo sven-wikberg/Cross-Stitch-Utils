@@ -634,11 +634,32 @@ select:focus {
   left: 0;
   z-index: 2;
   display: grid;
-  grid-template-rows: 32px 36px;
-  gap: 4px;
+  grid-template-rows: 36px 58px 20px;
+  gap: 6px;
   margin-bottom: 8px;
   background: #ffffff;
 }
+
+.path-canvas-toolbar, .path-work-color, .path-search-legend, .path-search-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.path-canvas-toolbar { justify-content: space-between; min-width: 0; }
+.path-work-color { margin: 0; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+.path-work-color input[type="color"] { width: 36px; height: 30px; padding: 2px; cursor: pointer; }
+.path-search-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 32%); gap: 12px; align-items: center; }
+.path-search-reading { min-width: 0; }
+.path-search-activity { display: block; color: #935c00; font-size: 0.75rem; line-height: 17px; overflow-wrap: anywhere; }
+.path-score-chart { min-width: 0; }
+.path-score-chart > span { display: block; color: var(--muted); font-size: 0.7rem; line-height: 15px; }
+#pathScoreHistory { display: block; width: 100%; height: 40px; }
+.path-search-legend { gap: 16px; font-size: 0.7rem; color: var(--muted); }
+.path-search-legend span { gap: 5px; white-space: nowrap; }
+.path-search-legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.legend-search { color: #d48700; border-top-style: dashed !important; }
+.legend-gain { color: #008be2; }
+.legend-cut { color: #c63848; border-top-width: 2px !important; border-top-style: dashed !important; }
 
 .path-canvas-heading .selected-color-label {
   position: static;
@@ -656,13 +677,23 @@ select:focus {
 }
 
 .path-canvas-stage { position: relative; width: max-content; }
-#pathImprovementCanvas {
+#pathImprovementCanvas, #pathSearchCanvas {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0;
 }
 #pathImprovementCanvas.active { opacity: 1; }
+#pathSearchCanvas.active { opacity: 1; animation: search-focus 1.4s ease-in-out infinite alternate; }
+@keyframes search-focus { from { opacity: 0.65; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #pathSearchCanvas.active { animation: none; } }
+@media (max-width: 600px) {
+  .path-canvas-heading { grid-template-rows: 64px 80px 20px; }
+  .path-canvas-toolbar { flex-wrap: wrap; align-content: center; gap: 4px; }
+  .path-work-color { margin-left: auto; }
+  .path-search-summary { grid-template-columns: minmax(0, 1fr) 95px; gap: 8px; }
+  .path-search-legend { gap: 12px; }
+}
 
 .zoom-controls {
   display: flex;

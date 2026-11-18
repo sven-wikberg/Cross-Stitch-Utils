@@ -15,6 +15,11 @@
       }
       return bounds;
     }
+    function orderActivity(problem, before, after) {
+      const ids = new Set();
+      for (let i = 0; i < after.length && ids.size < 3; i++) if (before[i] !== after[i]) ids.add(after[i]);
+      return { kind: "order", regions: [...ids].map(id => problem.blocks[id].bounds).filter(Boolean) };
+    }
     function normalized(point, cuts) {
       return { ...model.copy(point), ...(cuts.has(model.key(point)) ? { cutBefore: true } : {}) };
     }
@@ -367,6 +372,7 @@
             }
             done++;
             if (done % 16 === 0) report({ stage: "configuration", phase: `Bloc ${prepared + 1} / ${freeBlocks.length} : ${done} / ${pairs.size} configurations`,
+              activity: { kind: "configuration", regions: [block.bounds] },
               blocks: { total: freeBlocks.length, prepared }, attempts,
               progress: 10 + (prepared + done / pairs.size) / freeBlocks.length * 10 });
           }
@@ -374,6 +380,7 @@
         finishBlock(block);
         if (!block.anchor) prepared++;
         report({ stage: "configuration", phase: `Entrees et sorties : ${prepared} / ${freeBlocks.length}`,
+          activity: { kind: "configuration", regions: block.bounds ? [block.bounds] : [] },
           blocks: { total: freeBlocks.length, prepared }, attempts, progress: 10 + (freeBlocks.length ? prepared / freeBlocks.length * 10 : 10) });
       }
       problem.unitNeighbors = findUnitNeighbors(problem);
@@ -467,6 +474,7 @@
       const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let insertionAttempts = 0, insertions = 0, insertionPending = true;
+      let activity = null;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -489,6 +497,7 @@
         if (!force && now - lastReport < 150) return;
         lastReport = now;
         report({ method: "block-optimization", stage, phase, blocks, metrics: bestMetrics, initialMetrics,
+          activity: stage === "search" ? activity?.() || null : null,
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
@@ -524,6 +533,10 @@
           insertionPending = false;
           for (const candidate of blockInsertions(problem, best)) {
             if (expired()) { finish(); return; }
+            const probePath = best.path;
+            activity = () => ({ kind: "insertion", crossCount: candidate.crossCount,
+              regions: [boundsOf(probePath.slice(candidate.from, candidate.end)),
+                boundsOf(probePath.slice(candidate.to - 1, candidate.to + 1))] });
             attempts++; insertionAttempts++;
             phase = `Insertion de petits blocs : ${insertionAttempts} essais, ${insertions} ameliorations`;
             if (candidate.score < bestMetrics.score - epsilon) {
@@ -551,6 +564,8 @@
           if (expired()) { reason = "inactivity"; return; }
           if (depth === permutation.length) {
             const order = prefix.concat(permutation); attempts++;
+            const before = bestOrder;
+            activity = () => orderActivity(problem, before, order);
             if (consider(order, evaluateOrder(problem, order, false, false))) tryInsertions();
             emit(); return;
           }
@@ -595,6 +610,8 @@
             }
           }
           candidate ||= mutate(working);
+          const before = working;
+          activity = () => orderActivity(problem, before, candidate);
           const next = evaluateOrder(problem, candidate, false, false); attempts++;
           if (better(next.score, next.cuts, value.score, value.cuts)) {
             working = candidate; value = next; misses = 0;
