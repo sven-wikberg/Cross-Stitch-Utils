@@ -4,7 +4,8 @@ Chaque outil garde sa page, son controleur et son stockage independants.
 
 - `app.js` et `group-operations.js` : import du pattern, decoupage et association des couleurs.
 - `path-planner.js` : interface de planification, edition et suivi du calcul.
-- `block-optimizer-worker.js` : moteur d'optimisation actif et unique point d'entree du worker.
+- `block-optimizer-worker.js` : moteur d'optimisation globale par blocs.
+- `region-optimizer-worker.js` : selection rectangulaire et optimisation de ses passages, avec exterieur fige et acceptation au score global uniquement.
 - `orthogonal-path-worker.js` : construction des blocs, retours unitaires, orientations et index spatial utilises par ce moteur.
 - `path-visuals.js`, `path-viewport.js`, `path-edit-history.js` : rendu, inspection et historique de l'outil 2.
 - `stitch-progress.js` : suivi de la broderie dans l'outil 3.

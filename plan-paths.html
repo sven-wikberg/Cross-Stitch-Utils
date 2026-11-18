@@ -57,6 +57,8 @@
             <div class="algorithm-group">
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
+              <button id="optimizeRegionButton" class="secondary-button" type="button" disabled>Optimiser la selection</button>
+              <p id="pathRegionStatus" class="compact-status" role="status" aria-live="polite">Aucune zone selectionnee.</p>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
@@ -218,7 +220,9 @@
                   <div class="path-segmented" role="group" aria-label="Interaction avec la grille">
                     <button id="pathDrawMode" class="secondary-button path-view-button" type="button" title="Tracer" aria-label="Tracer" aria-pressed="true"><img src="assets/icons/pencil.svg" alt=""></button>
                     <button id="pathPanMode" class="secondary-button path-view-button" type="button" title="Deplacer" aria-label="Deplacer" aria-pressed="false"><img src="assets/icons/hand.svg" alt=""></button>
+                    <button id="pathSelectMode" class="secondary-button path-view-button" type="button" title="Selection rectangulaire" aria-label="Selection rectangulaire" aria-pressed="false"><img src="assets/icons/square-dashed.svg" alt=""></button>
                   </div>
+                  <button id="pathClearSelection" class="secondary-button path-view-button" type="button" title="Effacer la selection" aria-label="Effacer la selection" disabled><img src="assets/icons/x.svg" alt=""></button>
                   <div class="path-segmented" role="group" aria-label="Comparaison du parcours">
                     <button id="pathViewBefore" class="secondary-button" type="button" aria-pressed="false" disabled>Avant</button>
                     <button id="pathViewAfter" class="secondary-button" type="button" aria-pressed="true">Apres</button>
@@ -314,6 +318,7 @@
     <script src="src/stitch-model.js"></script>
     <script src="src/orthogonal-path-worker.js"></script>
     <script src="src/block-optimizer-worker.js"></script>
+    <script src="src/region-optimizer-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>

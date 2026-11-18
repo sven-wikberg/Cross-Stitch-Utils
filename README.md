@@ -118,9 +118,21 @@ Avant / Apres compare le parcours complet present au debut de la derniere recher
 
 Les icones sont distribuees localement depuis Lucide (`assets/icons/`, licences ISC et MIT incluses) ; ces commandes fonctionnent aussi depuis `file://`, sans acces reseau.
 
+### Optimiser une selection
+
+Le bouton rectangle pointille active la selection par glisser sur les cases. Ses coins permettent de la redimensionner ; glisser a l'interieur la deplace. La croix de la barre d'outils ou Echap efface la selection (Echap annule d'abord un glisser en cours). Le rectangle suit le zoom et le deplacement sans modifier le parcours. Il est propre a la vue et n'est pas sauvegarde ni exporte.
+
+`Optimiser la selection` est disponible pour un parcours complet de la couleur courante, avec au moins une diagonale non verrouillee dans le rectangle. Le calcul part du parcours affiche, jamais d'un ancien meilleur chemin qui pourrait modifier l'exterieur. Les diagonales hors selection et le prefixe verrouille conservent leur position, leur sens et leurs coupes. Chaque passage dans le rectangle conserve son ensemble de diagonales et ses voisins exterieurs ; une croix dont les diagonales sont dans deux passages differents garde leur ordre. Les blocs traversant la bordure ne font pas agrandir la selection.
+
+Le moteur local `src/region-optimizer-worker.js` reutilise les composantes orthogonales et la programmation dynamique des sens du fil. Il essaie des constructions par fragments de blocs et des modifications d'ordre, avec reorientation tenant compte des deux raccordements exterieurs. Les petits passages (au plus six diagonales) sont enumeres ; les autres utilisent une recherche heuristique et des relances. Seule une diminution stricte du score du chemin complet est retenue, apres verification des regles, des contraintes et de l'exterieur inchange. Aucun optimum global n'est garanti et les diagonales ne sont pas transferees d'un passage a un autre.
+
+Le score total, le dernier gain, la surbrillance et Avant/Apres restent disponibles. Le suivi indique le passage en cours et utilise le meme delai sans amelioration. Arreter conserve le meilleur parcours complet ; Annuler restaure toute l'operation. Les autres couleurs, les fichiers de sauvegarde et la progression de l'outil 3 ne sont pas modifies. Une optimisation locale ne marque pas une couleur comme terminee dans une file d'optimisation globale.
+
+Le bouton `Optimiser les blocs` conserve son fonctionnement global et efface le rectangle pour ne pas suggerer que cette recherche est limitee a la selection.
+
 Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les portions de blocs nouvellement construites et non modifiees, pas dans les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 
-Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le seul moteur d'optimisation est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. Les anciens moteurs par cases et par zones, ainsi que leurs fonctions sans appel dans l'interface, ont ete retires. Les formats d'import/export restent inchanges.
+Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le moteur global est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. La recherche rectangulaire utilise le moteur local decrit ci-dessus. Les anciens moteurs par cases et par zones, ainsi que leurs fonctions sans appel dans l'interface, ont ete retires. Les formats d'import/export restent inchanges.
 
 Les anciens chemins sont convertis sans changer l'ordre des cases, avec les deux diagonales de chaque ancienne case consecutives. Les sauvegardes completes passent en version 2; l'etat compact synchronise passe en version 3. `stitchedByDmc` compte alors des diagonales, jamais des croix. A la migration, chaque ancienne croix brodee devient deux diagonales brodees : la meme case reste terminee, la prochaine case reste la meme, et les compteurs d'annulation sont convertis aussi. Les croix terminees et commencees sont comptees separement dans l'interface.
 
@@ -140,10 +152,12 @@ node tests/stitch-model.test.js
 node tests/path-zones.test.js
 node tests/path-orientation.test.js
 node tests/spatial-candidates.test.js
+node --test tests/region-optimizer.test.js
 node tests/workflows.test.js
 node --test tests/path-edit-history.test.js
 node tests/planner-safety.test.js
 node tests/planner-inspection.test.js
+node tests/planner-region.test.js
 node tests/session-view.test.js
 ```
 
