@@ -1,7 +1,9 @@
 (function (root) {
   "use strict";
-  function createBlockOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random) {
+  function createBlockOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random,
+    createRelay = typeof require === "function" ? require("./relay-search.js").createRelaySearch : globalThis.createRelaySearch) {
     const builder = createBuilder(model, clock), epsilon = 1e-8;
+    const relaySearch = createRelay(model, builder, clock);
     const better = (score, cuts, otherScore, otherCuts) => Number.isFinite(score)
       && (score < otherScore - epsilon || (Math.abs(score - otherScore) <= epsilon && cuts < otherCuts));
     const compareMetrics = (a, b) => Math.abs(a.score - b.score) > epsilon ? a.score - b.score
@@ -468,6 +470,7 @@
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let insertionAttempts = 0, insertions = 0;
       let refinedOrders = 0, intermediateImprovements = 0, interleavedRestarts = 0;
+      let relay = null, relayPasses = 0, relayImprovements = 0, relayAttempts = 0, relayChange = null;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -516,13 +519,15 @@
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-          refinedOrders, intermediateImprovements, interleavedRestarts,
+          refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange,
           progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
-      function publish(route, metrics, order, insertion = false, intermediate = false) {
+      function publish(route, metrics, order, insertion = false, intermediate = false, relayed = null) {
         if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
         best = route; bestOrder = order ? order.slice() : routeOrder(route); bestMetrics = metrics;
+        relayChange = relayed;
+        if (relayed) relayImprovements++;
         changed = true; improvements++; lastImprovement = clock();
         if (insertion) insertions++;
         if (intermediate) intermediateImprovements++;
@@ -592,116 +597,141 @@
         const route = materialize(problem, order), metrics = zones.measure(route.path, problem.threshold);
         refineRoute(route, metrics, true);
       }
-      remember(best, bestMetrics);
-      refineRoute(best, bestMetrics);
-      if (problem.insertions.contacts.size && bestMetrics.score > lowerBound + epsilon) {
-        for (const order of [...problem.unitOrders, ...problem.orders]) {
-          if (expired()) break;
-          tryOrder(order, evaluateOrder(problem, order));
-        }
-      }
-      if (freeCount <= 7) {
-        reason = "exhaustive";
-        const permutation = bestOrder.slice(problem.fixedCount), prefix = bestOrder.slice(0, problem.fixedCount);
-        function visit(depth) {
-          if (expired()) { reason = "inactivity"; return; }
-          if (depth === permutation.length) {
-            const order = prefix.concat(permutation); attempts++;
-            tryOrder(order, evaluateOrder(problem, order, false, false));
-            emit(); return;
-          }
-          const previous = depth ? permutation[depth - 1] : prefix.at(-1);
-          const preferred = problem.unitNeighbors.get(previous) || [];
-          const choices = Array.from({ length: permutation.length - depth }, (_, i) => i + depth)
-            .sort((a, b) => Number(preferred.includes(permutation[b])) - Number(preferred.includes(permutation[a])));
-          for (const i of choices) {
-            [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]]; visit(depth + 1);
-            [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]];
-            if (reason === "inactivity") return;
-          }
-        }
-        visit(0);
-      } else {
-        let working = bestOrder.slice(), value = evaluateOrder(problem, working), misses = 0;
-        const rand = n => Math.min(n - 1, Math.floor(random() * n));
-        function mutate(order, broad = false) {
-          const result = order.slice(), i = problem.fixedCount + rand(freeCount);
-          const neighbors = problem.neighbors.get(result[i]) || [];
-          let j = broad || !neighbors.length || attempts % 16 === 0 ? problem.fixedCount + rand(freeCount)
-            : result.indexOf(neighbors[rand(neighbors.length)]);
-          if (j < problem.fixedCount) j = problem.fixedCount + rand(freeCount);
-          const operation = rand(3);
-          if (operation === 0) { const [id] = result.splice(i, 1); result.splice(j, 0, id); }
-          else if (operation === 1) [result[i], result[j]] = [result[j], result[i]];
-          else for (let a = Math.min(i, j), b = Math.max(i, j); a < b; a++, b--) [result[a], result[b]] = [result[b], result[a]];
-          return result;
-        }
-        function restartInterleaved(entry) {
-          if (!entry || bestMetrics.score <= lowerBound + epsilon || expired()) return entry;
-          if (entry.interleaved) interleavedRestarts++;
-          // A bounded uphill relocation keeps existing interleaving instead of flattening it into blocks.
-          const choices = []; let checks = 0;
-          for (const candidate of blockInsertions(problem, entry.route)) {
+      function searchRound() {
+        stage = "search"; phase = "Optimisation des liaisons entre blocs"; relay = null; emit(true);
+        remember(best, bestMetrics);
+        refineRoute(best, bestMetrics);
+        if (problem.insertions.contacts.size && bestMetrics.score > lowerBound + epsilon) {
+          for (const order of [...problem.unitOrders, ...problem.orders]) {
             if (expired()) break;
-            attempts++; insertionAttempts++;
-            checks++;
-            if (Number.isFinite(candidate.score) && candidate.score <= entry.metrics.score + Math.max(4, problem.threshold * 2)) choices.push(candidate);
-            if (choices.length >= 16 || checks >= 128) break;
+            tryOrder(order, evaluateOrder(problem, order));
           }
-          if (!choices.length || expired()) return entry;
-          const route = choices[rand(choices.length)].materialize();
-          if (!route || model.validateRoute(route.path, problem.cells) || !model.satisfiesConstraints(route.path, problem.constraints)) return entry;
-          const metrics = zones.measure(route.path, problem.threshold);
-          publish(route, metrics, null, true, true);
-          const result = refineRoute(route, metrics, true);
-          return { ...result, order: routeOrder(result.route) };
         }
-        while (!expired()) {
-          let candidate = null;
-          if (problem.unitEdges.length && attempts % 4 !== 3) {
-            const edge = problem.unitEdges[unitAttempts % problem.unitEdges.length]; unitAttempts++;
-            const from = working.indexOf(edge.from), to = working.indexOf(edge.to);
-            if (from + 1 !== to) {
-              candidate = working.slice();
-              if (unitAttempts % 2 || from < problem.fixedCount) {
-                candidate.splice(to, 1); candidate.splice(candidate.indexOf(edge.from) + 1, 0, edge.to);
-              } else {
-                candidate.splice(from, 1); candidate.splice(candidate.indexOf(edge.to), 0, edge.from);
-              }
+        if (freeCount <= 7) {
+          reason = "exhaustive";
+          const permutation = bestOrder.slice(problem.fixedCount), prefix = bestOrder.slice(0, problem.fixedCount);
+          function visit(depth) {
+            if (expired()) { reason = "inactivity"; return; }
+            if (depth === permutation.length) {
+              const order = prefix.concat(permutation); attempts++;
+              tryOrder(order, evaluateOrder(problem, order, false, false));
+              emit(); return;
+            }
+            const previous = depth ? permutation[depth - 1] : prefix.at(-1);
+            const preferred = problem.unitNeighbors.get(previous) || [];
+            const choices = Array.from({ length: permutation.length - depth }, (_, i) => i + depth)
+              .sort((a, b) => Number(preferred.includes(permutation[b])) - Number(preferred.includes(permutation[a])));
+            for (const i of choices) {
+              [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]]; visit(depth + 1);
+              [permutation[depth], permutation[i]] = [permutation[i], permutation[depth]];
+              if (reason === "inactivity") return;
             }
           }
-          candidate ||= mutate(working);
-          const next = evaluateOrder(problem, candidate, false, false); attempts++;
-          if (better(next.score, next.cuts, value.score, value.cuts)) {
-            working = candidate; value = next; misses = 0;
-            tryOrder(candidate, next);
+          visit(0);
+        } else {
+          let working = bestOrder.slice(), value = evaluateOrder(problem, working), misses = 0;
+          const rand = n => Math.min(n - 1, Math.floor(random() * n));
+          function mutate(order, broad = false) {
+            const result = order.slice(), i = problem.fixedCount + rand(freeCount);
+            const neighbors = problem.neighbors.get(result[i]) || [];
+            let j = broad || !neighbors.length || attempts % 16 === 0 ? problem.fixedCount + rand(freeCount)
+              : result.indexOf(neighbors[rand(neighbors.length)]);
+            if (j < problem.fixedCount) j = problem.fixedCount + rand(freeCount);
+            const operation = rand(3);
+            if (operation === 0) { const [id] = result.splice(i, 1); result.splice(j, 0, id); }
+            else if (operation === 1) [result[i], result[j]] = [result[j], result[i]];
+            else for (let a = Math.min(i, j), b = Math.max(i, j); a < b; a++, b--) [result[a], result[b]] = [result[b], result[a]];
+            return result;
           }
-          else { misses++; tryOrder(candidate, next, false); }
-          if (misses >= Math.max(100, freeCount)) {
-            const entry = restartInterleaved(elite.length ? elite[restarts % elite.length] : null);
-            working = (entry?.order || bestOrder).slice(); for (let i = 0; i < 4; i++) working = mutate(working, true);
-            value = evaluateOrder(problem, working, false, false); misses = 0; restarts++;
+          function restartInterleaved(entry) {
+            if (!entry || bestMetrics.score <= lowerBound + epsilon || expired()) return entry;
+            if (entry.interleaved) interleavedRestarts++;
+            // A bounded uphill relocation keeps existing interleaving instead of flattening it into blocks.
+            const choices = []; let checks = 0;
+            for (const candidate of blockInsertions(problem, entry.route)) {
+              if (expired()) break;
+              attempts++; insertionAttempts++;
+              checks++;
+              if (Number.isFinite(candidate.score) && candidate.score <= entry.metrics.score + Math.max(4, problem.threshold * 2)) choices.push(candidate);
+              if (choices.length >= 16 || checks >= 128) break;
+            }
+            if (!choices.length || expired()) return entry;
+            const route = choices[rand(choices.length)].materialize();
+            if (!route || model.validateRoute(route.path, problem.cells) || !model.satisfiesConstraints(route.path, problem.constraints)) return entry;
+            const metrics = zones.measure(route.path, problem.threshold);
+            publish(route, metrics, null, true, true);
+            const result = refineRoute(route, metrics, true);
+            return { ...result, order: routeOrder(result.route) };
           }
-          emit();
+          while (!expired()) {
+            let candidate = null;
+            if (problem.unitEdges.length && attempts % 4 !== 3) {
+              const edge = problem.unitEdges[unitAttempts % problem.unitEdges.length]; unitAttempts++;
+              const from = working.indexOf(edge.from), to = working.indexOf(edge.to);
+              if (from + 1 !== to) {
+                candidate = working.slice();
+                if (unitAttempts % 2 || from < problem.fixedCount) {
+                  candidate.splice(to, 1); candidate.splice(candidate.indexOf(edge.from) + 1, 0, edge.to);
+                } else {
+                  candidate.splice(from, 1); candidate.splice(candidate.indexOf(edge.to), 0, edge.from);
+                }
+              }
+            }
+            candidate ||= mutate(working);
+            const next = evaluateOrder(problem, candidate, false, false); attempts++;
+            if (better(next.score, next.cuts, value.score, value.cuts)) {
+              working = candidate; value = next; misses = 0;
+              tryOrder(candidate, next);
+            }
+            else { misses++; tryOrder(candidate, next, false); }
+            if (misses >= Math.max(100, freeCount)) {
+              const entry = restartInterleaved(elite.length ? elite[restarts % elite.length] : null);
+              working = (entry?.order || bestOrder).slice(); for (let i = 0; i < 4; i++) working = mutate(working, true);
+              value = evaluateOrder(problem, working, false, false); misses = 0; restarts++;
+            }
+            emit();
+          }
         }
       }
-      stage = "complete"; phase = reason === "exhaustive" ? "Liaisons optimisees : ordres et insertions testes" : "Optimisation terminee : delai sans amelioration atteint";
+      while (true) {
+        searchRound();
+        if (bestMetrics.score <= lowerBound + epsilon) break;
+        stage = "relay"; phase = "Recherche de relais"; relayPasses++;
+        relay = { examined: 0, total: 0, attempts: 0, timedOut: false }; emit(true);
+        let improved = false;
+        const budgetMs = Math.min(15000, Math.max(250, limit));
+        for (const candidate of relaySearch.candidates({ path: best.path, constraints: problem.constraints,
+          cutThreshold: problem.threshold, budgetMs }, progress => { relay = progress; emit(); })) {
+          attempts++; relayAttempts++;
+          if (candidate.score >= bestMetrics.score - epsilon) continue;
+          const route = candidate.materialize();
+          if (!route || model.validateRoute(route.path, problem.cells) || !model.satisfiesConstraints(route.path, problem.constraints)) continue;
+          const metrics = zones.measure(route.path, problem.threshold);
+          if (metrics.score >= bestMetrics.score - epsilon) continue;
+          const changedDiagonals = candidate.moved.map(i => model.key(best.path[i]));
+          if (!publish(route, metrics, null, false, false, changedDiagonals)) continue;
+          restarts++; improved = true; refined.clear();
+          remember(best, bestMetrics); emit(true); break;
+        }
+        if (!improved) break;
+      }
+      stage = "complete"; phase = "Optimisation terminee : recherche et relais au plateau";
       const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
         stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-        refinedOrders, intermediateImprovements, interleavedRestarts,
+        refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange,
         progress: 100, reason, order: actualOrder };
       report(final); return final;
     }
     return { prepareProblem, evaluateOrder, materialize, blockInsertions, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
   }
-  function workerMain(createModel, createBuilder, createOptimizer) {
+  function workerMain(createModel, createBuilder, createOptimizer, createRelay) {
     self.onmessage = event => {
       const options = event.data;
       if (options.type !== "start") return;
       try {
-        const result = createOptimizer(createModel(), createBuilder).optimizePath(options,
+        const result = createOptimizer(createModel(), createBuilder, undefined, undefined, createRelay).optimizePath(options,
           snapshot => self.postMessage({ ...snapshot, type: "progress", runId: options.runId }));
         self.postMessage({ ...result, type: "complete", runId: options.runId });
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
@@ -709,7 +739,7 @@
   }
   root.createPathOptimizerApi = () => createBlockOptimizer(root.StitchModel, root.createOrthogonalPathBuilder);
   root.createPathOptimizerWorker = () => {
-    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createBlockOptimizer.toString()});`;
+    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createBlockOptimizer.toString()},${root.createRelaySearch.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     const worker = new Worker(url); URL.revokeObjectURL(url); return worker;
   };

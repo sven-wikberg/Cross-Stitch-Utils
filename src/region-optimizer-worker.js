@@ -1,7 +1,9 @@
 (function (root) {
   "use strict";
-  function createRegionOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random) {
+  function createRegionOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random,
+    createRelay = typeof require === "function" ? require("./relay-search.js").createRelaySearch : globalThis.createRelaySearch) {
     const builder = createBuilder(model, clock), epsilon = 1e-8;
+    const relaySearch = createRelay(model, builder, clock);
     const contains = (rect, p) => Boolean(rect) && p.x >= rect.minX && p.x < rect.maxX && p.y >= rect.minY && p.y < rect.maxY;
     function rectangle(a, b, width, height) {
       const x = value => Math.max(0, Math.min(width - 1, Math.floor(value)));
@@ -27,12 +29,11 @@
       for (let i = 0; i < before.length; i++) {
         if ((i < selected.locked || !contains(rect, before[i])) && JSON.stringify(before[i]) !== JSON.stringify(after[i])) return false;
       }
+      const keys = new Set(selected.runs.flatMap(run => before.slice(run.start, run.end).map(model.key)));
       for (const run of selected.runs) {
-        const keys = new Set(before.slice(run.start, run.end).map(model.key));
         for (let i = run.start; i < run.end; i++) if (!after[i] || !keys.delete(model.key(after[i]))) return false;
-        if (keys.size) return false;
       }
-      return true;
+      return !keys.size;
     }
     function optimizePath(options, report = () => {}) {
       const rect = options.region, initial = options.initialPath || [], cells = options.points || [];
@@ -45,6 +46,7 @@
       const threshold = Math.max(1, Number(options.cutThreshold) || 10), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const zones = model.createZones(cells), initialMetrics = zones.measure(initial, threshold);
       let best = initial.map(p => ({ ...p })), metrics = initialMetrics, attempts = 0, improvements = 0, restarts = 0;
+      let relay = null, relayPasses = 0, relayImprovements = 0, relayAttempts = 0, relayChange = null, stage = "search";
       const started = clock(); let lastImprovement = started, lastReport = -Infinity, changed = true, activeVisit = 0;
       const rand = n => Math.min(n - 1, Math.floor(random() * n));
       const expired = () => clock() - lastImprovement >= limit;
@@ -52,17 +54,18 @@
         const now = clock();
         if (!force && now - lastReport < 150) return;
         lastReport = now;
-        const snapshot = { method: "region-optimization", stage: done ? "complete" : "search",
-          phase: done ? "Optimisation de la selection terminee" : "Optimisation de la selection", metrics, initialMetrics,
+        const snapshot = { method: "region-optimization", stage: done ? "complete" : stage,
+          phase: done ? "Optimisation de la selection terminee" : stage === "relay" ? "Recherche de relais" : "Optimisation de la selection", metrics, initialMetrics,
           region: { ...rect, crosses: selected.crosses, diagonals: selected.diagonals, visits: selected.runs.length, activeVisit },
           elapsedMs: now - started, lastImprovementMs: now - lastImprovement, stagnationLimitMs: limit,
-          attempts, improvements, restarts, progress: done ? 100 : Math.min(99, (now - lastImprovement) / limit * 100),
+          attempts, improvements, restarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange,
+          progress: done ? 100 : Math.min(99, (now - lastImprovement) / limit * 100),
           ...(changed || force ? { path: best.map(p => ({ ...p })) } : {}) };
         changed = false; report(snapshot); return snapshot;
       }
       // Outside actions (including sewing directions) bound each independent visit to the selection.
-      const runs = selected.runs.map(run => {
-        const sequence = initial.slice(run.start, run.end), previous = initial[run.start - 1], next = initial[run.end];
+      const buildRuns = () => selected.runs.map(run => {
+        const sequence = best.slice(run.start, run.end), previous = best[run.start - 1], next = best[run.end];
         const originals = new Map(sequence.map(p => [model.key(p), p]));
         const lowerKeys = new Set(sequence.filter(p => p.diagonal === "lower").map(model.cellKey));
         const score = route => {
@@ -114,6 +117,7 @@
           score: score(sequence), working: sequence, workingScore: score(sequence), misses: 0, proposals: 0,
           exact: sequence.length <= 6 ? permutations(sequence) : null, exhausted: false };
       });
+      let runs = buildRuns();
       function* permutations(points, prefix = []) {
         if (!points.length) { yield prefix; return; }
         for (let i = 0; i < points.length; i++) yield* permutations(points.filter((_, j) => i !== j), [...prefix, points[i]]);
@@ -132,7 +136,7 @@
         if (measured.score >= metrics.score - epsilon || model.validateRoute(path, cells)
             || !model.satisfiesConstraints(path, constraints) || !preservesOutside(initial, path, rect, constraints)) return;
         run.best = candidate.path; run.score = candidate.score;
-        best = path; metrics = measured; improvements++; changed = true; lastImprovement = clock();
+        best = path; metrics = measured; improvements++; changed = true; lastImprovement = clock(); relayChange = null;
         emit();
       }
       function mutate(sequence) {
@@ -153,36 +157,56 @@
         activeVisit = i + 1; consider(run, run.best);
       }
       let cursor = 0;
-      while (!expired()) {
-        const available = runs.filter(run => !run.exhausted && run.score > run.minimum + epsilon);
-        if (!available.length) break;
-        const run = available[cursor++ % available.length]; activeVisit = runs.indexOf(run) + 1;
-        if (run.exact) {
-          const next = run.exact.next();
-          if (next.done) run.exhausted = true;
-          else consider(run, next.value);
-        } else {
-          const seed = run.proposals++ % 64 === 0;
-          consider(run, seed ? run.seed() : mutate(run.working));
-          if (run.misses >= Math.max(32, Math.min(256, run.best.length))) {
-            const candidate = run.orient(run.seed());
-            run.working = candidate?.path || run.best;
-            run.workingScore = candidate?.score ?? run.score;
-            run.misses = 0; restarts++;
+      while (true) {
+        stage = "search"; relay = null; emit(true);
+        while (!expired()) {
+          const available = runs.filter(run => !run.exhausted && run.score > run.minimum + epsilon);
+          if (!available.length) break;
+          const run = available[cursor++ % available.length]; activeVisit = runs.indexOf(run) + 1;
+          if (run.exact) {
+            const next = run.exact.next();
+            if (next.done) run.exhausted = true;
+            else consider(run, next.value);
+          } else {
+            const seed = run.proposals++ % 64 === 0;
+            consider(run, seed ? run.seed() : mutate(run.working));
+            if (run.misses >= Math.max(32, Math.min(256, run.best.length))) {
+              const candidate = run.orient(run.seed());
+              run.working = candidate?.path || run.best;
+              run.workingScore = candidate?.score ?? run.score;
+              run.misses = 0; restarts++;
+            }
           }
+          emit();
         }
-        emit();
+        stage = "relay"; relayPasses++; relay = { examined: 0, total: 0, attempts: 0, timedOut: false }; emit(true);
+        let improved = false;
+        for (const candidate of relaySearch.candidates({ path: best, constraints, region: rect, cutThreshold: threshold,
+          budgetMs: Math.min(15000, Math.max(250, limit)) }, progress => { relay = progress; emit(); })) {
+          attempts++; relayAttempts++;
+          if (candidate.score >= metrics.score - epsilon) continue;
+          const route = candidate.materialize();
+          if (!route || model.validateRoute(route.path, cells) || !model.satisfiesConstraints(route.path, constraints)
+              || !preservesOutside(initial, route.path, rect, constraints)) continue;
+          const measured = zones.measure(route.path, threshold);
+          if (measured.score >= metrics.score - epsilon) continue;
+          relayChange = candidate.moved.map(i => model.key(best[i]));
+          best = route.path; metrics = measured; improvements++; relayImprovements++; restarts++;
+          changed = true; lastImprovement = clock(); improved = true; emit(true); break;
+        }
+        if (!improved) break;
+        runs = buildRuns(); cursor = 0;
       }
       return emit(true, true);
     }
     return { rectangle, contains, selection, preservesOutside, optimizePath };
   }
-  function workerMain(createModel, createBuilder, createOptimizer) {
+  function workerMain(createModel, createBuilder, createOptimizer, createRelay) {
     self.onmessage = event => {
       const options = event.data;
       if (options.type !== "start") return;
       try {
-        const result = createOptimizer(createModel(), createBuilder).optimizePath(options,
+        const result = createOptimizer(createModel(), createBuilder, undefined, undefined, createRelay).optimizePath(options,
           snapshot => self.postMessage({ ...snapshot, type: "progress", runId: options.runId }));
         self.postMessage({ ...result, type: "complete", runId: options.runId });
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
@@ -190,7 +214,7 @@
   }
   root.createRegionOptimizer = createRegionOptimizer;
   root.createRegionOptimizerWorker = () => {
-    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createRegionOptimizer.toString()});`;
+    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createRegionOptimizer.toString()},${root.createRelaySearch.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     const worker = new Worker(url); URL.revokeObjectURL(url); return worker;
   };

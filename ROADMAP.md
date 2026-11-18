@@ -116,11 +116,21 @@ Statut : termine. Selection rectangulaire, independante du cadrage de la vue.
 - [x] Suivi visuel, arret, comparaison avant/apres et annulation de l'operation.
 - [x] Tests unitaires, navigateur, grand pattern et verification des sauvegardes.
 
-Les passages distincts dans la selection conservent chacun leurs diagonales :
-aucun transfert entre passages ne deplace une action exterieure. Les blocs coupes
+La recherche initiale traite les passages separement ; les relais au plateau
+peuvent maintenant echanger leurs diagonales sans deplacer une action exterieure. Les blocs coupes
 par le rectangle ne sont pas ajoutes en entier. La recherche locale part du
 parcours visible ; les autres couleurs et la progression de l'outil 3 restent
 inchangees. Le bouton global efface le rectangle et conserve son fonctionnement.
+
+## Relais au plateau
+
+- [x] Cibler les longues liaisons au dos et leurs diagonales voisines.
+- [x] Tester deplacements et permutations, meme pour une seule diagonale.
+- [x] Reevaluer les sens et tous les raccordements, y compris l'ancien emplacement.
+- [x] Reprendre la recherche apres un gain strict du score global.
+- [x] Conserver les contraintes et l'exterieur exact de la selection.
+- [x] Afficher la passe, son avancement, les relais retenus et leur surbrillance.
+- [x] Verifier contre une enumeration des sens et sur des plateaux reproductibles.
 
 ## Ordre propose
 

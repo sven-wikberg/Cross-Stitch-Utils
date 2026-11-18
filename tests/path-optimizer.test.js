@@ -13,7 +13,7 @@ const context = vm.createContext({
   URL: { createObjectURL(blob) { return blob; }, revokeObjectURL() { revoked = true; } },
   Worker: class { constructor(blob) { this.source = blob.source; } }
 });
-for (const file of ["stitch-model.js", "orthogonal-path-worker.js"]) {
+for (const file of ["stitch-model.js", "orthogonal-path-worker.js", "relay-search.js"]) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../src", file), "utf8"), context);
 }
 assert.equal(context.createPathOptimizerWorker, undefined, "The builder must not install an obsolete worker entry point");

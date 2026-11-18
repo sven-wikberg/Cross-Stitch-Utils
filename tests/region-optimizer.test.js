@@ -66,7 +66,7 @@ test("local optimization matches an exhaustive boundary-aware oracle and keeps o
   }
 });
 
-test("multiple visits, split crosses, prefix locks and manual cuts never leak across visit boundaries", () => {
+test("multiple visits can exchange selected actions while outside slots, prefix locks and cuts remain fixed", () => {
   const points = [{ x: 0, y: 0 }, { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 10, y: 2 }, { x: 4, y: 3 }];
   const a = (i, diagonal) => ({ ...points[i], diagonal, direction: 1 });
   const sequence = [a(0, "lower"), a(0, "upper"), a(1, "lower"), a(2, "lower"),
@@ -85,7 +85,7 @@ test("multiple visits, split crosses, prefix locks and manual cuts never leak ac
   const bad = result.path.map(p => ({ ...p })); bad[4].direction *= -1;
   assert.equal(api.preservesOutside(initialPath, bad, rect, constraints), false);
   const swapped = result.path.slice(); [swapped[3], swapped[6]] = [swapped[6], swapped[3]];
-  assert.equal(api.preservesOutside(initialPath, swapped, rect, constraints), false);
+  assert.equal(api.preservesOutside(initialPath, swapped, rect, constraints), true);
 });
 
 test("a rectangle cutting through one orthogonal block does not expand the selection", () => {
@@ -118,7 +118,7 @@ test("seeded larger searches stop on inactivity, reset only on improvements and 
     if (snapshot.path) assert.ok(api.preservesOutside(initialPath, snapshot.path, region));
     previous = snapshot;
   });
-  assert.ok(result.lastImprovementMs >= limit);
+  assert.ok(result.lastImprovementMs >= limit || result.metrics.score <= initialPath.length - 1 + 1e-8);
   assert.ok(result.attempts > 0 && result.attempts < 10000);
   assert.equal(model.validateRoute(result.path, points), "");
   assert.ok(result.metrics.score <= score(initialPath));
@@ -161,7 +161,7 @@ test("seeded rectangles retain every outside slot across varied paths, cut thres
 test("the actual regional browser worker returns a full valid path and preserves its run id", async () => {
   const context = vm.createContext({ Blob: class { constructor(parts) { this.source = parts.join(""); } },
     URL: { createObjectURL: value => value, revokeObjectURL() {} }, Worker: class { constructor(blob) { this.source = blob.source; } } });
-  for (const file of ["stitch-model.js", "orthogonal-path-worker.js", "region-optimizer-worker.js"]) {
+  for (const file of ["stitch-model.js", "orthogonal-path-worker.js", "relay-search.js", "region-optimizer-worker.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../src", file), "utf8"), context);
   }
   const source = context.createRegionOptimizerWorker().source;

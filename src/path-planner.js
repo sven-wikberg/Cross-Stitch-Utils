@@ -45,6 +45,7 @@ const pathAlgorithmElapsed = document.querySelector("#pathAlgorithmElapsed");
 const pathAlgorithmAttempts = document.querySelector("#pathAlgorithmAttempts");
 const pathAlgorithmRestarts = document.querySelector("#pathAlgorithmRestarts");
 const pathAlgorithmImprovements = document.querySelector("#pathAlgorithmImprovements");
+const pathRelayImprovements = document.querySelector("#pathRelayImprovements");
 const pathAlgorithmLastImprovement = document.querySelector("#pathAlgorithmLastImprovement");
 const pathAlgorithmClockLabel = document.querySelector("#pathAlgorithmClockLabel");
 const pathAlgorithmZone = document.querySelector("#pathAlgorithmZone");
@@ -574,14 +575,15 @@ function clearPathImprovement() {
   pathImprovementGain.textContent = "";
 }
 
-function recordPathImprovement(dmc, before, after) {
+function recordPathImprovement(dmc, before, after, relayChange = null) {
   if (!before.length || before.length !== after.length) return;
   const previous = pathPerformanceMetrics(before, dmc), next = pathPerformanceMetrics(after, dmc);
   if (constraintApi.compareMetrics(next, previous) >= 0) return;
   const scoreGain = Math.max(0, previous.score - next.score), cutsDelta = previous.cuts - next.cuts;
   if (scoreGain < 1e-8 && cutsDelta <= 0) return;
   pathImprovement = { ...PathVisuals.diffConnections(before, after, blocksForColor(dmc), cutThreshold),
-    pattern: loadedPattern, dmc, route: after, count: after.length };
+    pattern: loadedPattern, dmc, route: after, count: after.length,
+    relayDiagonals: relayChange ? after.filter(p => relayChange.includes(StitchModel.key(p))) : [] };
   const amount = scoreGain > 0 && scoreGain < 0.01 ? "< 0,01"
     : scoreGain.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
   const cuts = Math.abs(cutsDelta);
@@ -617,6 +619,10 @@ function renderPathImprovement(cellSize) {
     draw(link, "rgba(255,255,255,0.95)", width + 2, []);
     draw(link, "#008be2", width, link.isCut ? pathCutDash(cellSize) : []);
     if (link.isCut) draw(link, "#c63848", Math.max(1, width * 0.5), pathCutDash(cellSize));
+  });
+  pathImprovement.relayDiagonals.forEach(point => {
+    const holes = StitchModel.holes(point), link = { from: holes.start, to: holes.end };
+    draw(link, "#ffffff", width + 2, []); draw(link, "#008be2", width, []);
   });
   context.restore();
 }
@@ -1850,7 +1856,8 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
     if ((acceptComplete || acceptPartial) && !unchanged && localGain) {
       pathsByDmc[dmc] = snapshot.path.map(copyPoint);
       if (acceptComplete) {
-        recordPathImprovement(dmc, activePathOptimizerBestPath, pathsByDmc[dmc]);
+        recordPathImprovement(dmc, activePathOptimizerBestPath.length ? activePathOptimizerBestPath : comparisonPaths.get(dmc)?.path || [],
+          pathsByDmc[dmc], snapshot.relayChange);
         activePathOptimizerBestPath = pathsByDmc[dmc];
         rememberBestPath(dmc, activePathOptimizerBestPath);
       }
@@ -1946,6 +1953,7 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.stage === "relay" && pathAlgorithmRunning) return `Recherche de relais : passe ${snapshot.relayPasses || 1}`;
   if (snapshot?.region) return pathAlgorithmRunning
     ? `Selection : passage ${snapshot.region.activeVisit || 1} / ${snapshot.region.visits}` : "Optimisation de la selection terminee";
   return PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning).phase;
@@ -1958,6 +1966,7 @@ function showAdvancedPathFeedback(snapshot) {
 
 function updateAlgorithmLiveMetrics(snapshot) {
   const view = PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning);
+  pathRelayImprovements.textContent = snapshot ? String(snapshot.relayImprovements || 0) : "-";
   pathAlgorithmFeedback.classList.toggle("is-running", pathAlgorithmRunning);
   pathAlgorithmProgressArea.classList.toggle("hidden", !view.active);
   pathAlgorithmProgressArea.classList.toggle("stagnation", view.searching);

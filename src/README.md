@@ -6,6 +6,7 @@ Chaque outil garde sa page, son controleur et son stockage independants.
 - `path-planner.js` : interface de planification, edition et suivi du calcul.
 - `block-optimizer-worker.js` : moteur d'optimisation globale par blocs.
 - `region-optimizer-worker.js` : selection rectangulaire et optimisation de ses passages, avec exterieur fige et acceptation au score global uniquement.
+- `relay-search.js` : voisinage des longues liaisons au dos, deplacements/echanges d'une diagonale et evaluation globale des sens par matrices de segments.
 - `orthogonal-path-worker.js` : construction des blocs, retours unitaires, orientations et index spatial utilises par ce moteur.
 - `path-visuals.js`, `path-viewport.js`, `path-edit-history.js` : rendu, inspection et historique de l'outil 2.
 - `stitch-progress.js` : suivi de la broderie dans l'outil 3.

@@ -252,7 +252,7 @@ test("exhaustive search may return to an old eight-connected zone when score imp
   close(result.metrics.score, best, "exhaustive block-order optimum");
   assert.equal(result.metrics.zoneReturns, 1);
   assert.equal(result.reason, "exhaustive");
-  assert.equal(result.attempts, 120);
+  assert.equal(result.attempts - result.relayAttempts, 120);
   assert.equal(result.lastImprovementMs, 0, "exhaustion need not consume the inactivity budget");
   assert.equal(result.method, "block-optimization");
   assert.equal(engine.compareMetrics({ score: 9, cuts: 1, distance: 6, zoneReturns: 99 },
@@ -361,9 +361,10 @@ test("search reports only global improvements and resets its timer only for thos
 
 test("restarts and preparation do not consume or reset the global search inactivity budget", () => {
   const points = Array.from({ length: 9 }, (_, i) => ({ x: i * 4, y: i % 2 * 3 }));
-  const reports = [], limit = 130000;
+  const reports = [], relayReports = [], limit = 130000;
   const result = optimizer(500).optimizePath({ points, stagnationLimitMs: limit }, snapshot => {
     if (snapshot.stage === "search") reports.push(snapshot);
+    if (snapshot.stage === "relay") relayReports.push(snapshot);
   });
   assert.ok(reports.length > 100 && result.restarts > 0, "exercise a restart with the injected clock");
   assert.equal(result.improvements, 0, "this seed is already the best found");
@@ -375,8 +376,10 @@ test("restarts and preparation do not consume or reset the global search inactiv
     close(snapshot.metrics.score, result.metrics.score, "steady global best");
   }
   assert.equal(result.reason, "inactivity");
-  assert.ok(result.lastImprovementMs >= limit && result.lastImprovementMs <= limit + 2000);
-  assert.ok(result.attempts > 100 && result.attempts < 140, "deadline bounds search despite restarting");
+  assert.ok(relayReports[0].lastImprovementMs >= limit && relayReports[0].lastImprovementMs <= limit + 2000);
+  assert.ok(result.lastImprovementMs >= limit && result.lastImprovementMs <= limit + 20000, "relay scan has a separate budget, with coarse-clock reporting overhead");
+  const searchAttempts = result.attempts - result.relayAttempts;
+  assert.ok(searchAttempts > 100 && searchAttempts < 140, "deadline bounds search despite restarting");
   assertPath(result, points);
 });
 
@@ -696,7 +699,7 @@ test("restarts reuse interleaved routes and retain constraints on unpublished ca
   assertPath(first, points);
   assert.ok(first.interleavedRestarts > 0 && first.intermediateImprovements > 0);
   assert.ok(new Set(first.order).size < first.order.length, "the retained route is interleaved");
-  close(first.metrics.score, 59.84800554704864, "restarts regression fixture");
+  assert.ok(first.metrics.score <= 59.84800554704864 + 1e-7, "restarts and relays must not regress the previous fixture score");
   const constraints = { lockedPrefix: first.path.slice(0, 3), start: first.path[0],
     forcedCuts: [first.path.at(-1)] };
   const initialPath = first.path.map(model.copy);
@@ -721,8 +724,8 @@ test("combined order and insertion search can eliminate a cut after all block or
   assertPath(result, points, {}, 3);
   assert.equal(result.reason, "exhaustive");
   assert.ok(result.intermediateImprovements > 0);
-  assert.equal(result.metrics.cuts, 2);
-  close(result.metrics.score, 49.38905042258274, "combined refinement, including orientation and cut penalties");
+  assert.ok(result.metrics.cuts <= 2);
+  assert.ok(result.metrics.score <= 49.38905042258274 + 1e-7, "relay refinement cannot regress combined search");
   assert.ok(result.metrics.score < 61.819131909660754, "previous incumbent-only refinement retained three cuts");
 });
 

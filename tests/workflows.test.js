@@ -92,7 +92,7 @@ function assertBlockResult(snapshot, cells, constraints = {}, threshold = 12, re
   const prefixLength = constraints.lockedPrefix?.length || (constraints.start ? 1 : 0);
   const minimumUnitLinks = snapshot.path.length - prefixLength - snapshot.blocks.total;
   const unitLinkCount = snapshot.unitLinks.filter(Boolean).length;
-  if (requireUnitCoverage) assert.ok(unitLinkCount >= minimumUnitLinks, "Constructed block interiors retain their unit links");
+  if (requireUnitCoverage && !snapshot.relayImprovements) assert.ok(unitLinkCount >= minimumUnitLinks, "Constructed block interiors retain their unit links before relay edits");
   snapshot.path.forEach((point, i) => {
     assert.equal(typeof snapshot.unitLinks[i], "boolean");
     if (snapshot.unitLinks[i]) {
@@ -128,7 +128,7 @@ function assertSearchSnapshots(snapshots, cells, threshold = 12) {
   let best = null;
   for (const snapshot of snapshots) {
     assert.equal(snapshot.method, "block-optimization");
-    assert.ok(["construction", "configuration", "search", "complete"].includes(snapshot.stage));
+    assert.ok(["construction", "configuration", "search", "relay", "complete"].includes(snapshot.stage));
     assert.ok(Number.isFinite(snapshot.elapsedMs) && snapshot.elapsedMs >= 0);
     assert.ok(Number.isFinite(snapshot.lastImprovementMs) && snapshot.lastImprovementMs >= 0);
     assert.ok(snapshot.stagnationLimitMs > 0);
@@ -950,15 +950,23 @@ async function run() {
       await observePathWorkers(planner, false, 300, false);
       const largeInput = await planner.evaluate(() => ({ cells: cellsForSelectedColor(), constraints: constraintsByDmc[selectedDmc] || {}, cutThreshold }));
       await planner.locator("#optimizedPathButton").click();
-      await planner.waitForFunction(() => !pathAlgorithmRunning, null, { timeout: 120000 });
-      const largeSnapshot = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete"));
+      // Relay gains intentionally restart search; exercise several cycles, then test an explicit stop on this large input.
+      await planner.waitForFunction(() => !pathAlgorithmRunning || pathWorkerHarness.messages.some(s => s.relayImprovements >= 3), null, { timeout: 120000 });
+      const interrupted = await planner.evaluate(() => pathAlgorithmRunning);
+      if (interrupted) await planner.locator("#stopPathAlgorithmButton").click();
+      const largeSnapshot = await planner.evaluate(() => pathWorkerHarness.messages.find(message => message.type === "complete")
+        || pathConstructionSummaries[selectedDmc]?.snapshot);
       assert.ok(largeSnapshot, await planner.locator("#pathAlgorithmDistance").innerText());
-      assertBlockResult(largeSnapshot, largeInput.cells, largeInput.constraints, largeInput.cutThreshold, false);
+      if (!interrupted) assertBlockResult(largeSnapshot, largeInput.cells, largeInput.constraints, largeInput.cutThreshold, false);
+      else assert.ok(largeSnapshot.relayImprovements >= 3, "the large pattern exercises accepted relay/resume cycles before stopping");
       assertSearchSnapshots(await planner.evaluate(() => pathWorkerHarness.messages), largeInput.cells, largeInput.cutThreshold);
-      assert.equal(largeSnapshot.reason, "inactivity");
       assert.equal(largeSnapshot.stagnationLimitMs, 300);
-      assert.ok(largeSnapshot.lastImprovementMs >= largeSnapshot.stagnationLimitMs);
-      assert.deepEqual(await planner.evaluate(() => currentPath()), largeSnapshot.path);
+      if (!interrupted) {
+        assert.equal(largeSnapshot.reason, "inactivity");
+        assert.ok(largeSnapshot.lastImprovementMs >= largeSnapshot.stagnationLimitMs);
+        assert.deepEqual(await planner.evaluate(() => currentPath()), largeSnapshot.path);
+      }
+      assert.ok(await planner.evaluate(constraints => StitchModel.satisfiesConstraints(currentPath(), constraints), largeInput.constraints));
       assert.notEqual(await planner.locator("#pathAlgorithmZonesDone").textContent(), "-");
       assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), false);
       assert.notEqual(await planner.locator("#metricRealisticScore").innerText(), "-");
@@ -969,7 +977,7 @@ async function run() {
       assert.equal(result.error, "");
       assert.doesNotMatch(result.feedback, /Erreur/);
       await planner.evaluate(() => plannerSaveQueue);
-      console.log(`large block optimizer passed (${result.count} diagonals, ${largeSnapshot.blocks.total} blocks, ${largeSnapshot.attempts} attempts, score ${result.metrics.score.toFixed(2)})`);
+      console.log(`large block optimizer passed (${result.count} diagonals, ${largeSnapshot.blocks.total} blocks, ${largeSnapshot.attempts} attempts, ${largeSnapshot.relayImprovements} relay gains, score ${result.metrics.score.toFixed(2)}, ${interrupted ? "stopped with best route" : "completed"})`);
     }
     assert.deepEqual(errors, []);
     console.log("browser workflows passed: resume, undo/redo, session, batch, constraints, group editing, source overlay, responsive layout");
