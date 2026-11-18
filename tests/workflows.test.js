@@ -484,9 +484,9 @@ async function run() {
     assert.equal(await planner.locator("#pathAlgorithmRestarts").textContent(), String(search.restarts));
     assert.equal(await planner.locator("#pathAlgorithmImprovements").textContent(), String(search.improvements));
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), true);
-    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("aria-label"), "Sans amelioration (couleur)");
+    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("aria-label"), "Sans amelioration (blocs)");
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").innerText(),
-      await planner.evaluate(snapshot => `${formatAlgorithmTime(snapshot.lastImprovementMs)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs)}`, search));
+      await planner.evaluate(snapshot => `${formatAlgorithmTime(snapshot.lastImprovementMs)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs, true)}`, search));
     assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Recherche en cours");
     assert.equal(await planner.locator("#pathConstructionMetrics").isVisible(), false);
     assert.equal(await planner.locator("#pathPreparationCount").isVisible(), false);

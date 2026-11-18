@@ -17,7 +17,7 @@
           configuration: "Preparation des entrees et sorties", search: "Recherche en cours", relay: "Recherche de relais", complete: "Recherche terminee" }[stage] || "Recherche en cours",
         active: preparing || searching || relaying, searching,
         showConstruction: constructing && snapshot.zone?.status === "running",
-        label: relaying ? "Liaisons examinees" : searching ? "Sans amelioration (couleur)" : constructing ? "Blocs construits" : "Blocs prepares",
+        label: relaying ? "Liaisons examinees" : searching ? "Sans amelioration (blocs)" : constructing ? "Blocs construits" : "Blocs prepares",
         count: knownCount ? `${Math.min(total, Math.max(0, done))} / ${total}` : "",
         max, value: value === null ? null : Math.max(0, Math.min(max, value))
       };

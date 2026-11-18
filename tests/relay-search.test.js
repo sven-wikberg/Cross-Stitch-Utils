@@ -80,3 +80,37 @@ test("relay scans respect locks and a separate deadline, and report actual exami
   assert.equal(view.value, 4); assert.equal(view.max, 12); assert.ok(view.active && !view.searching);
   assert.equal(createPathVisuals(model, builder).searchPresentation({ stage: "relay" }, false).active, false);
 });
+
+test("only accepted relays shorten block inactivity by ten percent, with a two-second floor and fresh runs", () => {
+  const points = require("./fixtures/combined-search.js").cutAware, budgets = [];
+  const engine = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded(), (...args) => {
+    const relaySearch = createRelaySearch(...args);
+    return { candidates(options, report) {
+      budgets.push(options.budgetMs);
+      return relaySearch.candidates(options, report);
+    } };
+  });
+  for (const initialLimit of [10000, 10000, 2100, 1]) {
+    const reports = [], firstBudget = budgets.length;
+    const result = engine.optimizePath({ points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
+    assert.equal(reports[0].stagnationLimitMs, initialLimit, "each run starts with the full selected delay");
+    assert.equal(reports.find(s => s.stage === "relay").stagnationLimitMs, initialLimit);
+    assert.ok(result.relayImprovements >= 2, "exercise consecutive accepted relays");
+    let ordinaryGain = false;
+    for (let i = 0; i < reports.length; i++) {
+      const current = reports[i], previous = reports[i - 1];
+      const expected = Math.max(Math.min(2000, initialLimit), initialLimit * 0.9 ** (current.relayImprovements || 0));
+      close(current.stagnationLimitMs, expected);
+      if (previous && (current.relayImprovements || 0) === (previous.relayImprovements || 0)) {
+        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "attempts and ordinary gains never change the delay");
+        ordinaryGain ||= current.improvements > previous.improvements;
+      }
+    }
+    assert.ok(ordinaryGain);
+    assert.equal(budgets.length - firstBudget, result.relayPasses);
+    assert.ok(budgets.slice(firstBudget).every(budget => budget === Math.min(15000, Math.max(250, initialLimit))),
+      "relay scans keep the initial budget even after successful relays");
+    if (initialLimit === 2100) assert.equal(result.stagnationLimitMs, 2000);
+    assert.equal(model.validateRoute(result.path, points), "");
+  }
+});

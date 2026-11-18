@@ -24,6 +24,7 @@ async function run() {
     await page.locator("#patternJsonFile").setInputFiles({ name: "relay.pattern.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(pattern)) });
     await page.waitForFunction(() => loadedPattern?.project.name === "Relais au plateau");
     await page.locator("#cutThresholdInput").fill("3"); await page.locator("#cutThresholdInput").dispatchEvent("change");
+    await page.locator("#pathStagnationLimit").selectOption("10000");
     await page.evaluate(() => {
       window.relayReports = [];
       const original = window.createPathOptimizerWorker;
@@ -33,7 +34,7 @@ async function run() {
           const s = e.data;
           if (s.stage === "relay" || s.stage === "search" || s.type === "complete") {
             relayReports.push({ stage: s.stage, score: s.metrics?.score, relays: s.relayImprovements || 0,
-              lastRelayImprovement: s.lastRelayImprovement });
+              lastRelayImprovement: s.lastRelayImprovement, stagnationLimitMs: s.stagnationLimitMs });
           }
         });
         return worker;
@@ -46,6 +47,9 @@ async function run() {
     assert.equal(model.validateRoute(result.path, points), "");
     assert.ok(result.score < 41);
     assert.ok(result.highlights.length > 0, JSON.stringify(result.reports));
+    assert.equal(result.reports[0].stagnationLimitMs, 10000);
+    for (const report of result.reports) assert.ok(Math.abs(report.stagnationLimitMs - Math.max(2000, 10000 * 0.9 ** report.relays)) < 1e-7);
+    assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "10000", "the selected starting delay stays unchanged");
     const lastRelay = result.reports.at(-1).lastRelayImprovement;
     assert.ok(lastRelay);
     assert.equal(await page.locator("#pathLastRelayPosition").innerText(), `${lastRelay.rank} / ${lastRelay.total}`);
@@ -55,6 +59,24 @@ async function run() {
     await page.locator("#pathDetails summary").click();
     assert.ok(Number(await page.locator("#pathRelayImprovements").textContent()) >= 1);
     await page.screenshot({ path: path.join(output, "planner-relay-desktop.png"), fullPage: true });
+    await page.evaluate(() => {
+      pathAlgorithmRunning = true;
+      showAdvancedPathFeedback({ stage: "search", stagnationLimitMs: 8100, lastImprovementMs: 3000, relayImprovements: 2 });
+    });
+    assert.equal(await page.locator("#pathAlgorithmClockLabel").innerText(), "Sans amelioration (blocs)");
+    assert.equal(await page.locator("#pathAlgorithmLastImprovement").innerText(), "0:03 / 0:08,1");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "8100");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("value"), "3000");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("aria-valuetext"), "0:03 / 0:08,1");
+    await page.screenshot({ path: path.join(output, "planner-relay-delay-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await page.evaluate(() => {
+      const timer = document.querySelector("#pathAlgorithmLastImprovement").getBoundingClientRect();
+      const heading = document.querySelector("#pathAlgorithmClockLabel").getBoundingClientRect();
+      return document.documentElement.scrollWidth <= innerWidth + 1 && heading.right <= timer.left && timer.right <= innerWidth;
+    }));
+    await page.screenshot({ path: path.join(output, "planner-relay-delay-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1600, height: 1100 });
     // Inspect the real relay progress presentation without changing any route or saved state.
     await page.evaluate(() => {
       pathAlgorithmRunning = true;
@@ -75,6 +97,7 @@ async function run() {
     await page.screenshot({ path: path.join(output, "planner-relay-mobile.png"), fullPage: true });
     await page.evaluate(() => resetAlgorithmLiveMetrics());
     assert.equal(await page.locator("#pathLastRelay").isVisible(), false);
+    assert.equal(await page.locator("#pathAlgorithmLastImprovement").textContent(), "-");
     await page.evaluate(() => {
       pathAlgorithmRunning = false; renderPathTool(); window.relayStopSeen = false;
       const original = window.createPathOptimizerWorker;
@@ -94,6 +117,7 @@ async function run() {
     assert.equal(model.validateRoute(stopped, points), "");
     assert.ok(model.metrics(stopped, 3, true).score <= result.score + 1e-8);
     assert.ok(await page.locator("#optimizedPathButton").isEnabled());
+    assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "10000");
     assert.equal(await page.locator("#pathLastRelay").isVisible(), false, "A new run without a relay gain has no stale rank");
     assert.deepEqual(errors, []);
     console.log("relay UI passed: real worker plateau/resume/stop, single-diagonal highlight, global gain, progress counts and mobile layout");

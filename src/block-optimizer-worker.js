@@ -466,7 +466,8 @@
       return { path, unitLinks };
     }
     function optimizePath(options, report = () => {}) {
-      const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const started = clock(), initialLimit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      let limit = initialLimit;
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let insertionAttempts = 0, insertions = 0;
       let refinedOrders = 0, intermediateImprovements = 0, interleavedRestarts = 0;
@@ -530,6 +531,8 @@
         relayChange = relayed?.diagonals || null;
         if (relayed) {
           relayImprovements++;
+          // Preserve shorter programmatic budgets; normal UI runs never fall below two seconds.
+          limit = Math.max(Math.min(2000, initialLimit), initialLimit * 0.9 ** relayImprovements);
           lastRelayImprovement = { ...relayed.link, pass: relayPasses };
         }
         changed = true; improvements++; lastImprovement = clock();
@@ -703,7 +706,7 @@
         stage = "relay"; phase = "Recherche de relais"; relayPasses++;
         relay = { examined: 0, total: 0, attempts: 0, timedOut: false }; emit(true);
         let improved = false;
-        const budgetMs = Math.min(15000, Math.max(250, limit));
+        const budgetMs = Math.min(15000, Math.max(250, initialLimit));
         for (const candidate of relaySearch.candidates({ path: best.path, constraints: problem.constraints,
           cutThreshold: problem.threshold, budgetMs }, progress => { relay = progress; emit(); })) {
           attempts++; relayAttempts++;

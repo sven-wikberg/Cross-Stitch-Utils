@@ -1922,7 +1922,7 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmAttempts.textContent = String(snapshot.attempts ?? 0);
   pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
   pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
-  pathAlgorithmLastImprovement.textContent = `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs)}`;
+  pathAlgorithmLastImprovement.textContent = `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs, true)}`;
   pathAlgorithmProgress.setAttribute("aria-valuetext", view.searching ? pathAlgorithmLastImprovement.textContent : view.count || "Preparation en cours");
 }
 
@@ -1930,11 +1930,13 @@ function resetAlgorithmLiveMetrics() {
   updateAlgorithmLiveMetrics(null);
 }
 
-function formatAlgorithmTime(milliseconds) {
-  const totalSeconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
+function formatAlgorithmTime(milliseconds, precise = false) {
+  const ticks = Math.max(0, Math.round((Number(milliseconds) || 0) / (precise ? 100 : 1000)));
+  const totalSeconds = precise ? Math.floor(ticks / 10) : ticks;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
+  const fraction = precise && ticks % 10 ? `,${ticks % 10}` : "";
+  return `${minutes}:${seconds}${fraction}`;
 }
 
 function showAlgorithmFeedback(phase) {
