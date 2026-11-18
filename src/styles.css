@@ -713,6 +713,12 @@ select:focus {
 .path-view-tools { flex-shrink: 0; }
 .path-view-button { width: 32px; height: 32px; min-height: 32px; padding: 6px; flex-shrink: 0; }
 .path-view-button img { display: block; width: 18px; height: 18px; }
+.path-follow-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; margin: 0; font-size: 0.75rem; cursor: pointer; }
+.path-follow-toggle input { appearance: none; width: 32px; height: 18px; min-height: 18px; flex: 0 0 32px; margin: 0; padding: 2px; border: 1px solid #8c9995; border-radius: 10px; background: #e3e8e6; cursor: pointer; }
+.path-follow-toggle input::before { content: ""; display: block; width: 12px; height: 12px; border-radius: 50%; background: #56635f; }
+.path-follow-toggle input:checked { background: var(--accent); border-color: var(--accent); }
+.path-follow-toggle input:checked::before { transform: translateX(14px); background: #ffffff; }
+.path-follow-toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .path-segmented { gap: 0; }
 .path-segmented button { min-height: 32px; border-radius: 0; padding: 6px 10px; font-size: 0.75rem; }
 .path-segmented .path-view-button { padding: 6px; }

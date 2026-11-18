@@ -19,6 +19,7 @@ const pathInspection = document.querySelector("#pathInspection");
 const pathComparisonScore = document.querySelector("#pathComparisonScore");
 const pathViewBefore = document.querySelector("#pathViewBefore");
 const pathViewAfter = document.querySelector("#pathViewAfter");
+const pathFollowGains = document.querySelector("#pathFollowGains");
 let viewportPattern = null, inspectionMode = "draw", comparisonMode = "after", viewFrame = null, panGesture = null;
 const comparisonPaths = new Map(), viewPointers = new Map();
 let overviewCache = null, inspectionLinks = null;
@@ -100,6 +101,9 @@ const pathZoneCache = new WeakMap();
 const pathBlockCache = new WeakMap();
 const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
 const WORK_COLOR_STORAGE_KEY = "cross-stitch-path-work-color";
+const FOLLOW_GAINS_STORAGE_KEY = "cross-stitch-path-follow-gains";
+let followPathGains = localStorage.getItem(FOLLOW_GAINS_STORAGE_KEY) === "true", followedPathImprovement = null;
+pathFollowGains.checked = followPathGains;
 let workColor = PathVisuals.workPalette(localStorage.getItem(WORK_COLOR_STORAGE_KEY)).color;
 let scoreHistory = [], scoreHistoryDmc = null;
 pathWorkColor.value = workColor;
@@ -420,6 +424,8 @@ function renderPatternGrid(canvasOnly = false) {
     selectedDmc = loadedPattern.colors[0]?.dmc || null;
   }
 
+  if (followPathGains && followedPathImprovement !== pathImprovement && comparisonMode === "after"
+      && !panGesture && !isDrawingPath && framePathImprovement()) followedPathImprovement = pathImprovement;
   const cellSize = pathViewport.state.scale, bounds = pathViewport.bounds;
   const selectedColor = colorByDmc.get(selectedDmc);
   const workPalette = PathVisuals.workPalette(workColor);
@@ -524,6 +530,7 @@ function blocksForColor(dmc) {
 
 function clearPathImprovement() {
   pathImprovement = null;
+  followedPathImprovement = null;
   pathImprovementCanvas.classList.remove("active");
   pathImprovementCanvas.width = 1;
   pathImprovementCanvas.height = 1;
@@ -656,6 +663,9 @@ function renderInspectionControls() {
   document.querySelector("#pathPanMode").setAttribute("aria-pressed", String(pan));
   patternCanvas.classList.toggle("is-pan", pan);
   document.querySelector("#pathFocusGain").disabled = !pathImprovement || pathImprovement.dmc !== selectedDmc;
+  pathFollowGains.checked = followPathGains;
+  pathFollowGains.parentElement.title = comparisonMode === "before"
+    ? "Suivi en pause dans la vue Avant" : "Cadrer automatiquement les dernieres ameliorations";
 }
 
 function renderOverview() {
@@ -1506,6 +1516,7 @@ function pointerGesture() {
 function finishViewportPointer(event) {
   viewPointers.delete(event.pointerId); panGesture = pointerGesture();
   patternCanvas.classList.toggle("is-panning", Boolean(panGesture));
+  if (!panGesture && followPathGains && followedPathImprovement !== pathImprovement) queueViewportRender();
 }
 let inspectFrame = null, pendingInspection = null;
 function queueConnectionInspection(point) {
@@ -1540,16 +1551,28 @@ for (const [button, mode] of [[pathViewBefore, "before"], [pathViewAfter, "after
   if (isDrawingPath || panGesture) return;
   comparisonMode = mode; pathInspection.textContent = ""; queueViewportRender();
 });
-document.querySelector("#pathFocusGain").addEventListener("click", () => {
-  if (!pathImprovement) return;
-  const links = [...pathImprovement.added, ...pathImprovement.removed];
-  if (!links.length) return;
+function framePathImprovement() {
+  if (!pathImprovement || pathImprovement.pattern !== loadedPattern || pathImprovement.dmc !== selectedDmc
+      || pathImprovement.route !== currentPath() || activePathStep !== "paths") return false;
+  const links = [...pathImprovement.added, ...pathImprovement.removed,
+    ...pathImprovement.relayDiagonals.map(point => { const holes = StitchModel.holes(point); return { from: holes.start, to: holes.end }; })];
+  if (!links.length) return false;
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const link of links) for (const point of [link.from, link.to]) {
     bounds.minX = Math.min(bounds.minX, point.x); bounds.minY = Math.min(bounds.minY, point.y);
     bounds.maxX = Math.max(bounds.maxX, point.x); bounds.maxY = Math.max(bounds.maxY, point.y);
   }
-  pathViewport.frame(bounds); queueViewportRender();
+  pathViewport.frame(bounds);
+  return true;
+}
+document.querySelector("#pathFocusGain").addEventListener("click", () => {
+  if (framePathImprovement()) queueViewportRender();
+});
+pathFollowGains.addEventListener("change", () => {
+  followPathGains = pathFollowGains.checked;
+  followedPathImprovement = null;
+  try { localStorage.setItem(FOLLOW_GAINS_STORAGE_KEY, String(followPathGains)); } catch {}
+  queueViewportRender();
 });
 pathOverview.addEventListener("pointerdown", event => {
   if (!loadedPattern) return;

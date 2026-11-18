@@ -6,7 +6,7 @@
 - Sauvegarde et progression de l'outil 3 jamais modifiees par une optimisation.
 - Diagonale / avant diagonale \\, et pas de transition dans le meme trou.
 - Meilleur chemin valide toujours conserve, avec score initial, gain et coupes.
-- Surbrillance des raccordements ameliores, sans deplacement automatique de la vue.
+- Surbrillance des raccordements ameliores, avec suivi automatique de la vue optionnel.
 
 ## Chantier actuel : recherche plus visuelle
 

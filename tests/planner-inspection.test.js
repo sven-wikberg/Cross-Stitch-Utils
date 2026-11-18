@@ -37,12 +37,33 @@ async function run() {
     await upload(data);
     assert.equal(await page.locator("#pathSearchCanvas").count(), 0);
     assert.equal(await page.locator("#pathViewBefore").isDisabled(), true);
+    assert.equal(await page.locator("#pathFollowGains").isChecked(), false);
+    const initialCamera = await camera();
+    await page.locator("#pathFollowGains").check(); await frame();
+    assert.deepEqual(await camera(), initialCamera, "Enabling follow without a gain does not move the camera");
     assert.ok(await page.locator(".path-view-button img").evaluateAll(images => images.every(img => img.complete && img.naturalWidth > 0)));
     await page.locator("#optimizedPathButton").click();
     await page.waitForFunction(() => !pathAlgorithmRunning && comparisonPaths.has("310"));
     const optimized = await page.evaluate(() => currentPath());
     assert.ok(model.metrics(optimized, 3, true).score < model.metrics(initialPath, 3, true).score);
     assert.deepEqual(await page.evaluate(() => comparisonPaths.get("310").path), initialPath);
+    assert.ok((await camera()).zoom > initialCamera.zoom, "Accepted real-worker gains automatically zoom the view");
+    assert.equal(await page.evaluate(() => followedPathImprovement === pathImprovement), true);
+    const followedState = await state();
+    await page.locator("#pathFollowGains").uncheck();
+    await page.locator("#pathFitView").click(); await frame();
+    const manualCamera = await camera();
+    await page.evaluate(before => { recordPathImprovement(selectedDmc, before, currentPath()); renderPatternGrid(true); }, initialPath);
+    assert.deepEqual(await camera(), manualCamera, "Accepted gains do not move the camera with follow disabled");
+    await page.locator("#pathFollowGains").check(); await frame();
+    assert.ok((await camera()).zoom > manualCamera.zoom, "Enabling follow frames the latest existing gain immediately");
+    const automaticCamera = await camera();
+    await page.evaluate(() => {
+      recordPathImprovement(selectedDmc, currentPath(), currentPath());
+      renderPatternGrid(true); renderPatternGrid(true);
+    });
+    assert.deepEqual(await camera(), automaticCamera, "Repeated renders and non-improving routes do not refocus");
+    assert.equal(await state(), followedState, "The follow toggle and camera never edit paths or history");
     await page.locator("#pathFocusGain").click(); await frame();
     const focused = await camera(), afterPixels = await page.evaluate(() => patternCanvas.toDataURL());
     const afterState = await state();
@@ -57,10 +78,15 @@ async function run() {
     await page.mouse.move(box.x + 140, box.y + 110, { steps: 5 }); await page.mouse.up(); await frame();
     const panned = await camera(); assert.ok(panned.x > focused.x || panned.y > focused.y);
     assert.equal(await state(), afterState, "panning the before path never edits the real paths or history");
+    await page.evaluate(before => { recordPathImprovement(selectedDmc, before, currentPath()); renderPatternGrid(true); }, initialPath);
+    assert.deepEqual(await camera(), panned, "A new gain cannot move the camera in Before mode");
+    assert.match(await page.locator(".path-follow-toggle").getAttribute("title"), /pause/);
+    await page.locator("#pathFollowGains").uncheck(); await frame();
     await page.locator("#pathViewAfter").click(); await frame();
     assert.deepEqual(await camera(), panned);
     assert.deepEqual(await page.evaluate(() => displayedPath()), optimized);
     assert.equal(await page.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
+    await page.locator("#pathFollowGains").check(); await frame();
     const anchor = { x: box.x + 220, y: box.y + 200 };
     await page.mouse.move(anchor.x, anchor.y);
     const world = await page.evaluate(() => pathViewport.toWorld({ x: 220, y: 200 }));
@@ -96,6 +122,7 @@ async function run() {
     await reopened.waitForFunction(() => !document.querySelector("main").inert);
     await reopened.locator('[data-step="paths"]').click();
     assert.equal(await reopened.locator("#pathViewBefore").isDisabled(), true, "comparison references are session-only");
+    assert.equal(await reopened.locator("#pathFollowGains").isChecked(), true, "The follow preference is restored independently of the project");
     assert.deepEqual(await reopened.evaluate(() => currentPath()), optimized, "reopening still restores the actual best path");
     await reopened.close();
     // Pointer conversion remains correct when editing a zoomed and shifted grid.
@@ -135,7 +162,7 @@ async function run() {
     }));
     await page.screenshot({ path: path.join(output, "planner-inspection-wide.png"), fullPage: true });
     assert.deepEqual(errors, []);
-    console.log("planner inspection passed: camera, comparison, wheel, pan, overview, cut inspection, zoomed editing, mobile and wide layouts");
+    console.log("planner inspection passed: automatic gain follow, preference, comparison pause, camera, wheel, pan, overview, cut inspection, zoomed editing, mobile and wide layouts");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
