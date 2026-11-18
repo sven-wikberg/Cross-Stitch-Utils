@@ -663,9 +663,67 @@ test("insertions require distinct blocks and a larger host, and tied moves are n
   const cells = [...rectangle(5, 1, 0, 2), ...[0, 2, 4].map(x => ({ x, y: 0 }))];
   const result = optimizer(1).optimizePath({ points: cells, stagnationLimitMs: 100000 });
   assertPath(result, cells);
-  assert.ok(result.insertionAttempts > 0);
+  assert.equal(result.insertionAttempts, 0, "skip insertion search at the absolute unit-distance lower bound");
   assert.equal(result.insertions, 0, "equal-score moves cannot oscillate or reset inactivity");
   close(result.metrics.score, result.initialMetrics.score, "already unit-optimal route");
+});
+
+test("intermediate block orders can beat the incumbent after refinement without publishing local regressions", () => {
+  const points = require("./fixtures/combined-search.js").intermediate, reports = [];
+  const result = optimizer(1).optimizePath({ points, stagnationLimitMs: 1200 }, snapshot => {
+    if (snapshot.stage === "search") reports.push(snapshot);
+  });
+  assertPath(result, points);
+  assert.ok(result.refinedOrders > 1 && result.intermediateImprovements > 0);
+  close(result.metrics.score, 32.47213595499958, "combined search regression fixture");
+  for (let i = 1; i < reports.length; i++) {
+    const a = reports[i - 1], b = reports[i];
+    assert.ok(compare(b.metrics, a.metrics) <= 0, "unpublished local paths never regress the global preview");
+    if (b.improvements === a.improvements) {
+      assert.equal(b.elapsedMs - b.lastImprovementMs, a.elapsedMs - a.lastImprovementMs,
+        "intermediate improvements alone do not restart inactivity");
+    } else assert.ok(compare(b.metrics, a.metrics) < 0);
+    if (b.path) assertPath(b, points);
+  }
+  const replay = optimizer(1).optimizePath({ points, stagnationLimitMs: 1200 });
+  assert.deepEqual(replay.path, result.path, "fixed seed and logical budget reproduce the route");
+  assert.equal(replay.attempts, result.attempts);
+});
+
+test("restarts reuse interleaved routes and retain constraints on unpublished candidates", () => {
+  const points = require("./fixtures/combined-search.js").interleaved;
+  const first = optimizer(1).optimizePath({ points, stagnationLimitMs: 8000 });
+  assertPath(first, points);
+  assert.ok(first.interleavedRestarts > 0 && first.intermediateImprovements > 0);
+  assert.ok(new Set(first.order).size < first.order.length, "the retained route is interleaved");
+  close(first.metrics.score, 59.84800554704864, "restarts regression fixture");
+  const constraints = { lockedPrefix: first.path.slice(0, 3), start: first.path[0],
+    forcedCuts: [first.path.at(-1)] };
+  const initialPath = first.path.map(model.copy);
+  initialPath.at(-1).cutBefore = true;
+  const before = structuredClone(initialPath), reports = [];
+  const second = optimizer(1).optimizePath({ points, initialPath, constraints, stagnationLimitMs: 8000 }, snapshot => {
+    if (snapshot.stage === "search" && snapshot.path) reports.push(snapshot);
+  });
+  assertPath(second, points, constraints);
+  assert.ok(second.interleavedRestarts > 0);
+  assert.ok(second.metrics.score <= measure(initialPath, 10).score + 1e-8);
+  for (const snapshot of reports) assertPath(snapshot, points, constraints);
+  assert.deepEqual(initialPath, before);
+  assert.deepEqual(second.path.slice(0, 3).map(p => [model.key(p), p.direction]),
+    constraints.lockedPrefix.map(p => [model.key(p), p.direction]));
+  assert.equal(second.path.find(p => model.key(p) === model.key(initialPath.at(-1))).cutBefore, true);
+});
+
+test("combined order and insertion search can eliminate a cut after all block orders have been tested", () => {
+  const points = require("./fixtures/combined-search.js").cutAware;
+  const result = optimizer().optimizePath({ points, cutThreshold: 3, stagnationLimitMs: 1 });
+  assertPath(result, points, {}, 3);
+  assert.equal(result.reason, "exhaustive");
+  assert.ok(result.intermediateImprovements > 0);
+  assert.equal(result.metrics.cuts, 2);
+  close(result.metrics.score, 49.38905042258274, "combined refinement, including orientation and cut penalties");
+  assert.ok(result.metrics.score < 61.819131909660754, "previous incumbent-only refinement retained three cuts");
 });
 
 function smallBlockBridge(size) {

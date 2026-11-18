@@ -54,10 +54,22 @@ Elle disparait a l'arret. Gain total et Dernier gain sont distingues.
 
 ## Priorite 3 : mieux combiner les optimisations
 
-- [ ] Essayer les insertions sur plusieurs bons ordres intermediaires, meme avant qu'ils battent le meilleur global.
-- [ ] Continuer a n'afficher et conserver que les meilleurs resultats globaux valides.
-- [ ] Mieux reutiliser les parcours entrelaces pour les essais suivants.
-- [ ] Comparer score, coupes et temps sur des fixtures fixes et des executions reproductibles.
+Statut : termine. Recherche combinee, sans modification des formats ni des sauvegardes.
+
+- [x] Essayer les insertions sur plusieurs bons ordres intermediaires, meme avant qu'ils battent le meilleur global.
+- [x] Continuer a n'afficher et conserver que les meilleurs resultats globaux valides.
+- [x] Mieux reutiliser les parcours entrelaces pour les essais suivants.
+- [x] Comparer score, coupes et temps sur des fixtures fixes et des executions reproductibles.
+
+Les descentes intermediaires et la reserve interne sont bornees. Les relances
+peuvent perturber un parcours entrelace sans l'aplatir. Aucun essai moins bon ne
+remplace le resultat visible ni ne relance le delai global. Les prefixe, sens,
+coupes imposees et regles de broderie restent verifies.
+
+Le benchmark separe `tests/path-quality-benchmark.js` compare six fixtures sur
+trois graines au moteur de la priorite 2. Le README documente les budgets logiques,
+les mesures de temps reel et leurs limites. Tests unitaires et navigateur verifies,
+y compris le pattern de 41602 diagonales, sans toucher a la progression de l'outil 3.
 
 ## Priorite 4 : examiner les parcours plus facilement
 
@@ -73,7 +85,7 @@ Elle disparait a l'arret. Gain total et Dernier gain sont distingues.
 
 ## Ordre propose
 
-Recherche plus visuelle, protection du travail et allegement de l'interface termines.
-Suite proposee : combinaison des optimisations et inspection detaillee.
+Recherche plus visuelle et priorites 1 a 3 terminees.
+Suite proposee : inspection detaillee des parcours (priorite 4).
 
 Chaque chantier doit etre valide separement avant de passer au suivant.

@@ -473,7 +473,8 @@
     function optimizePath(options, report = () => {}) {
       const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
-      let insertionAttempts = 0, insertions = 0, insertionPending = true;
+      let insertionAttempts = 0, insertions = 0;
+      let refinedOrders = 0, intermediateImprovements = 0, interleavedRestarts = 0;
       let activity = null;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
@@ -492,6 +493,29 @@
       const zones = model.createZones(problem.cells);
       best ||= { path: problem.incumbent.path, unitLinks: problem.incumbent.unitLinks };
       bestOrder = problem.incumbent.order.slice(); bestMetrics ||= problem.incumbent.metrics; initialMetrics ||= bestMetrics;
+      const actionOwners = new Map(problem.blocks.flatMap(block => block.seedSequence.map(point => [model.key(point), block.id])));
+      const fixedOrder = bestOrder.slice(0, problem.fixedCount), lowerBound = Math.max(0, best.path.length - 1);
+      const elite = [], refined = new Set(), poolLimit = Math.max(2, Math.min(6, Math.floor(100000 / Math.max(1, best.path.length))));
+      let rawBest = evaluateOrder(problem, bestOrder), refinementChecks = 0;
+      function routeOrder(route) {
+        const ids = new Set(fixedOrder);
+        for (const point of route.path) ids.add(actionOwners.get(model.key(point)));
+        return [...ids];
+      }
+      function remember(route, metrics) {
+        if (!problem.insertions.contacts.size) return;
+        const signature = route.path.map((point, i) => `${model.key(point)}:${Number(route.unitLinks[i])}`).join(";");
+        if (elite.some(entry => entry.signature === signature)) return;
+        let previous, segments = 0;
+        for (const point of route.path) {
+          const owner = actionOwners.get(model.key(point));
+          if (owner !== previous) segments++;
+          previous = owner;
+        }
+        elite.push({ route, metrics, signature, order: routeOrder(route), interleaved: segments > problem.blocks.length });
+        elite.sort((a, b) => compareMetrics(a.metrics, b.metrics));
+        if (elite.length > poolLimit) elite.pop();
+      }
       function emit(force = false) {
         const now = clock();
         if (!force && now - lastReport < 150) return;
@@ -501,15 +525,23 @@
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
+          refinedOrders, intermediateImprovements, interleavedRestarts,
           progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
+      function publish(route, metrics, order, insertion = false, intermediate = false) {
+        if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
+        best = route; bestOrder = order ? order.slice() : routeOrder(route); bestMetrics = metrics;
+        changed = true; improvements++; lastImprovement = clock();
+        if (insertion) insertions++;
+        if (intermediate) intermediateImprovements++;
+        emit(); return true;
+      }
       function consider(order, value) {
+        if (better(value.score, value.cuts, rawBest.score, rawBest.cuts)) rawBest = value;
         if (!better(value.score, value.cuts, bestMetrics.score, bestMetrics.cuts)) return false;
         const route = materialize(problem, order), metrics = zones.measure(route.path, problem.threshold);
-        if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
-        best = route; bestOrder = order.slice(); bestMetrics = metrics; changed = true; improvements++; lastImprovement = clock(); insertionPending = true;
-        emit(); return true;
+        return publish(route, metrics, order);
       }
       for (const order of [...problem.unitOrders, ...problem.orders]) consider(order, evaluateOrder(problem, order));
       // Even a tied incumbent is realized through the validated block transfer matrices.
@@ -521,32 +553,29 @@
       const freeCount = problem.blocks.length - problem.fixedCount;
       let reason = "inactivity";
       const expired = () => clock() - lastImprovement >= limit;
-      function tryInsertions() {
-        if (!insertionPending || !problem.insertions.contacts.size) return;
+      // Local descent may improve an unpublished route; only publish() touches the global timer and preview.
+      function refineRoute(route, metrics, exploratory = false) {
+        if (!problem.insertions.contacts.size || bestMetrics.score <= lowerBound + epsilon) return { route, metrics };
         const previousPhase = phase, initialInsertions = insertions;
-        const finish = () => {
-          if (insertions > initialInsertions && changed) emit(true);
-          phase = previousPhase;
-        };
-        while (insertionPending) {
-          if (expired()) { finish(); return; }
-          insertionPending = false;
-          for (const candidate of blockInsertions(problem, best)) {
-            if (expired()) { finish(); return; }
-            const probePath = best.path;
+        let checks = 0, moves = 0, improved = true;
+        const budget = exploratory ? 256 : Infinity;
+        while (improved && checks < budget && (!exploratory || moves < 6) && !expired()) {
+          improved = false;
+          for (const candidate of blockInsertions(problem, route)) {
+            if (checks >= budget || expired()) break;
+            const probePath = route.path;
             activity = () => ({ kind: "insertion", crossCount: candidate.crossCount,
               regions: [boundsOf(probePath.slice(candidate.from, candidate.end)),
                 boundsOf(probePath.slice(candidate.to - 1, candidate.to + 1))] });
-            attempts++; insertionAttempts++;
+            checks++; attempts++; insertionAttempts++;
             phase = `Insertion de petits blocs : ${insertionAttempts} essais, ${insertions} ameliorations`;
-            if (candidate.score < bestMetrics.score - epsilon) {
-              const route = candidate.materialize();
-              if (route && !model.validateRoute(route.path, problem.cells) && model.satisfiesConstraints(route.path, problem.constraints)) {
-                const metrics = zones.measure(route.path, problem.threshold);
-                if (metrics.score < bestMetrics.score - epsilon) {
-                  best = route; bestMetrics = metrics; changed = true; improvements++; insertions++;
-                  lastImprovement = clock(); insertionPending = true;
-                  phase = `Insertion de petits blocs : ${insertionAttempts} essais, ${insertions} ameliorations`;
+            if (candidate.score < metrics.score - epsilon) {
+              const next = candidate.materialize();
+              if (next && !model.validateRoute(next.path, problem.cells) && model.satisfiesConstraints(next.path, problem.constraints)) {
+                const nextMetrics = zones.measure(next.path, problem.threshold);
+                if (nextMetrics.score < metrics.score - epsilon) {
+                  route = next; metrics = nextMetrics; improved = true; moves++;
+                  publish(route, metrics, null, true, exploratory);
                   emit(); break;
                 }
               }
@@ -554,9 +583,36 @@
             emit();
           }
         }
-        finish();
+        remember(route, metrics);
+        if (insertions > initialInsertions && changed) emit(true);
+        phase = previousPhase;
+        return { route, metrics };
       }
-      tryInsertions();
+      function tryOrder(order, value, promising = true) {
+        const accepted = consider(order, value);
+        if (accepted) refineRoute(best, bestMetrics);
+        if (!problem.insertions.contacts.size || bestMetrics.score <= lowerBound + epsilon || expired()) return;
+        refinementChecks++;
+        if (!accepted && freeCount > 7 && !promising && refinementChecks % 24) return;
+        const slack = Math.max(4, Math.min(problem.threshold * 2, (rawBest.score - lowerBound) * 0.5));
+        if (value.score > rawBest.score + slack) return;
+        const key = order.join(",");
+        if (refined.has(key)) return;
+        refined.add(key);
+        if (refined.size > 128) refined.delete(refined.values().next().value);
+        if (accepted) return;
+        refinedOrders++;
+        const route = materialize(problem, order), metrics = zones.measure(route.path, problem.threshold);
+        refineRoute(route, metrics, true);
+      }
+      remember(best, bestMetrics);
+      refineRoute(best, bestMetrics);
+      if (problem.insertions.contacts.size && bestMetrics.score > lowerBound + epsilon) {
+        for (const order of [...problem.unitOrders, ...problem.orders]) {
+          if (expired()) break;
+          tryOrder(order, evaluateOrder(problem, order));
+        }
+      }
       if (freeCount <= 7) {
         reason = "exhaustive";
         const permutation = bestOrder.slice(problem.fixedCount), prefix = bestOrder.slice(0, problem.fixedCount);
@@ -566,7 +622,7 @@
             const order = prefix.concat(permutation); attempts++;
             const before = bestOrder;
             activity = () => orderActivity(problem, before, order);
-            if (consider(order, evaluateOrder(problem, order, false, false))) tryInsertions();
+            tryOrder(order, evaluateOrder(problem, order, false, false));
             emit(); return;
           }
           const previous = depth ? permutation[depth - 1] : prefix.at(-1);
@@ -595,6 +651,26 @@
           else for (let a = Math.min(i, j), b = Math.max(i, j); a < b; a++, b--) [result[a], result[b]] = [result[b], result[a]];
           return result;
         }
+        function restartInterleaved(entry) {
+          if (!entry || bestMetrics.score <= lowerBound + epsilon || expired()) return entry;
+          if (entry.interleaved) interleavedRestarts++;
+          // A bounded uphill relocation keeps existing interleaving instead of flattening it into blocks.
+          const choices = []; let checks = 0;
+          for (const candidate of blockInsertions(problem, entry.route)) {
+            if (expired()) break;
+            attempts++; insertionAttempts++;
+            checks++;
+            if (Number.isFinite(candidate.score) && candidate.score <= entry.metrics.score + Math.max(4, problem.threshold * 2)) choices.push(candidate);
+            if (choices.length >= 16 || checks >= 128) break;
+          }
+          if (!choices.length || expired()) return entry;
+          const route = choices[rand(choices.length)].materialize();
+          if (!route || model.validateRoute(route.path, problem.cells) || !model.satisfiesConstraints(route.path, problem.constraints)) return entry;
+          const metrics = zones.measure(route.path, problem.threshold);
+          publish(route, metrics, null, true, true);
+          const result = refineRoute(route, metrics, true);
+          return { ...result, order: routeOrder(result.route) };
+        }
         while (!expired()) {
           let candidate = null;
           if (problem.unitEdges.length && attempts % 4 !== 3) {
@@ -615,22 +691,23 @@
           const next = evaluateOrder(problem, candidate, false, false); attempts++;
           if (better(next.score, next.cuts, value.score, value.cuts)) {
             working = candidate; value = next; misses = 0;
-            if (consider(candidate, next)) tryInsertions();
+            tryOrder(candidate, next);
           }
-          else misses++;
+          else { misses++; tryOrder(candidate, next, false); }
           if (misses >= Math.max(100, freeCount)) {
-            working = bestOrder.slice(); for (let i = 0; i < 4; i++) working = mutate(working, true);
+            const entry = restartInterleaved(elite.length ? elite[restarts % elite.length] : null);
+            working = (entry?.order || bestOrder).slice(); for (let i = 0; i < 4; i++) working = mutate(working, true);
             value = evaluateOrder(problem, working, false, false); misses = 0; restarts++;
           }
           emit();
         }
       }
       stage = "complete"; phase = reason === "exhaustive" ? "Liaisons optimisees : ordres et insertions testes" : "Optimisation terminee : delai sans amelioration atteint";
-      const actionOwners = new Map(problem.blocks.flatMap(block => block.seedSequence.map(point => [model.key(point), block.id])));
       const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
         stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
+        refinedOrders, intermediateImprovements, interleavedRestarts,
         progress: 100, reason, order: actualOrder };
       report(final); return final;
     }

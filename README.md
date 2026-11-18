@@ -96,6 +96,10 @@ Une passe locale peut ensuite inserer un petit bloc orthogonal de 1 a 16 croix a
 
 Le suivi existant affiche la phase d'insertion de petits blocs, le score global et les raccordements modifies. Un bloc peut desormais apparaitre en plusieurs morceaux dans le chemin. Un ancien parcours entrelace valide reste candidat lors d'une relance, meme s'il ne peut plus etre represente par une simple permutation des blocs. Un bloc dont une seule diagonale est deja verrouillee est entierement protege de ces deplacements; le point de depart et les coupes manuelles restent respectes.
 
+La recherche combine aussi les deux operations avant de comparer au meilleur global. Plusieurs ordres intermediaires prometteurs recoivent leur propre descente par insertions, meme si leur score brut ne bat pas encore le meilleur parcours. La selection se compare au meilleur ordre de blocs brut, pas au score deja ameliore par entrelacement. Ces essais sont dedupliques et bornes : jusqu'a 256 insertions examinees et six deplacements acceptes par descente exploratoire. Sur les grands ensembles, les essais non ameliorants de l'ordre courant sont echantillonnes. Une insertion locale peut ameliorer un candidat encore moins bon que le meilleur global, mais celui-ci n'est ni affiche ni sauvegarde. Seul un gain global valide modifie le resultat visible et relance le delai sans amelioration.
+
+Une petite reserve interne conserve de deux a six parcours distincts selon leur taille. Les relances peuvent repartir directement de ces parcours entrelaces, deplacer temporairement un petit bloc, puis ameliorer ce nouvel essai. La perturbation est limitee a un choix parmi 16 emplacements admissibles, apres au plus 128 examens, et reste soumise au delai global. Les ordres de premiere apparition des blocs alimentent egalement la recherche des permutations, sans remplacer le parcours entrelace conserve. La reserve n'est ni exportee ni enregistree dans le brouillon. Les calculs d'orientation, les coupes imposees et le prefixe verrouille sont verifies avant toute acceptation globale. Les insertions inutiles sont sautees quand le score atteint deja la borne minimale d'une unite par liaison au dos.
+
 Le critere principal est le score reel, puis le nombre de coupes et la distance. Les retours dans les anciens ilots ne sont plus prioritaires. Seul un nouveau meilleur resultat relance le delai sans amelioration; une relance aleatoire ou un changement de bloc ne le remet pas a zero. Le suivi affiche la preparation des blocs, les essais, les relances, les ameliorations, le temps ecoule, le delai sans gain et le score total. Le meilleur parcours complet reste affiche pendant la recherche; l'export reste bloque si le parcours est incomplet.
 
 L'interface conserve le score total, le score initial, le gain total et les coupes dans la colonne de gauche. Le volet Details, ferme par defaut, regroupe les distances, les diagonales, les essais, les relances, le temps ecoule et le bilan par couleur. Retours de zone n'est plus un indicateur affiche. Pendant la preparation, la barre compte les blocs construits puis prepares ; pendant la recherche, elle mesure uniquement le delai sans amelioration, en temps ecoule sur temps limite. Elle disparait a l'arret et ne represente jamais un pourcentage de qualite. Le bloc courant et son nombre de croix ne sont visibles que pendant leur construction. Les commandes de diagonale, sens, depart, verrouillage et coupes restent dans Edition manuelle, repliee par defaut ; le resume signale les reglages actifs sans les modifier. Le Dernier gain au-dessus de la grille est distinct du Gain total depuis le score initial. Les algorithmes, scores, sauvegardes et exports ne changent pas avec cette simplification.
@@ -134,6 +138,25 @@ node tests/session-view.test.js
 ```
 
 Les tests navigateur necessitent Playwright et utilisent Edge en mode headless par defaut (`BROWSER_CHANNEL` permet de choisir un autre canal). Ils travaillent dans des navigateurs isoles et simulent GitHub, sans modifier la vraie sauvegarde. Les captures sont placees dans `exports/verification/`. `REAL_PATTERN_TEST=1` ajoute l'import, la reprise et l'optimisation sur le gros fichier inclus au depot. `orthogonal-path.test.js` verifie les distances unitaires, toutes les petites formes connexes d'une grille 3 x 3, les entrees/sorties distinctes, les contraintes et les grands groupes. `block-optimizer.test.js` verifie le choix conjoint des configurations, les contraintes, le delai global et la conservation du meilleur resultat. Les tests des anciens moteurs et de leurs delais restent disponibles comme reference. Les couts de raccordement sont conserves dans un cache borne, sans matrice de distances entre toutes les diagonales.
+
+### Comparaison de qualite
+
+`node tests/path-quality-benchmark.js` compare le moteur courant a celui du commit `ffe7428` (priorite 2), charge depuis Git sans modifier les fichiers. Six fixtures fixes et les graines 31, 73 et 101 sont utilisees. L'horloge injectee compte ses appels : ce budget logique rend les parcours et scores reproductibles, mais ne represente ni des millisecondes reelles ni une quantite identique de travail CPU. Le temps reel, preparation comprise, est mesure separement. Le rapport JSON est genere dans `exports/verification/path-quality.json`.
+
+Mesure du 18 novembre 2026, graine 31, budget logique propre a chaque fixture :
+
+| Cas | Score avant | Score apres | Coupes avant/apres | Temps reel avant/apres |
+| --- | ---: | ---: | ---: | ---: |
+| Ordre intermediaire, 14 croix | 33,657 | 32,472 | 0 / 0 | 5,1 / 6,6 ms |
+| Combinaison et coupes, 13 croix, seuil 3 | 61,819 | 49,389 | 3 / 2 | 4,6 / 11,9 ms |
+| Relances entrelacees, 23 croix | 60,612 | 59,848 | 0 / 0 | 15,8 / 29,1 ms |
+| Passerelle deja optimale, 12 croix | 23 | 23 | 0 / 0 | 0,8 / 0,8 ms |
+| Petits blocs, 30 croix | 59 | 59 | 0 / 0 | 2,4 / 2,2 ms |
+| Grands ilots, 3259 croix | 6893,754 | 6893,754 | 6 / 6 | 1177,2 / 1159 ms |
+
+Les graines 73 et 101 ne donnent pas de gain sur la fixture de relances avec ce court budget logique. Les trois premieres fixtures ciblent des faiblesses connues, les autres sont des controles : ce tableau ne garantit pas un gain sur tous les patterns. Les temps varient selon la machine et l'echauffement du moteur JavaScript.
+
+Pour un delai d'inactivite reel, lancer `$env:BENCHMARK_WALL_MS="500"; node tests/path-quality-benchmark.js` dans PowerShell. Cette variante n'est pas deterministe et produit `path-quality-wall.json`. Lors de la verification, le cas des coupes reste a 49,389 contre 61,819, et les relances atteignent 57,868 contre 60,612 pour les trois graines. Le nouveau moteur peut durer plus longtemps parce qu'un vrai gain relance le delai ; ce n'est pas une limite de temps total. La validite, les liaisons unitaires et le score recalcule sont verifies pour chaque resultat, separement des tests fonctionnels.
 
 ## Direction technique
 
