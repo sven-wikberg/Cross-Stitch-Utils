@@ -102,11 +102,12 @@ test("accepted relays shorten block inactivity by ten percent, with a two-second
       const current = reports[i], previous = reports[i - 1];
       const relayGains = (current.relayImprovements || 0) - (previous?.relayImprovements || 0);
       const normalGains = current.improvements - (previous?.improvements || 0) - relayGains;
-      if (normalGains > 0) { expected = initialLimit; ordinaryGain = true; }
+      if (normalGains > 0) ordinaryGain = true;
       for (let n = 0; n < relayGains; n++) expected = Math.max(Math.min(2000, initialLimit), expected * 0.9);
       close(current.stagnationLimitMs, expected);
-      if (previous && !relayGains && !normalGains) {
-        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "attempts without global gains never change the delay");
+      if (previous) {
+        assert.ok(current.stagnationLimitMs <= previous.stagnationLimitMs, "the delay never increases within a run");
+        if (!relayGains) assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "ordinary gains and attempts keep the reduced delay");
       }
     }
     assert.ok(ordinaryGain);
@@ -118,32 +119,33 @@ test("accepted relays shorten block inactivity by ten percent, with a two-second
   }
 });
 
-test("a normal global gain restores the initial delay and subsequent relays start a fresh decay cycle", () => {
+test("a normal global gain resets inactivity but keeps the reduced limit for subsequent relays", () => {
   const points = require("./fixtures/combined-search.js").timerRecovery;
   for (const initialLimit of [10000, 2100]) {
     const reports = [];
     const result = createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => 0, seeded()).optimizePath(
       { points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
-    let reset = false, decayedAgain = false;
+    let normalGain = false, decayedAgain = false;
     for (let i = 1; i < reports.length; i++) {
       const previous = reports[i - 1], current = reports[i];
       const relayGains = (current.relayImprovements || 0) - (previous.relayImprovements || 0);
       if (!relayGains && current.improvements > previous.improvements && previous.stagnationLimitMs < initialLimit) {
         assert.ok(current.metrics.score < previous.metrics.score);
-        assert.equal(current.stagnationLimitMs, initialLimit);
+        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs);
         assert.equal(current.lastImprovementMs, 0);
-        assert.equal(current.relayImprovements, 2, "total relay history is not reset with the delay");
+        assert.equal(current.relayImprovements, 2, "total relay history is retained");
         assert.deepEqual(current.lastRelayImprovement, previous.lastRelayImprovement);
-        if (initialLimit === 2100) assert.equal(previous.stagnationLimitMs, 2000, "a normal gain also recovers from the floor");
-        reset = true;
-      } else if (reset && relayGains) {
+        if (initialLimit === 2100) assert.equal(current.stagnationLimitMs, 2000, "a normal gain stays at the floor");
+        normalGain = true;
+      } else if (normalGain && relayGains) {
         assert.equal(relayGains, 1);
-        close(current.stagnationLimitMs, Math.max(2000, initialLimit * 0.9));
+        close(current.stagnationLimitMs, Math.max(2000, previous.stagnationLimitMs * 0.9));
         assert.equal(current.relayImprovements, 3);
         decayedAgain = true;
       }
+      assert.ok(current.stagnationLimitMs <= previous.stagnationLimitMs);
     }
-    assert.ok(reset && decayedAgain, "exercise relay, normal gain, then another relay with the real optimizer");
+    assert.ok(normalGain && decayedAgain, "exercise relay, normal gain, then another relay with the real optimizer");
     assert.equal(model.validateRoute(result.path, points), "");
   }
 });
