@@ -51,7 +51,7 @@ L'outil 3, `Suivre la broderie`, est disponible dans `stitch-progress.html`.
 
 [`data/examples/grands-ilots.pattern.json`](data/examples/grands-ilots.pattern.json) se charge directement dans l'outil 2. La grille mesure 120 x 110 cases et contient 3 259 croix d'une seule couleur, DMC 310, sans chemin precalcule. [Apercu du motif](data/examples/grands-ilots.png).
 
-Les neuf ilots, de gauche a droite puis de haut en bas : U (268 croix), damier (313), rectangle plein (1 008), cadre (252), deux blocs relies par un pont (426), peigne (312), diagonale (25), serpentin (342) et losange (313). Le damier et la diagonale forment chacun un ilot naturel par les coins, mais chaque case y constitue un bloc orthogonal distinct pour l'optimisation. Les espaces entre formes permettent aussi de tester les liaisons et les coupes.
+Les neuf ilots, de gauche a droite puis de haut en bas : U (268 croix), damier (313), rectangle plein (1 008), cadre (252), deux blocs relies par un pont (426), peigne (312), diagonale (25), serpentin (342) et losange (313). Le damier et la diagonale forment chacun un seul bloc de proximite pour l'optimisation. Le pattern comporte neuf blocs elargis, contre 345 parties strictement orthogonales. Les espaces entre formes permettent aussi de tester les liaisons et les coupes.
 
 ## Synchronisation de la progression
 
@@ -80,13 +80,13 @@ Le pattern de l'outil 1 reste en version 1, avec une couleur par case. Les chemi
 
 Deux contraintes sont obligatoires, meme en presence d'une coupe : la diagonale / precede la diagonale \\ de sa case; le trou de sortie d'une diagonale ne peut pas etre le trou d'entree de la suivante. Les croix peuvent etre entrelacees dans le chemin. Les traits pleins representent l'endroit, les traits fins pointilles le dos, et les coupes sont rouges. La diagonale courante a une entree carree et une sortie flechee; les coins sont aussi nommes dans son statut.
 
-Un bloc est une composante maximale de cases reliees par un cote, sans limite de taille. Une case isolee orthogonalement est un bloc, meme si elle touche d'autres cases par les coins. Les anciens ilots naturels (cotes et coins) restent disponibles comme indicateur, mais ne contraignent plus l'ordre de parcours : tous les blocs d'une couleur peuvent etre reordonnes ensemble.
+Un bloc est une composante maximale de cases de la meme couleur reliees par un cote, par un coin, ou separees par une case horizontalement ou verticalement (ecart de coordonnees de 2). Le regroupement est transitif, sans limite de taille. Les ecarts (2,1), (2,2) ou de trois cases ne fusionnent pas les blocs. Les parties deja verrouillees sont conservees; la construction porte sur les diagonales restantes. Les anciens ilots naturels (cotes et coins) restent disponibles comme indicateur, mais ne contraignent pas l'ordre de parcours.
 
-Dans chaque bloc, un parcours en profondeur brode la diagonale / a l'aller, explore les enfants, puis brode la diagonale \\ au retour. Les sens sont choisis ensemble par programmation dynamique avec une contrainte stricte : chaque liaison interne au dos doit mesurer exactement 1. Une direction localement possible peut etre refusee si elle empeche le retour entre deux branches. La pile d'exploration est iterative, sans limite liee a la recursion JavaScript.
+Chaque bloc conserve ses sous-parties orthogonales. Dans ces sous-parties, un parcours en profondeur brode la diagonale / a l'aller, explore les enfants, puis brode la diagonale \\ au retour. Les sens sont choisis ensemble par programmation dynamique, avec une distance de 1 imposee aux retours orthogonaux. Les raccordements entre sous-parties sont libres : ils sont evalues entre les vrais trous, avec les coupes et les deux sens de couture. On ne pretend pas que tout l'interieur d'un bloc elargi est unitaire. Les piles d'exploration sont iteratives, sans limite liee a la recursion JavaScript.
 
-L'entree et la sortie peuvent etre differentes. Le moteur essaie un pre-parcours de croix completes reliees diagonalement jusqu'a la future case de sortie, puis un aller-retour orthogonal depuis cette case. Il rejette un pre-parcours qui ne rejoint pas la sortie ou qui deconnecte une partie des cases restantes. Pour chaque bloc, il prepare jusqu'a huit cases candidates de base, choisies d'apres les blocs voisins, les extremites et le parcours deja connu. Il conserve aussi les configurations du parcours initial et d'un ancien parcours compatible.
+L'entree et la sortie peuvent etre differentes. Dans une sous-partie orthogonale, le moteur essaie un pre-parcours de croix completes reliees diagonalement jusqu'a la future sortie, puis un aller-retour orthogonal. Dans un bloc mixte, il parcourt d'abord les sous-parties voisines et reserve la sous-partie de sortie pour la fin. Il essaie plusieurs entrees et sorties locales autour des contacts. Si l'entree et la sortie appartiennent a la meme sous-partie, sa derniere diagonale superieure peut rester en attente jusqu'au retour des autres sous-parties. La liaison de retour n'est alors pas contrainte a 1. La precedence / avant \\ et l'interdiction du meme trou de transition restent strictes.
 
-Les contacts diagonaux entre blocs et les cases alignees avec une case vide entre elles sont reperes explicitement. Toutes leurs cases de contact sont ajoutees aux candidats, sans la limite des huit cases de base. Chaque contact d'un bloc libre est teste avec une entree et une sortie sur cette meme case. Les combinaisons d'entrees/sorties distinctes sont toutes essayees pour les petits ensembles (jusqu'a 16 cases candidates); pour les grandes frontieres, elles sont echantillonnees avec des candidats de base proches et eloignes. Les directions, le prefixe verrouille, les coupes imposees et les trajets internes unitaires restent verifies pour chaque configuration.
+Pour chaque bloc, le moteur prepare jusqu'a huit cases candidates de base, choisies d'apres les voisins, les extremites et le parcours deja connu. Les configurations historiques compatibles sont aussi conservees, meme si elles comportent des liaisons internes non unitaires. Les raccordements entre sous-parties ne sont pas figes dans un sens : les matrices de transfert choisissent les orientations conjointement. Les insertions de petites parties orthogonales, les relais et la LNS restent disponibles pour ameliorer ensuite le parcours, y compris a l'interieur d'un bloc elargi.
 
 Pour chaque ordre de blocs teste, une programmation dynamique choisit ensemble les entrees, sorties et sens parmi ces configurations. Elle tient compte du raccordement precedent et du suivant, avec les distances reelles entre trous, sans autoriser deux diagonales consecutives a utiliser le meme trou de transition. La recherche deplace, echange et inverse des sequences de blocs, avec des relances perturbees pour sortir des minima locaux. Jusqu'a sept blocs libres, tous les ordres sont testes dans la limite du delai sans amelioration.
 
@@ -140,7 +140,7 @@ Avant / Apres compare le parcours complet present au debut de la derniere recher
 
 Les icones sont distribuees localement depuis Lucide (`assets/icons/`, licences ISC et MIT incluses) ; ces commandes fonctionnent aussi depuis `file://`, sans acces reseau.
 
-Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties dans les portions de blocs nouvellement construites et non modifiees, pas dans les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
+Le debut verrouille reste inchange. Une seule croix ouverte en fin de prefixe peut servir de racine du parcours; les autres configurations de prefixe sont conservees et les diagonales restantes sont raccordees sans enfreindre les contraintes. Les distances de 1 sont garanties uniquement sur les retours orthogonaux marques comme tels, pas sur toutes les liaisons d'un bloc elargi, les raccordements d'insertion, les liaisons entre blocs ni dans un prefixe impose. Les fichiers et la progression de l'outil 3 ne sont jamais modifies par la generation.
 
 Le choix de l'ordre et des configurations candidates reste heuristique : il ne garantit pas l'optimum global. La programmation dynamique est exacte pour un ordre donne, parmi les configurations preparees. Le moteur global est `src/block-optimizer-worker.js`, qui reutilise la construction unitaire de `src/orthogonal-path-worker.js`. Les anciens moteurs par cases et par zones, la recherche rectangulaire et leurs commandes ont ete retires. Les formats d'import/export restent inchanges.
 
@@ -156,6 +156,7 @@ node --test tests/deep-optimizer.test.js
 node tests/planner-deep.test.js
 node tests/orthogonal-path.test.js
 node tests/block-optimizer.test.js
+node --test tests/proximity-blocks.test.js
 node tests/path-visuals.test.js
 node --test tests/path-viewport.test.js
 node tests/github-sync.test.js
@@ -178,11 +179,13 @@ Les tests navigateur necessitent Playwright et utilisent Edge en mode headless p
 
 Les verifications utiles des anciens moteurs ciblent maintenant le moteur actif : `path-optimizer.test.js` execute la source exacte du worker navigateur, `path-orientation.test.js` compare les sens du fil et couvre les gains masques par des orientations fixes, et `spatial-candidates.test.js` controle l'index spatial de la construction orthogonale. Les tests des anciens delais par zone ont ete retires ; les tests du delai global, de son redemarrage uniquement apres un vrai gain et de l'arret restent dans `block-optimizer.test.js` et les tests navigateur. Les migrations, les contraintes legacy, les conflits de synchronisation et l'integrite de la vraie sauvegarde restent testes. Cette suite fonctionnelle est distincte du benchmark de qualite ci-dessous.
 
+`proximity-blocks.test.js` verifie le partitionnement elargi actif, les 511 configurations non vides d'une grille 3 x 3, les matrices comparees a toutes les orientations, les prefixes partiellement brodes, les coupes, la reprise des anciens chemins, les relais et la LNS. Les tests de matrices et de permutations de `block-optimizer.test.js`, ainsi que deux scenarios de minuteur dans `relay-search.test.js`, injectent volontairement une partition orthogonale fixe via `tests/fixtures/orthogonal-builder.js` : ils conservent leurs oracles geometriques independants sans ajouter de mode ancien dans l'interface. Les tests des workers serialises et du navigateur utilisent tous les blocs elargis de production.
+
 ### Comparaison de qualite
 
 `node tests/path-quality-benchmark.js` compare le moteur courant a celui du commit `ffe7428` (priorite 2), charge depuis Git sans modifier les fichiers. Six fixtures fixes et les graines 31, 73 et 101 sont utilisees. L'horloge injectee compte ses appels : ce budget logique rend les parcours et scores reproductibles, mais ne represente ni des millisecondes reelles ni une quantite identique de travail CPU. Le temps reel, preparation comprise, est mesure separement. Le rapport JSON est genere dans `exports/verification/path-quality.json`.
 
-Mesure du 18 novembre 2026, graine 31, budget logique propre a chaque fixture :
+Mesure historique du 18 novembre 2026, avant les blocs elargis, graine 31, budget logique propre a chaque fixture :
 
 | Cas | Score avant | Score apres | Coupes avant/apres | Temps reel avant/apres |
 | --- | ---: | ---: | ---: | ---: |

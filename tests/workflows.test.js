@@ -92,7 +92,11 @@ function assertBlockResult(snapshot, cells, constraints = {}, threshold = 12, re
   const prefixLength = constraints.lockedPrefix?.length || (constraints.start ? 1 : 0);
   const minimumUnitLinks = snapshot.path.length - prefixLength - snapshot.blocks.total;
   const unitLinkCount = snapshot.unitLinks.filter(Boolean).length;
-  if (requireUnitCoverage && !snapshot.relayImprovements) assert.ok(unitLinkCount >= minimumUnitLinks, "Constructed block interiors retain their unit links before relay edits");
+  const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
+  const orthogonalCount = createOrthogonalPathBuilder(model).orthogonalComponents(cells).length;
+  if (requireUnitCoverage && !snapshot.relayImprovements && orthogonalCount === snapshot.blocks.total) {
+    assert.ok(unitLinkCount >= minimumUnitLinks, "Purely orthogonal block interiors retain their unit links before relay edits");
+  }
   snapshot.path.forEach((point, i) => {
     assert.equal(typeof snapshot.unitLinks[i], "boolean");
     if (snapshot.unitLinks[i]) {

@@ -3,6 +3,7 @@ const { test } = require("node:test");
 const model = require("../src/stitch-model.js");
 const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
 const { createBlockOptimizer } = require("../src/block-optimizer-worker.js");
+const { createOrthogonalFixtureBuilder } = require("./fixtures/orthogonal-builder.js");
 
 const builder = createOrthogonalPathBuilder(model);
 const action = (cell, diagonal = "lower", direction = 1) => ({ ...cell, diagonal, direction });
@@ -19,7 +20,7 @@ function seededRandom(seed = 31) {
 
 function optimizer(tickMs = 0, random = seededRandom()) {
   let time = 0;
-  return createBlockOptimizer(model, createOrthogonalPathBuilder, () => { time += tickMs; return time; }, random);
+  return createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => { time += tickMs; return time; }, random);
 }
 
 function* permutations(values) {
