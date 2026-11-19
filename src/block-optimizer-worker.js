@@ -542,7 +542,7 @@
           // Preserve shorter programmatic budgets; normal UI runs never fall below two seconds.
           limit = Math.max(Math.min(2000, initialLimit), limit * 0.9);
           lastRelayImprovement = { ...relayed.link, pass: relayPasses };
-        } else limit = initialLimit;
+        }
         changed = true; improvements++; lastImprovement = clock();
         if (insertion) insertions++;
         if (intermediate) intermediateImprovements++;

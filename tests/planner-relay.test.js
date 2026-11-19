@@ -48,15 +48,12 @@ async function run() {
     assert.ok(result.score < 41);
     assert.ok(result.highlights.length > 0, JSON.stringify(result.reports));
     assert.equal(result.reports[0].stagnationLimitMs, 10000);
-    let expectedDelay = 10000, previousGains = 0, previousRelays = 0;
+    let expectedDelay = 10000, previousRelays = 0;
     for (const report of result.reports) {
       const relayGains = report.relays - previousRelays;
-      if (report.improvements - previousGains > relayGains) {
-        expectedDelay = 10000;
-      }
       for (let i = 0; i < relayGains; i++) expectedDelay = Math.max(2000, expectedDelay * 0.9);
       assert.ok(Math.abs(report.stagnationLimitMs - expectedDelay) < 1e-7);
-      previousGains = report.improvements; previousRelays = report.relays;
+      previousRelays = report.relays;
     }
     assert.ok(previousRelays > 0, "the live wide-block worker accepts relays and applies the adaptive delay");
     assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "10000", "the selected starting delay stays unchanged");
@@ -86,10 +83,10 @@ async function run() {
       return document.documentElement.scrollWidth <= innerWidth + 1 && heading.right <= timer.left && timer.right <= innerWidth;
     }));
     await page.screenshot({ path: path.join(output, "planner-relay-delay-mobile.png"), fullPage: true });
-    await page.evaluate(() => showAdvancedPathFeedback({ stage: "search", stagnationLimitMs: 10000,
+    await page.evaluate(() => showAdvancedPathFeedback({ stage: "search", stagnationLimitMs: 8100,
       lastImprovementMs: 0, relayImprovements: 2, improvements: 3 }));
-    assert.equal(await page.locator("#pathAlgorithmLastImprovement").innerText(), "0:00 / 0:10");
-    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "10000");
+    assert.equal(await page.locator("#pathAlgorithmLastImprovement").innerText(), "0:00 / 0:08,1");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "8100");
     assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("value"), "0");
     assert.equal(await page.locator("#pathRelayImprovements").textContent(), "2");
     await page.setViewportSize({ width: 1600, height: 1100 });
