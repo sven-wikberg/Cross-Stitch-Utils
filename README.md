@@ -74,6 +74,16 @@ Les brouillons des outils 2 et 3 utilisent IndexedDB, avec migration du stockage
 
 Les trois outils restent independants : aucun brouillon n'est partage entre eux. Le passage de l'un a l'autre se fait toujours par un fichier JSON explicite.
 
+## Statistiques de broderie
+
+L'outil 3 compte les diagonales et les croix terminees aujourd'hui, l'activite des sept derniers jours, les jours actifs et la moyenne de diagonales par jour actif. Le journal conserve aussi le detail des jours plus anciens. La date utilise le jour local du PC au moment de la validation ; changer de fuseau ne redate pas l'historique.
+
+`Changement de fil` termine le bout en cours de la couleur selectionnee. La prochaine diagonale commence son nouveau bout. Chaque couleur conserve son propre bout en cours quand on change de couleur. Un repere bleu numerote indique la fin de chaque bout sur le chemin de la couleur selectionnee ; `Reperes de fil` permet de les masquer. Le journal liste les bouts de toutes les couleurs et leurs nombres de diagonales. La moyenne globale exclut les bouts encore en cours et les bouts partiels commences avant le suivi. Les reperes ne modifient ni le chemin ni ses coupes optimisees.
+
+Le suivi commence lors de la premiere utilisation de cette version : les diagonales d'une ancienne sauvegarde restent sans date. Reculer ou remettre une couleur a zero retire l'activite correspondante de ses dates d'origine ; Annuler/Retablir restaure aussi ces dates et les changements de fil. Un marquage par clic est compte a la date du clic. Ces statistiques de progression nette ne mesurent pas les heures passees ni le travail defait puis recommence.
+
+Les statistiques et les bouts de fil sont inclus dans la sauvegarde locale, les JSON telecharges et la synchronisation GitHub (`stitchStats`, version 1, dans la sauvegarde de progression). L'historique d'annulation reste local. Aucun fichier de pattern ou de sauvegarde existant n'est reecrit par l'installation de cette fonctionnalite.
+
 ## Chemins de fil et compatibilite
 
 Le pattern de l'outil 1 reste en version 1, avec une couleur par case. Les chemins de l'outil 2 passent en version 2 (`stitchUnit: "diagonal"`). Chaque entree de `paths[].points` contient `x`, `y`, `diagonal` (`lower` pour /, `upper` pour \\), `direction` (1 de gauche a droite, -1 de droite a gauche), et eventuellement `cutBefore: true`. Les coordonnees des trous se deduisent des coins de la case.

@@ -35,7 +35,9 @@
   }
   function fingerprint(state) {
     if (!state) return "";
-    return JSON.stringify([state.patternId, Object.entries(state.stitchedByDmc || {}).sort(), state.selectedDmc]);
+    const parts = [state.patternId, Object.entries(state.stitchedByDmc || {}).sort(), state.selectedDmc];
+    if (state.stitchStats) parts.push(state.stitchStats);
+    return JSON.stringify(parts);
   }
   function unpack(state, pathsFile) {
     if (!state || state.kind !== "cross-stitch-progress-state" || ![2, 3].includes(state.schemaVersion)

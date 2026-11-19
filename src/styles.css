@@ -1207,7 +1207,34 @@ select:focus {
 #historyPanel select { min-width: 0; }
 #historyPanel.hidden, .group-editor.hidden { display: none; }
 
+.thread-progress-section { padding-block: 14px; border-block: 1px solid var(--line); display: grid; gap: 10px; }
+.thread-progress-section .field-label, .thread-progress-section p { margin: 0; }
+.thread-progress-section .metric-list dt { color: var(--muted); }
+.thread-progress-section .metric-list dd { color: var(--ink); }
+.thread-change-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.thread-change-button img { flex: 0 0 18px; }
+#threadChangeStatus:empty { display: none; }
+.stitch-statistics { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.stitch-statistics h3 { font-size: 1rem; }
+.stitch-statistics h4 { margin: 0 0 12px; font-size: 0.9rem; }
+.stitch-journal-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 32px; margin-top: 20px; }
+.stitch-journal-columns > div { min-width: 0; }
+.daily-stitch-chart { display: grid; gap: 10px; }
+.daily-stitch-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) 65px; align-items: center; gap: 10px; font-size: 0.8rem; }
+.daily-stitch-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+.daily-stitch-track { display: block; height: 10px; background: #edf1f2; overflow: hidden; border-radius: 2px; }
+.daily-stitch-track > span { display: block; height: 100%; background: #17679b; }
+.stitch-history-details { margin-top: 18px; }
+.stitch-history-details summary { cursor: pointer; font-size: 0.85rem; font-weight: 700; padding-block: 8px; }
+.stitch-history-scroll { max-height: 300px; overflow: auto; }
+.stitch-history-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.8rem; }
+.stitch-history-table th, .stitch-history-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+.stitch-history-table th { position: sticky; top: 0; background: #f2f5f5; font-size: 0.75rem; }
+.stitch-history-table td:nth-child(2) { font-variant-numeric: tabular-nums; }
+.stitch-history-table .selected-thread-color td:first-child { color: #17679b; font-weight: 700; }
+
 @media (max-width: 760px) {
+  .stitch-journal-columns { grid-template-columns: 1fr; gap: 24px; }
   .session-mode .sidebar { display: none; }
   .session-mode .workspace { padding: 12px; }
   .sync-toolbar > span { flex-basis: 100%; }
