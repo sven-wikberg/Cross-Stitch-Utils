@@ -3,15 +3,16 @@
   function createOrthogonalPathBuilder(model, clock = () => performance.now()) {
     const sides = [[1, 0], [0, 1], [-1, 0], [0, -1]];
     const corners = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+    const proximity = [...sides, ...corners, [2, 0], [-2, 0], [0, 2], [0, -2]];
     const action = (cell, diagonal) => ({ x: cell.x, y: cell.y, diagonal, direction: 1 });
-    function orthogonalComponents(cells) {
+    function components(cells, offsets) {
       const remaining = new Map(cells.map(cell => [model.cellKey(cell), cell])), groups = [];
       for (const start of cells) {
         if (!remaining.delete(model.cellKey(start))) continue;
         const group = [], stack = [start];
         while (stack.length) {
           const cell = stack.pop(); group.push(cell);
-          for (const [dx, dy] of sides) {
+          for (const [dx, dy] of offsets) {
             const key = `${cell.x + dx},${cell.y + dy}`, next = remaining.get(key);
             if (next) { remaining.delete(key); stack.push(next); }
           }
@@ -19,6 +20,22 @@
         groups.push(group);
       }
       return groups;
+    }
+    const orthogonalComponents = cells => components(cells, sides);
+    const proximityComponents = cells => components(cells, proximity);
+    const blockContexts = new WeakMap();
+    function blockContext(cells) {
+      if (blockContexts.has(cells)) return blockContexts.get(cells);
+      const groups = orthogonalComponents(cells), owners = new Map(), neighbors = groups.map(() => new Map());
+      groups.forEach((group, id) => group.forEach(cell => owners.set(model.cellKey(cell), id)));
+      for (let id = 0; id < groups.length; id++) for (const cell of groups[id]) for (const [dx, dy] of proximity) {
+        const other = { x: cell.x + dx, y: cell.y + dy }, to = owners.get(model.cellKey(other));
+        if (to === undefined || to === id) continue;
+        if (!neighbors[id].has(to)) neighbors[id].set(to, []);
+        neighbors[id].get(to).push({ from: cell, to: other });
+      }
+      const result = { groups, owners, neighbors };
+      blockContexts.set(cells, result); return result;
     }
     function buildSequence(cells, entry, exit = entry) {
       const available = new Map(cells.map(cell => [model.cellKey(cell), cell]));
@@ -57,6 +74,65 @@
         visited.add(key); route.push(action(child, "lower")); stack.push({ cell: child, side: 0 });
       }
       return visited.size === available.size ? route : null;
+    }
+    function blockTraversal(cells, entry, exit = entry, constraints = {}, threshold = 10) {
+      const { groups, owners, neighbors } = blockContext(cells);
+      const first = owners.get(model.cellKey(entry)), last = owners.get(model.cellKey(exit));
+      if (first === undefined || last === undefined) return null;
+      if (groups.length === 1) {
+        const sequence = buildSequence(cells, entry, exit);
+        return sequence ? { sequence, units: sequence.map((_, i) => i > 0) } : null;
+      }
+      // Visit neighboring orthogonal pieces first. The requested exit piece stays last.
+      const pending = new Set(groups.map((_, i) => i).filter(i => i !== first && i !== last)), order = [first];
+      const walk = seed => {
+        const stack = [{ id: seed, neighbors: [...neighbors[seed].keys()], at: 0 }];
+        while (stack.length) {
+          const frame = stack.at(-1);
+          if (frame.at === frame.neighbors.length) { stack.pop(); continue; }
+          const id = frame.neighbors[frame.at++];
+          if (!pending.delete(id)) continue;
+          order.push(id); stack.push({ id, neighbors: [...neighbors[id].keys()], at: 0 });
+        }
+      };
+      walk(first);
+      while (pending.size) { const id = pending.values().next().value; pending.delete(id); order.push(id); walk(id); }
+      if (last !== first) order.push(last);
+      const sequence = [], units = [], cutKeys = new Set((constraints.forcedCuts || []).map(model.key));
+      const variant = (cell, diagonal, direction) => ({ ...action(cell, diagonal), direction,
+        ...(cutKeys.has(`${model.cellKey(cell)}:${diagonal}`) ? { cutBefore: true } : {}) });
+      const rank = (pool, score) => [...new Map(pool.map(cell => [model.cellKey(cell), cell])).values()]
+        .map(cell => ({ cell, score: score(cell) })).sort((a, b) => a.score - b.score).slice(0, 3).map(item => item.cell);
+      let deferred = null;
+      for (let at = 0; at < order.length; at++) {
+        const id = order[at], previous = sequence.at(-1), nextId = order[at + 1];
+        const inContacts = neighbors[id].get(order[at - 1]), outContacts = neighbors[id].get(nextId);
+        const nextCells = outContacts?.map(link => link.to) || (nextId !== undefined ? groups[nextId] : []);
+        const targets = rank(nextCells, cell => Math.hypot(cell.x - exit.x, cell.y - exit.y))
+          .flatMap(cell => [1, -1].map(direction => variant(cell, "lower", direction)));
+        const incoming = cell => Math.min(...[1, -1].map(direction => model.cost(previous, variant(cell, "lower", direction), threshold, true)));
+        const outgoing = cell => targets.length ? Math.min(...[1, -1].flatMap(direction => targets.map(target =>
+          model.cost(variant(cell, "upper", direction), target, threshold, true)))) : 0;
+        const entries = at === 0 ? [entry] : rank(inContacts?.map(link => link.from) || groups[id], incoming);
+        const fixedExit = id === last;
+        if (fixedExit && at > 0 && !entries.some(cell => model.cellKey(cell) === model.cellKey(exit))) entries.push(exit);
+        const exits = fixedExit ? [exit] : rank(outContacts?.map(link => link.from) || groups[id], outgoing);
+        let best = null;
+        for (const from of entries) for (const to of fixedExit ? exits : [...exits, from]) {
+          const part = buildSequence(groups[id], from, to);
+          if (!part) continue;
+          const mask = part.map((_, i) => i > 0);
+          const candidate = orientUnitPath(part, mask, constraints, threshold, previous, targets);
+          if (candidate && (!best || candidate.score < best.score - 1e-8)) best = { ...candidate, units: mask };
+        }
+        if (!best) return null;
+        // When both endpoints belong to the first piece, keep its final upper diagonal for the return.
+        // This preserves precedence without pretending that the return from another piece is unit length.
+        if (at === 0 && first === last) { deferred = best.path.pop(); best.units.pop(); }
+        for (let i = 0; i < best.path.length; i++) { sequence.push(best.path[i]); units.push(best.units[i]); }
+      }
+      if (deferred) { sequence.push(deferred); units.push(false); }
+      return { sequence, units };
     }
     function orientUnitPath(sequence, unitLinks, constraints = {}, threshold = 10, previous = null, next = [], endpoints = {}) {
       if (!sequence.length) return { path: [], score: 0 };
@@ -150,13 +226,15 @@
       const open = [...state.keys()].filter(i => state[i] === 1);
       const resumeIndex = open.length === 1 && prefix.at(-1)?.diagonal === "lower"
         && cellIndex.get(model.cellKey(prefix.at(-1))) === open[0] ? open[0] : -1;
-      const zones = model.createZones(cells), zoneFor = i => zones.byCell.get(model.cellKey(cells[i]));
-      const groups = orthogonalComponents(cells.filter((_, i) => state[i] === 0 || i === resumeIndex))
+      const wide = Boolean(options.wideBlocks), zones = model.createZones(cells);
+      const groups = (wide ? proximityComponents : orthogonalComponents)(cells.filter((_, i) => state[i] === 0 || i === resumeIndex))
         .map(group => ({ cells: group, partial: false, resume: group.some(cell => cellIndex.get(model.cellKey(cell)) === resumeIndex) }));
       cells.forEach((cell, i) => { if (state[i] === 1 && i !== resumeIndex) groups.push({ cells: [cell], partial: true }); });
       const groupByCell = new Map(), pendingByZone = new Map();
+      const zoneFor = i => wide ? groupByCell.get(i) : zones.byCell.get(model.cellKey(cells[i]));
       groups.forEach((group, id) => {
-        group.id = id; group.zoneId = zones.byCell.get(model.cellKey(group.cells[0]));
+        group.id = id; group.zoneId = wide ? id : zones.byCell.get(model.cellKey(group.cells[0]));
+        group.mixed = wide && blockContext(group.cells).groups.length > 1;
         group.indices = group.cells.map(cell => cellIndex.get(model.cellKey(cell)));
         group.indices.forEach(i => groupByCell.set(i, id));
         pendingByZone.set(group.zoneId, (pendingByZone.get(group.zoneId) || 0) + group.cells.length);
@@ -169,8 +247,8 @@
       const index = spatialIndex(cells, variants);
       cells.forEach((_, i) => { if (state[i] === 2) index.remove(i); });
       const pending = new Set(groups.map(group => group.id)), unitLinks = prefix.map(() => false), blocks = [];
-      let route = prefix, currentZone = prefix.length ? zones.byCell.get(model.cellKey(prefix.at(-1))) : null;
-      let completed = 0, active = null, attempts = 0, lastReport = -Infinity, phase = "Preparation des groupes orthogonaux";
+      let route = prefix, currentZone = prefix.length ? zoneFor(cellIndex.get(model.cellKey(prefix.at(-1)))) : null;
+      let completed = 0, active = null, attempts = 0, lastReport = -Infinity, phase = wide ? "Preparation des blocs de proximite" : "Preparation des groupes orthogonaux";
       const started = clock(), diagnostics = { groups: groups.length, entryExitChanges: 0, diagonalLinks: 0, rejectedPrefixes: 0 };
       let initialMetrics = options.initialPath?.length && !model.validateRoute(options.initialPath, cells)
         ? zones.measure(options.initialPath, threshold) : undefined;
@@ -207,6 +285,7 @@
         let best = null;
         if (group.partial) {
           best = orientUnitPath([action(group.cells[0], "upper")], [false], constraints, threshold, previous);
+          if (best) best.units = [false];
         } else {
           const incoming = cell => group.resume ? 0 : Math.min(...[1, -1].map(direction => model.cost(previous,
             { ...action(cell, "lower"), direction, ...(cuts.has(`${model.cellKey(cell)}:lower`) ? { cutBefore: true } : {}) }, threshold, true)));
@@ -225,26 +304,27 @@
           pairs.sort((a, b) => a.bound - b.bound);
           for (const { entry, exit } of pairs) {
             attempts++;
-            let sequence = buildSequence(group.cells, entry, exit.cell);
+            const traversal = wide ? blockTraversal(group.cells, entry, exit.cell, constraints, threshold) : null;
+            let sequence = wide ? traversal?.sequence : buildSequence(group.cells, entry, exit.cell);
             if (!sequence) { diagnostics.rejectedPrefixes++; continue; }
-            if (group.resume) sequence = sequence.slice(1);
-            const mask = sequence.map((_, i) => i > 0 || group.resume);
+            let mask = wide ? traversal.units : sequence.map((_, i) => i > 0);
+            if (group.resume) { sequence = sequence.slice(1); mask = mask.slice(1); }
             const candidate = orientUnitPath(sequence, mask, constraints, threshold, previous, exit.next);
             if (candidate && (!best || candidate.score < best.score - 1e-8)) {
-              best = { ...candidate, entry, exit: exit.cell };
+              best = { ...candidate, units: mask, entry, exit: exit.cell };
             }
             emit();
             // Unit internal links have their absolute lower bound; no random search is needed.
             if (best && !cuts.size && best.score <= pairs[0].bound + sequence.length - 1 + 1e-8) break;
           }
         }
-        if (!best) throw new Error("Aucun aller-retour a distance 1 ne respecte les contraintes de ce groupe.");
+        if (!best) throw new Error("Aucun parcours interne ne respecte les contraintes de ce groupe.");
         if (best.entry && model.cellKey(best.entry) !== model.cellKey(best.exit)) diagnostics.entryExitChanges++;
         if (previous && Math.abs(previous.x - best.path[0].x) === 1 && Math.abs(previous.y - best.path[0].y) === 1) diagnostics.diagonalLinks++;
-        blocks.push({ cells: group.cells.map(cell => ({ x: cell.x, y: cell.y })), partial: group.partial,
+        blocks.push({ cells: group.cells.map(cell => ({ x: cell.x, y: cell.y })), partial: group.partial, mixed: group.mixed,
           resume: Boolean(group.resume), start: route.length, end: route.length + best.path.length,
           ...(group.resume ? { root: { x: cells[resumeIndex].x, y: cells[resumeIndex].y } } : {}) });
-        for (let i = 0; i < best.path.length; i++) { route.push(best.path[i]); unitLinks.push(i > 0 || Boolean(group.resume)); }
+        for (let i = 0; i < best.path.length; i++) { route.push(best.path[i]); unitLinks.push(best.units[i]); }
         group.indices.forEach(i => { state[i] = 2; });
         pending.delete(group.id); completed++; active.status = "complete";
         emit();
@@ -261,7 +341,7 @@
       const result = { ...snapshot(), unitLinks, blocks, prefixLength };
       report(result); return result;
     }
-    return { buildPath, orthogonalComponents, buildSequence, orientUnitPath, spatialIndex, satisfiesConstraints: model.satisfiesConstraints };
+    return { buildPath, orthogonalComponents, proximityComponents, buildSequence, blockTraversal, orientUnitPath, spatialIndex, satisfiesConstraints: model.satisfiesConstraints };
   }
   root.createOrthogonalPathBuilder = createOrthogonalPathBuilder;
   if (typeof module !== "undefined") module.exports = { createOrthogonalPathBuilder };

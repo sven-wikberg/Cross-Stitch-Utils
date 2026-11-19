@@ -42,11 +42,13 @@ test("a work palette is independent of DMC colors and keeps light fills with dar
   }
 });
 
-test("visual blocks use side adjacency only and do not change the cells", () => {
-  const cells = [cell(0), cell(1), cell(2, 1), cell(8)], before = structuredClone(cells);
+test("visual blocks use the same diagonal and one-empty-cell connections as the optimizer", () => {
+  const cells = [cell(0), cell(1), cell(2, 1), cell(4, 1), cell(8)], before = structuredClone(cells);
   const index = visuals.blockIndex(cells);
   assert.ok(visuals.sameBlock(cells[0], cells[1], index));
-  assert.equal(visuals.sameBlock(cells[1], cells[2], index), false);
+  assert.ok(visuals.sameBlock(cells[1], cells[2], index));
+  assert.ok(visuals.sameBlock(cells[2], cells[3], index));
+  assert.equal(visuals.sameBlock(cells[3], cells[4], index), false);
   assert.equal(visuals.sameBlock(cell(99), cell(98), index), false);
   assert.deepEqual(cells, before);
 });

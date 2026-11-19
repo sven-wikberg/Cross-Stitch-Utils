@@ -47,14 +47,15 @@
       }
       return { first, last: previous, scores, counts };
     }
-    function configSequence(block, config) {
+    function configSequence(problem, block, config) {
       if (config.sequence) return config.sequence;
-      const sequence = builder.buildSequence(block.cells, config.entry, config.exit);
+      const sequence = block.mixed ? builder.blockTraversal(block.cells, config.entry, config.exit, problem.constraints, problem.threshold)?.sequence
+        : builder.buildSequence(block.cells, config.entry, config.exit);
       if (!sequence) throw new Error("Configuration de bloc devenue inaccessible.");
       return block.resume ? sequence.slice(1) : sequence;
     }
     const configUnits = (sequence, config) => config.units || sequence.map((_, i) => i > 0);
-    function addConfig(problem, block, config, sequence = configSequence(block, config)) {
+    function addConfig(problem, block, config, sequence = configSequence(problem, block, config)) {
       if (!sequence?.length) return;
       const summary = summarize(sequence, configUnits(sequence, config), problem.constraints, problem.threshold, problem.cuts);
       if (!summary.scores.some(Number.isFinite)) return;
@@ -244,14 +245,14 @@
       const constraints = { ...(options.constraints || {}), forcedCuts: [...new Map([
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
       ].map(p => [model.key(p), model.copy(p)])).values()] };
-      const seed = builder.buildPath({ ...options, cutThreshold: threshold, constraints }, snapshot => report({ ...snapshot,
+      const seed = builder.buildPath({ ...options, wideBlocks: true, cutThreshold: threshold, constraints }, snapshot => report({ ...snapshot,
         method: "block-optimization", stage: "construction", progress: snapshot.progress * 0.1,
         ...(options.initialPath?.length ? { path: undefined } : {}) }));
       const cuts = new Set(constraints.forcedCuts.map(model.key)), blocks = [];
       if (seed.prefixLength) blocks.push({ anchor: true, cells: [], configs: [], records: [],
         seedSequence: seed.path.slice(0, seed.prefixLength), seedUnits: seed.unitLinks.slice(0, seed.prefixLength), incomingUnit: false });
       for (const group of seed.blocks) blocks.push({ ...group, configs: [], records: [], anchor: false,
-        seedSequence: seed.path.slice(group.start, group.end), incomingUnit: group.resume,
+        seedSequence: seed.path.slice(group.start, group.end), incomingUnit: Boolean(group.resume && seed.unitLinks[group.start]),
         seedUnits: seed.unitLinks.slice(group.start, group.end).map((unit, i) => i > 0 && unit), bounds: boundsOf(group.cells) });
       blocks.forEach((block, id) => { block.id = id; });
       const fixedCount = Number(seed.prefixLength > 0) + Number(seed.blocks[0]?.resume || false);
@@ -276,19 +277,21 @@
           if (parts.at(-1)?.id !== id) {
             if (seen.has(id)) { compatible = false; break; }
             seen.add(id); parts.push({ id, points: [] });
-          } else if (model.distance(initial[i - 1], initial[i]) !== 1) { compatible = false; break; }
+          }
           parts.at(-1).points.push(initial[i]);
         }
         const order = [...(seed.prefixLength ? [0] : []), ...parts.map(part => part.id)];
         compatible &&= order.length === blocks.length && order.slice(0, fixedCount).every((id, i) => id === i)
           && parts.every(part => part.points.length === blocks[part.id].seedSequence.length);
-        if (compatible && seed.blocks[0]?.resume && model.distance(initial[seed.prefixLength - 1], initial[seed.prefixLength]) !== 1) compatible = false;
+        if (compatible && blocks[seed.prefixLength ? 1 : 0]?.incomingUnit
+            && model.distance(initial[seed.prefixLength - 1], initial[seed.prefixLength]) !== 1) compatible = false;
         if (compatible) {
-          const units = initial.map((_, i) => i >= seed.prefixLength && i > 0 && (owners.get(model.key(initial[i - 1])) === owners.get(model.key(initial[i]))
-            || (i === seed.prefixLength && seed.blocks[0]?.resume)));
+          const units = problem.historical.unitLinks;
           for (const part of parts) {
             blocks[part.id].initialSequence = part.points;
-            addConfig(problem, blocks[part.id], { sequence: part.points });
+            addConfig(problem, blocks[part.id], { sequence: part.points, units: part.points.map((point, i) => i > 0
+              && originalOwners.get(model.cellKey(part.points[i - 1])) === originalOwners.get(model.cellKey(point))
+              && model.distance(part.points[i - 1], point) === 1) });
           }
           problem.orders.push(order);
           const metrics = model.createZones(cells).measure(initial, threshold);
@@ -340,7 +343,7 @@
           const contacts = [...unitContacts.portals.get(block.id).values()], pairs = new Map();
           const addPair = (entry, exit) => {
             if (block.resume) entry = block.root;
-            if ((entry.x + entry.y - exit.x - exit.y) % 2 !== 0) return;
+            if (!block.mixed && (entry.x + entry.y - exit.x - exit.y) % 2 !== 0) return;
             pairs.set(`${model.cellKey(entry)}:${model.cellKey(exit)}`, { entry, exit });
           };
           const allPortals = [...new Map([...contacts, ...portals].map(cell => [model.cellKey(cell), cell])).values()];
@@ -362,10 +365,13 @@
           let done = 0;
           for (const { entry, exit } of pairs.values()) {
             attempts++;
-            let sequence = builder.buildSequence(block.cells, entry, exit);
+            const traversal = block.mixed ? builder.blockTraversal(block.cells, entry, exit, constraints, threshold) : null;
+            let sequence = block.mixed ? traversal?.sequence : builder.buildSequence(block.cells, entry, exit);
             if (sequence) {
-              if (block.resume) sequence = sequence.slice(1);
-              addConfig(problem, block, { entry, exit }, sequence);
+              let units = traversal?.units;
+              if (block.resume) { sequence = sequence.slice(1); if (units) units = units.slice(1); }
+              if (units) units = units.map((unit, i) => i > 0 && unit);
+              addConfig(problem, block, { entry, exit, ...(units ? { units } : {}) }, sequence);
             }
             done++;
             if (done % 16 === 0) report({ stage: "configuration", phase: `Bloc ${prepared + 1} / ${freeBlocks.length} : ${done} / ${pairs.size} configurations`,
@@ -454,7 +460,7 @@
       const path = [], unitLinks = [];
       for (let i = 0; i < order.length; i++) {
         const block = problem.blocks[order[i]], choice = selections[i], at = choice.entry * block.exits.length + choice.exit;
-        const config = block.configs[block.transferByPair.get(at).config], sequence = configSequence(block, config), units = configUnits(sequence, config);
+        const config = block.configs[block.transferByPair.get(at).config], sequence = configSequence(problem, block, config), units = configUnits(sequence, config);
         const oriented = builder.orientUnitPath(sequence, units, problem.constraints, problem.threshold, null, [],
           { first: block.entries[choice.entry].direction, last: block.exits[choice.exit].direction });
         if (!oriented) throw new Error("Sens de couture incompatibles avec la configuration choisie.");

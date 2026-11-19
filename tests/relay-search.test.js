@@ -4,6 +4,7 @@ const model = require("../src/stitch-model.js");
 const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
 const { createRelaySearch } = require("../src/relay-search.js");
 const { createBlockOptimizer } = require("../src/block-optimizer-worker.js");
+const { createOrthogonalFixtureBuilder } = require("./fixtures/orthogonal-builder.js");
 const { createPathVisuals } = require("../src/path-visuals.js");
 const builder = createOrthogonalPathBuilder(model), search = createRelaySearch(model, builder, () => 0);
 const score = (path, threshold = 10) => model.metrics(path, threshold, true).score;
@@ -43,7 +44,7 @@ test("relay transfers match every orientation, including source repair, cuts and
 
 test("a one-diagonal relay breaks a block-search plateau, then ordinary optimization resumes", () => {
   const points = require("./fixtures/combined-search.js").cutAware, reports = [];
-  const result = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded()).optimizePath(
+  const result = createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => 0, seeded()).optimizePath(
     { points, cutThreshold: 3, stagnationLimitMs: 1 }, s => reports.push(s));
   const firstPlateau = reports.find(s => s.stage === "relay");
   close(firstPlateau.metrics.score, 49.38905042258274);
@@ -121,7 +122,7 @@ test("a normal global gain restores the initial delay and subsequent relays star
   const points = require("./fixtures/combined-search.js").timerRecovery;
   for (const initialLimit of [10000, 2100]) {
     const reports = [];
-    const result = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded()).optimizePath(
+    const result = createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => 0, seeded()).optimizePath(
       { points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
     let reset = false, decayedAgain = false;
     for (let i = 1; i < reports.length; i++) {

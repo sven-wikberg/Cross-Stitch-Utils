@@ -31,7 +31,7 @@
     }
     function blockIndex(cells) {
       const index = new Map();
-      builder.orthogonalComponents(cells).forEach((block, id) => {
+      builder.proximityComponents(cells).forEach((block, id) => {
         block.forEach(cell => index.set(model.cellKey(cell), id));
       });
       return index;
