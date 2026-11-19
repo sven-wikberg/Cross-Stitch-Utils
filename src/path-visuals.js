@@ -3,21 +3,22 @@
   function createPathVisuals(model, builder) {
     function searchPresentation(snapshot, running) {
       const stage = snapshot?.stage || "preparation";
-      const searching = running && stage === "search";
+      const timed = running && snapshot?.method === "deep-optimization";
+      const searching = running && stage === "search" && !timed;
       const relaying = running && stage === "relay";
       const constructing = running && stage === "construction";
       const preparing = running && ["preparation", "construction", "configuration"].includes(stage);
       const total = relaying ? snapshot.relay?.total : constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
       const done = relaying ? snapshot.relay?.examined : constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
       const knownCount = Number.isFinite(total) && total > 0 && Number.isFinite(done);
-      const max = searching ? Math.max(1, snapshot.stagnationLimitMs || 60000) : knownCount ? total : 1;
-      const value = searching ? snapshot.lastImprovementMs || 0 : knownCount ? done : null;
+      const max = timed ? snapshot.totalLimitMs || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs || 60000) : knownCount ? total : 1;
+      const value = timed ? snapshot.elapsedMs || 0 : searching ? snapshot.lastImprovementMs || 0 : knownCount ? done : null;
       return {
         phase: { preparation: "Preparation de la recherche", construction: "Construction des blocs",
           configuration: "Preparation des entrees et sorties", search: "Recherche en cours", relay: "Recherche de relais", complete: "Recherche terminee" }[stage] || "Recherche en cours",
-        active: preparing || searching || relaying, searching,
+        active: timed || preparing || searching || relaying, searching, timed,
         showConstruction: constructing && snapshot.zone?.status === "running",
-        label: relaying ? "Liaisons examinees" : searching ? "Sans amelioration (blocs)" : constructing ? "Blocs construits" : "Blocs prepares",
+        label: timed ? "Temps restant" : relaying ? "Liaisons examinees" : searching ? "Sans amelioration (blocs)" : constructing ? "Blocs construits" : "Blocs prepares",
         count: knownCount ? `${Math.min(total, Math.max(0, done))} / ${total}` : "",
         max, value: value === null ? null : Math.max(0, Math.min(max, value))
       };

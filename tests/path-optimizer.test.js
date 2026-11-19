@@ -28,8 +28,8 @@ const workerSource = [
   'parentPort.on("message", data => self.onmessage({ data }));'
 ].join("\n");
 
-async function runWorker(options, inspect = () => {}) {
-  const worker = new Worker(workerSource, { eval: true });
+async function runWorker(options, inspect = () => {}, source = workerSource) {
+  const worker = new Worker(source, { eval: true });
   let timeout;
   try {
     return await new Promise((resolve, reject) => {
@@ -79,4 +79,25 @@ test("the active worker reports invalid inputs with the original run id", async 
   const result = await runWorker({ runId: "invalid-engine-input", points: [{ x: 0, y: 0 }, { x: 0, y: 0 }] });
   assert.equal(result.type, "error");
   assert.match(result.message, /dupliqu/i);
+});
+
+test("the deep browser worker is self-contained and streams monotonic LNS gains until its total deadline", async () => {
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/deep-optimizer-worker.js"), "utf8"), context);
+  const deepSource = context.createDeepPathOptimizerWorker().source;
+  const source = workerSource.replace(context.createPathOptimizerWorker().source, deepSource);
+  new Function(deepSource);
+  const points = require("./fixtures/combined-search.js").timerRecovery, initialPath = model.expandCells(points, 3);
+  let previous = model.metrics(initialPath, 3, true).score, lnsSeen = false, gains = 0;
+  const result = await runWorker({ runId: "deep-engine", points, initialPath, cutThreshold: 3, totalLimitMs: 400, warmupMs: 0 }, snapshot => {
+    assert.notEqual(snapshot.type, "error", snapshot.message);
+    lnsSeen ||= snapshot.stage === "lns";
+    if (!snapshot.path) return;
+    assert.equal(model.validateRoute(snapshot.path, points), "");
+    assert.ok(snapshot.metrics.score <= previous + 1e-8);
+    if (snapshot.metrics.score < previous - 1e-8) gains++;
+    previous = snapshot.metrics.score;
+  }, source);
+  assert.equal(result.method, "deep-optimization"); assert.ok(lnsSeen && gains > 0);
+  assert.equal(result.totalLimitMs, 400); assert.ok(result.elapsedMs >= 400 && result.elapsedMs < 1500);
+  assert.ok(result.lns.iterations > 0); assert.equal(result.reason, "time-limit");
 });

@@ -28,6 +28,12 @@ const pathWorkColor = document.querySelector("#pathWorkColor");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
+const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
+const pathLnsMetrics = document.querySelector("#pathLnsMetrics");
+const pathLnsIterations = document.querySelector("#pathLnsIterations");
+const pathLnsSize = document.querySelector("#pathLnsSize");
+const pathLnsImprovements = document.querySelector("#pathLnsImprovements");
+const pathLnsDiversifications = document.querySelector("#pathLnsDiversifications");
 const stopPathAlgorithmButton = document.querySelector("#stopPathAlgorithmButton");
 const pathStagnationLimit = document.querySelector("#pathStagnationLimit");
 const pathAlgorithmFeedback = document.querySelector("#pathAlgorithmFeedback");
@@ -129,6 +135,7 @@ let pathOptimizationBaselinesByDmc = storedState.pathOptimizationBaselinesByDmc 
 let cutThreshold = storedState.cutThreshold || DEFAULT_CUT_THRESHOLD;
 let pathStagnationLimitMs = storedState.pathStagnationLimitMs || DEFAULT_PATH_STAGNATION_LIMIT;
 let activePathOptimizerWorker = null;
+let activePathOptimizerDeadlineTimer = null;
 let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
 let activePathOptimizerLastSavedAt = 0;
@@ -748,6 +755,7 @@ function renderPathBuilder() {
     pathBuildStatus.className = "coverage-status invalid";
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     optimizedPathButton.disabled = true;
+    deepOptimizeButton.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
     return;
@@ -761,6 +769,7 @@ function renderPathBuilder() {
     ? `Chemin complet: ${path.length} / ${expected} diagonales.`
     : `Chemin en cours: ${path.length} / ${expected} diagonales.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
+  deepOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
 
@@ -1603,14 +1612,15 @@ pathColorLegend.addEventListener("click", (event) => {
   renderPathTool();
 });
 
-function startAdvancedPathSearch() {
+function startAdvancedPathSearch(mode = "normal") {
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
     return;
   }
 
   let worker = null;
+  const deep = mode === "deep";
   try {
-    worker = window.createPathOptimizerWorker?.();
+    worker = deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
     return;
@@ -1621,7 +1631,7 @@ function startAdvancedPathSearch() {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation DMC ${dmc}`);
+  beginPathEdit(`Optimisation${deep ? " approfondie" : ""} DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1694,7 +1704,7 @@ function startAdvancedPathSearch() {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch("Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch(deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1711,8 +1721,16 @@ function startAdvancedPathSearch() {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
+    ...(deep ? { totalLimitMs: 3600000 } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
+  if (deep) {
+    activePathOptimizerDeadlineTimer = setTimeout(() => {
+      if (worker !== activePathOptimizerWorker) return;
+      flushAdvancedPathSnapshot();
+      finishAdvancedPathSearch("Budget d'une heure termine, meilleur parcours conserve", null, true);
+    }, 3600000);
+  }
 }
 
 function clearPendingOptimizerSnapshot() {
@@ -1812,6 +1830,8 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
 }
 
 function finishAdvancedPathSearch(label, snapshot, completed) {
+  clearTimeout(activePathOptimizerDeadlineTimer);
+  activePathOptimizerDeadlineTimer = null;
   clearPendingOptimizerSnapshot();
   const finishedDmc = activePathOptimizerDmc;
   const finalSnapshot = activePathOptimizerSnapshot || snapshot;
@@ -1874,6 +1894,12 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.method === "deep-optimization") {
+    if (snapshot.stage === "lns") return snapshot.phase || "Reconstruction LNS";
+    if (snapshot.stage === "complete") return "Optimisation approfondie terminee";
+    if (snapshot.stage === "search") return "Base : optimisation des blocs";
+    if (snapshot.stage === "relay") return "Base : recherche de relais";
+  }
   if (snapshot?.stage === "relay" && pathAlgorithmRunning) return `Recherche de relais : passe ${snapshot.relayPasses || 1}`;
   return PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning).phase;
 }
@@ -1885,6 +1911,11 @@ function showAdvancedPathFeedback(snapshot) {
 
 function updateAlgorithmLiveMetrics(snapshot) {
   const view = PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning);
+  pathLnsMetrics.classList.toggle("hidden", snapshot?.method !== "deep-optimization");
+  pathLnsIterations.textContent = String(snapshot?.lns?.iterations || 0);
+  pathLnsSize.textContent = snapshot?.lns?.size ? String(snapshot.lns.size) : "-";
+  pathLnsImprovements.textContent = String(snapshot?.lns?.improvements || 0);
+  pathLnsDiversifications.textContent = String(snapshot?.lns?.diversifications || 0);
   pathRelayImprovements.textContent = snapshot ? String(snapshot.relayImprovements || 0) : "-";
   const lastRelay = snapshot?.lastRelayImprovement;
   pathLastRelay.classList.toggle("hidden", !lastRelay);
@@ -1895,9 +1926,9 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmProgressArea.classList.toggle("hidden", !view.active);
   pathAlgorithmProgressArea.classList.toggle("stagnation", view.searching);
   pathConstructionMetrics.classList.toggle("hidden", !view.showConstruction);
-  pathPreparationCount.classList.toggle("hidden", view.searching);
+  pathPreparationCount.classList.toggle("hidden", view.searching || view.timed);
   pathPreparationCount.textContent = view.count;
-  pathAlgorithmLastImprovement.classList.toggle("hidden", !view.searching);
+  pathAlgorithmLastImprovement.classList.toggle("hidden", !view.searching && !view.timed);
   pathAlgorithmClockLabel.textContent = view.label;
   pathAlgorithmProgress.setAttribute("aria-label", view.label);
   pathAlgorithmProgress.max = view.max;
@@ -1922,8 +1953,11 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmAttempts.textContent = String(snapshot.attempts ?? 0);
   pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
   pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
-  pathAlgorithmLastImprovement.textContent = `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs, true)}`;
-  pathAlgorithmProgress.setAttribute("aria-valuetext", view.searching ? pathAlgorithmLastImprovement.textContent : view.count || "Preparation en cours");
+  pathAlgorithmLastImprovement.textContent = view.timed
+    ? formatAlgorithmTime(Math.max(0, (snapshot.totalLimitMs || 3600000) - (snapshot.elapsedMs || 0)))
+    : `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs, true)}`;
+  pathAlgorithmProgress.setAttribute("aria-valuetext", view.timed ? `${pathAlgorithmLastImprovement.textContent} restant`
+    : view.searching ? pathAlgorithmLastImprovement.textContent : view.count || "Preparation en cours");
 }
 
 function resetAlgorithmLiveMetrics() {
@@ -1947,6 +1981,11 @@ function showAlgorithmFeedback(phase) {
 optimizedPathButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch();
+});
+
+deepOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("deep");
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {

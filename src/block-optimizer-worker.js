@@ -467,6 +467,8 @@
     }
     function optimizePath(options, report = () => {}) {
       const started = clock(), initialLimit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimit = Number.isFinite(options.maxDurationMs) ? Math.max(1, options.maxDurationMs) : Infinity;
+      const totalExpired = () => totalLimit !== Infinity && clock() - started >= totalLimit;
       let limit = initialLimit;
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let insertionAttempts = 0, insertions = 0;
@@ -546,7 +548,10 @@
         const route = materialize(problem, order), metrics = zones.measure(route.path, problem.threshold);
         return publish(route, metrics, order);
       }
-      for (const order of [...problem.unitOrders, ...problem.orders]) consider(order, evaluateOrder(problem, order));
+      for (const order of [...problem.unitOrders, ...problem.orders]) {
+        if (totalExpired()) break;
+        consider(order, evaluateOrder(problem, order));
+      }
       // Even a tied incumbent is realized through the validated block transfer matrices.
       const realized = materialize(problem, bestOrder);
       if (compareMetrics(zones.measure(realized.path, problem.threshold), bestMetrics) <= epsilon) {
@@ -555,7 +560,7 @@
       stage = "search"; phase = "Optimisation des liaisons entre blocs"; lastImprovement = clock(); changed = true; emit(true);
       const freeCount = problem.blocks.length - problem.fixedCount;
       let reason = "inactivity";
-      const expired = () => clock() - lastImprovement >= limit;
+      const expired = () => totalExpired() || clock() - lastImprovement >= limit;
       // Local descent may improve an unpublished route; only publish() touches the global timer and preview.
       function refineRoute(route, metrics, exploratory = false) {
         if (!problem.insertions.contacts.size || bestMetrics.score <= lowerBound + epsilon) return { route, metrics };
@@ -700,13 +705,13 @@
           }
         }
       }
-      while (true) {
+      while (!totalExpired()) {
         searchRound();
-        if (bestMetrics.score <= lowerBound + epsilon) break;
+        if (bestMetrics.score <= lowerBound + epsilon || totalExpired()) break;
         stage = "relay"; phase = "Recherche de relais"; relayPasses++;
         relay = { examined: 0, total: 0, attempts: 0, timedOut: false }; emit(true);
         let improved = false;
-        const budgetMs = Math.min(15000, Math.max(250, initialLimit));
+        const budgetMs = Math.min(15000, Math.max(250, initialLimit), totalLimit === Infinity ? Infinity : Math.max(1, totalLimit - (clock() - started)));
         for (const candidate of relaySearch.candidates({ path: best.path, constraints: problem.constraints,
           cutThreshold: problem.threshold, budgetMs }, progress => { relay = progress; emit(); })) {
           attempts++; relayAttempts++;
@@ -723,6 +728,7 @@
         if (!improved) break;
       }
       stage = "complete"; phase = "Optimisation terminee : recherche et relais au plateau";
+      if (totalExpired()) reason = "time-limit";
       const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
@@ -744,6 +750,7 @@
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
     };
   }
+  root.createBlockOptimizer = createBlockOptimizer;
   root.createPathOptimizerApi = () => createBlockOptimizer(root.StitchModel, root.createOrthogonalPathBuilder);
   root.createPathOptimizerWorker = () => {
     const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createBlockOptimizer.toString()},${root.createRelaySearch.toString()});`;

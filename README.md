@@ -118,6 +118,16 @@ Le suivi affiche `Recherche de relais`, le numero de passe et les liaisons exami
 
 `Derniere liaison amelioree` affiche le rang et le total de la liste au moment du dernier relais accepte (par exemple `45 / 76`), avec la longueur du raccordement avant ce gain. Le rang suit le cout decroissant, coupes comprises ; l'infobulle precise la passe. Cette valeur reste fixe pendant les recherches et passes suivantes, meme si leur liste change, jusqu'au prochain relais accepte. Elle reste visible a l'arret mais est reinitialisee au lancement d'une nouvelle recherche. Ce suivi n'est pas ajoute aux sauvegardes ni aux exports.
 
+### Optimisation approfondie
+
+`Optimisation approfondie (1 h)` lance une recherche LNS pour la couleur selectionnee, sans remplacer `Optimiser les blocs` ni la file classique des couleurs. L'heure est un budget total, preparation comprise, jamais un delai sans amelioration. Le mode classique conserve son delai adaptatif : -10 % par relais accepte, plancher de 2 secondes, retour au delai initial apres un gain normal.
+
+Le mode approfondi reprend le meilleur parcours compatible et commence par une passe du moteur actuel, bornee a une minute au maximum. Ensuite `src/deep-optimizer-worker.js` alterne des voisinages autour des liaisons couteuses, des ensembles spatiaux et des fragments du parcours. De 6 a 14 diagonales sont liberees ensemble, selon les echecs et les gains. Une programmation dynamique par sous-ensembles reconstruit exactement leur meilleur ordre et leurs sens pour les emplacements libres choisis, avec les autres diagonales et leurs sens fixes. Les deux raccordements de chaque intervalle et les precedences avec les croix hors voisinage sont pris en compte. Ce n'est pas une resolution exacte du pattern entier : le choix des voisinages reste heuristique.
+
+Au plateau, des couts perturbes proposent d'autres pistes de travail, avec une degradation bornee. Elles ne remplacent jamais le meilleur parcours affiche ou sauvegarde. Les candidats prometteurs beneficient aussi d'une reorientation globale, puis le score reel et toutes les regles de couture sont verifies avant acceptation. Le moteur garde quelques parcours de reference pour varier ses reprises. Les reparations sont interruptibles par le budget global et bornees individuellement.
+
+Le suivi indique le temps restant, le nombre de reconstructions, les diagonales libres, les gains LNS et les nouvelles pistes. Les gains utilisent les memes raccordements en surbrillance, comparaison Avant/Apres, courbe de score et suivi automatique facultatif que le mode classique. Arreter conserve le meilleur parcours recu ; Annuler/Retablir agit sur la recherche entiere et le meilleur reste recuperable. Le calcul reste local au navigateur : garder l'onglet ouvert et le PC actif. Les donnees et la progression de l'outil 3 ne sont pas modifiees.
+
 ### Examiner un parcours
 
 La grille de l'outil 2 utilise maintenant un canvas limite a la taille de sa fenetre, independamment du zoom. La molette et les boutons loupe changent l'echelle ; le trou sous le curseur reste fixe tant que les limites de la grille le permettent. La main permet de deplacer la vue, y compris pendant le calcul et en mode Avant. Le bouton de cadrage revient a la vue complete. Le bouton cible cadre explicitement les derniers raccordements ameliores. Les regles restent visibles en haut et a gauche, et leur espacement s'adapte quand la grille devient trop petite.
@@ -142,6 +152,8 @@ Avant de remplacer un ancien etat local IndexedDB, sa copie est gardee sous `mig
 
 ```powershell
 node tests/path-optimizer.test.js
+node --test tests/deep-optimizer.test.js
+node tests/planner-deep.test.js
 node tests/orthogonal-path.test.js
 node tests/block-optimizer.test.js
 node tests/path-visuals.test.js

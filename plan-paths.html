@@ -57,6 +57,7 @@
             <div class="algorithm-group">
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
+              <button id="deepOptimizeButton" class="secondary-button" type="button">Optimisation approfondie (1 h)</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
@@ -99,6 +100,12 @@
                     <dt>Croix du bloc</dt>
                     <dd id="pathAlgorithmZoneCrosses">-</dd>
                   </div>
+                </dl>
+                <dl id="pathLnsMetrics" class="algorithm-live-metrics hidden">
+                  <div><dt>Reconstructions</dt><dd id="pathLnsIterations">0</dd></div>
+                  <div><dt>Diagonales libres</dt><dd id="pathLnsSize">-</dd></div>
+                  <div><dt>Gains LNS</dt><dd id="pathLnsImprovements">0</dd></div>
+                  <div><dt>Nouvelles pistes</dt><dd id="pathLnsDiversifications">0</dd></div>
                 </dl>
               </div>
             </div>
@@ -329,6 +336,7 @@
     <script src="src/orthogonal-path-worker.js"></script>
     <script src="src/relay-search.js"></script>
     <script src="src/block-optimizer-worker.js"></script>
+    <script src="src/deep-optimizer-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>
