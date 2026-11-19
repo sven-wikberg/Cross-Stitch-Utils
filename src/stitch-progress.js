@@ -1280,8 +1280,8 @@ resetColorProgressButton.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
   const target = event.target;
-  const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-  if (event.repeat || isTypingTarget || target instanceof HTMLSelectElement || target.closest("button, a") || activeProgressStep !== "stitch" || event.code !== "Space") {
+  const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+  if (isTypingTarget || target instanceof HTMLSelectElement || target.closest("button, a") || activeProgressStep !== "stitch" || event.code !== "Space") {
     return;
   }
 

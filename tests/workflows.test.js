@@ -211,10 +211,27 @@ async function run() {
     assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 0);
     await page.locator("#redoActionButton").click();
     await page.locator("body").click({ position: { x: 1595, y: 5 } });
+    await page.keyboard.press("Space");
+    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 2, "A brief Space press adds one diagonal");
     await page.keyboard.down("Space");
     await page.keyboard.down("Space");
     await page.keyboard.up("Space");
-    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 2, "Holding Space only adds one stitch");
+    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 4, "Repeated Space keydowns keep advancing diagonals");
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 4, "Releasing Space stops advancement");
+    assert.equal(await page.evaluate(() => {
+      for (const tag of ["input", "textarea", "select", "button", "a", "div"]) {
+        const target = document.createElement(tag);
+        if (tag === "div") target.contentEditable = "true";
+        document.body.append(target);
+        for (const repeat of [false, true]) target.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", repeat, bubbles: true, cancelable: true }));
+        target.remove();
+      }
+      goToProgressStep("load");
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", repeat: true, bubbles: true, cancelable: true }));
+      goToProgressStep("stitch");
+      return stitchedCountForDmc("310");
+    }), 4, "Typing, interactive controls and the loading step never trigger the shortcut");
     await page.locator("#markUntilToggle").check();
     const point = await page.evaluate(() => {
       const rect = stitchCanvas.getBoundingClientRect();
@@ -229,7 +246,7 @@ async function run() {
     await page.evaluate(() => localSaveQueue);
     await page.reload();
     await page.waitForFunction(() => !document.querySelector("main").inert && activeProgressStep === "stitch");
-    assert.deepEqual(await page.evaluate(() => [stitchedCountForDmc("310"), sessionMode, stitchZoom, undoActions.length]), [6, true, 1.25, 3]);
+    assert.deepEqual(await page.evaluate(() => [stitchedCountForDmc("310"), sessionMode, stitchZoom, undoActions.length]), [6, true, 1.25, 5]);
     const active = await page.evaluate(() => progressStore.read("active"));
     assert.ok(!active.pathsFile && active.patternId.length === 64);
     await page.screenshot({ path: path.join(screenshotDirectory, "stitch-session.png"), fullPage: true });
@@ -304,6 +321,11 @@ async function run() {
     assert.equal(await migrated.evaluate(() => stitchedCountForDmc("321")), 3);
     assert.equal(await migrated.locator("#selectedPartialCrosses").innerText(), "1");
     assert.deepEqual(await migrated.evaluate(() => buildProgressSave().stitchedByDmc), partialSave.stitchedByDmc);
+    await migrated.locator("body").click({ position: { x: 1595, y: 5 } });
+    for (let i = 0; i < 6; i++) await migrated.keyboard.down("Space");
+    await migrated.keyboard.up("Space");
+    assert.deepEqual(await migrated.evaluate(() => [stitchedByDmc, selectedDmc]), [{ "310": 6, "321": 4 }, "321"],
+      "Holding Space stops at the selected color's end without advancing another color");
     await migrationContext.close();
 
     const planner = await context.newPage();
