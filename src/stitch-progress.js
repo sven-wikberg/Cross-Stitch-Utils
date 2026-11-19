@@ -436,6 +436,8 @@ function renderStitchView() {
   });
   drawStitchProgress(context, cellSize);
   drawThreadMarkers(context, cellSize);
+  const currentPoint = pathForDmc(selectedDmc)?.points[stitchedCountForDmc(selectedDmc)];
+  if (currentPoint) drawCurrentStitchArrow(context, currentPoint, cellSize);
   context.restore();
   drawGridRulers(context, stitchView.width, stitchView.height, cellSize);
   renderStitchColorLegend();
@@ -520,32 +522,52 @@ function drawStitchProgress(context, cellSize) {
   path.points.forEach((point, index) => {
     if (index && (!sessionMode || index < count + 8)) drawPathSegment(context, path.points[index - 1], point, cellSize, index > count ? 0.2 : 0.7);
   });
-  const drawingOrder = path.points.map((point, index) => ({ point, index })).filter(item => item.index !== count);
-  if (path.points[count]) drawingOrder.push({ point: path.points[count], index: count });
-  drawingOrder.forEach(({ point, index }) => {
+  path.points.forEach((point, index) => {
+    if (index === count) return;
     if (sessionMode && index >= count + 8) return;
     if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
         || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) return;
     const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
     const ink = dark && completion.get(cellKey(point)) === 3 ? "#ffffff" : "#222426";
     context.globalAlpha = index > count ? 0.2 : 1;
-    context.strokeStyle = index === count ? "#c63848" : index < count ? ink : "#222426";
-    context.lineWidth = Math.max(1, cellSize * (index === count ? 0.12 : 0.085));
+    context.strokeStyle = index < count ? ink : "#222426";
+    context.lineWidth = Math.max(1, cellSize * 0.085);
     context.setLineDash([]);
     context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
-    if (index === count) {
-      const radius = Math.max(2, Math.min(5, cellSize * 0.12));
-      context.fillStyle = "#ffffff"; context.fillRect(from.x - radius, from.y - radius, radius * 2, radius * 2);
-      context.strokeRect(from.x - radius, from.y - radius, radius * 2, radius * 2);
-      context.fillStyle = "#c63848"; context.beginPath(); context.arc(to.x, to.y, radius, 0, Math.PI * 2); context.fill();
-      if (cellSize >= 12) {
-        const angle = Math.atan2(to.y - from.y, to.x - from.x), length = Math.min(8, cellSize * 0.25);
-        context.beginPath(); context.moveTo(to.x - length * Math.cos(angle - 0.5), to.y - length * Math.sin(angle - 0.5));
-        context.lineTo(to.x, to.y); context.lineTo(to.x - length * Math.cos(angle + 0.5), to.y - length * Math.sin(angle + 0.5));
-        context.stroke();
-      }
-    }
   });
+  context.restore();
+}
+
+function drawCurrentStitchArrow(context, point, cellSize) {
+  const holes = StitchModel.holes(point);
+  const from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  const dx = (to.x - from.x) / length, dy = (to.y - from.y) / length;
+  const headLength = Math.min(length * 0.36, Math.max(5, cellSize * 0.36));
+  const headWidth = headLength * 0.55;
+  const base = { x: to.x - dx * headLength, y: to.y - dy * headLength };
+  const shaft = Math.max(1.5, cellSize * 0.055);
+  const halo = Math.max(1, Math.min(3, cellSize * 0.035));
+  const radius = Math.max(2, cellSize * 0.075);
+  const shaftPath = new Path2D();
+  shaftPath.moveTo(from.x, from.y); shaftPath.lineTo(base.x, base.y);
+  const headPath = new Path2D();
+  headPath.moveTo(to.x, to.y);
+  headPath.lineTo(base.x - dy * headWidth, base.y + dx * headWidth);
+  headPath.lineTo(base.x + dy * headWidth, base.y - dx * headWidth);
+  headPath.closePath();
+  context.save();
+  context.globalAlpha = 1; context.setLineDash([]);
+  context.lineCap = "round"; context.lineJoin = "round";
+  // Draw last, above the path and thread badges, so the active direction stays clear.
+  context.strokeStyle = "#ffffff"; context.lineWidth = shaft + halo * 2; context.stroke(shaftPath);
+  context.lineWidth = halo * 2; context.stroke(headPath);
+  context.strokeStyle = "#c63848"; context.lineWidth = shaft; context.stroke(shaftPath);
+  context.fillStyle = "#c63848"; context.fill(headPath);
+  context.beginPath(); context.arc(from.x, from.y, radius, 0, Math.PI * 2);
+  context.fillStyle = "#ffffff"; context.fill();
+  context.strokeStyle = "#ffffff"; context.lineWidth = shaft + halo * 2; context.stroke();
+  context.strokeStyle = "#c63848"; context.lineWidth = Math.max(1.5, shaft * 0.7); context.stroke();
   context.restore();
 }
 
@@ -568,6 +590,8 @@ function drawThreadMarkers(context, cellSize) {
   context.font = "bold 11px system-ui";
   context.textAlign = "center"; context.textBaseline = "middle";
   const occupied = [];
+  const active = path.points[stitchedCountForDmc(selectedDmc)];
+  const activeCorner = active && holePixel(active, cellSize);
   for (const thread of stitchStats.colors[selectedDmc]?.threads || []) {
     if (thread.end === null) continue;
     const point = path.points[thread.end - 1];
@@ -578,9 +602,18 @@ function drawThreadMarkers(context, cellSize) {
     const center = pointCenter(point, cellSize);
     center.x = Math.min(stitchCanvas.width - radius - 1, Math.max(GRID_RULER_SIZE + radius + 1, center.x));
     center.y = Math.min(stitchCanvas.height - radius - 1, Math.max(GRID_RULER_SIZE + radius + 1, center.y));
-    // Keep adjacent change markers legible, with a leader to their actual end hole.
-    while (occupied.some(other => Math.hypot(other.x - center.x, other.y - center.y) < other.radius + radius + 2)
-        && center.y + radius * 3 + 3 < stitchCanvas.height) center.y += radius * 2 + 3;
+    // Keep badges away from the active stitch and each other; the leader retains the exact hole.
+    for (let ring = 0; ring < 8; ring++) {
+      const offset = ring * (radius * 2 + 3);
+      const candidate = [[0, offset], [0, -offset], [offset, 0], [-offset, 0]]
+        .map(([x, y]) => ({ x: center.x + x, y: center.y + y }))
+        .find(p => p.x - radius > GRID_RULER_SIZE && p.x + radius < stitchCanvas.width
+          && p.y - radius > GRID_RULER_SIZE && p.y + radius < stitchCanvas.height
+          && !occupied.some(other => Math.hypot(other.x - p.x, other.y - p.y) < other.radius + radius + 2)
+          && !(activeCorner && p.x + radius + 3 > activeCorner.x && p.x - radius - 3 < activeCorner.x + cellSize
+            && p.y + radius + 3 > activeCorner.y && p.y - radius - 3 < activeCorner.y + cellSize));
+      if (candidate) { Object.assign(center, candidate); break; }
+    }
     context.strokeStyle = "#17679b"; context.lineWidth = 1.5; context.setLineDash([]);
     context.beginPath(); context.moveTo(anchor.x, anchor.y); context.lineTo(center.x, center.y); context.stroke();
     context.fillStyle = "#17679b";

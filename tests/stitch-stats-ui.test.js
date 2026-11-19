@@ -76,9 +76,14 @@ async function run() {
     const marker = await page.evaluate(() => {
       const hit = threadMarkerHits[0];
       const pixel = [...stitchCanvas.getContext("2d").getImageData(Math.round(hit.x + 5), Math.round(hit.y + 4), 1, 1).data];
-      return { count: threadMarkerHits.length, pixel };
+      const current = pathForDmc(selectedDmc).points[stitchedCountForDmc(selectedDmc)];
+      const corner = holePixel(current, stitchView.cellSize);
+      const overlapsCurrent = hit.x + hit.radius > corner.x && hit.x - hit.radius < corner.x + stitchView.cellSize
+        && hit.y + hit.radius > corner.y && hit.y - hit.radius < corner.y + stitchView.cellSize;
+      return { count: threadMarkerHits.length, pixel, overlapsCurrent };
     });
     assert.equal(marker.count, 1);
+    assert.equal(marker.overlapsCurrent, false, "Thread badges leave the current diagonal unobstructed");
     assert.deepEqual(marker.pixel, [23, 103, 155, 255], "Thread marker is actually rendered in the canvas");
     await page.locator("#threadMarkersToggle").uncheck();
     assert.equal(await page.evaluate(() => threadMarkerHits.length), 0);
