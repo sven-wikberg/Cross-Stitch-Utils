@@ -75,6 +75,17 @@
           </dl>
         </section>
 
+        <section id="activityProgressPanel" class="sidebar-panel hidden" aria-labelledby="activity-progress-title">
+          <h2 id="activity-progress-title">Activite</h2>
+          <dl class="metric-list">
+            <div><dt>Diagonales aujourd'hui</dt><dd id="todayDiagonals">0</dd></div>
+            <div><dt>Croix terminees aujourd'hui</dt><dd id="todayCrosses">0</dd></div>
+            <div><dt>Diagonales sur 7 jours</dt><dd id="weekDiagonals">0</dd></div>
+            <div><dt>Jours actifs</dt><dd id="activeStitchDays">0</dd></div>
+            <div><dt>Diagonales / jour actif</dt><dd id="dailyStitchAverage">-</dd></div>
+          </dl>
+        </section>
+
         <section id="zoomPanel" class="sidebar-panel hidden" aria-labelledby="zoom-panel-title">
           <h2 id="zoom-panel-title">Zoom</h2>
           <div class="zoom-controls" aria-label="Zoom de la grille">
@@ -181,6 +192,7 @@
             <button id="sessionModeButton" class="secondary-button" type="button" aria-pressed="false" title="Centrer la grille sur le point a broder">Vue rapprochee</button>
             <button id="fullscreenButton" class="secondary-button" type="button">Plein ecran</button>
             <label class="inline-check"><input id="markUntilToggle" type="checkbox"> Marquer jusqu'a la diagonale cliquee</label>
+            <label class="inline-check" title="Reperes de changement de fil de la couleur selectionnee"><input id="threadMarkersToggle" type="checkbox" checked> Reperes de fil</label>
             <span id="nextCutText" role="status"></span>
           </div>
 
@@ -201,6 +213,19 @@
                   <button id="resetColorProgressButton" class="secondary-button" type="button">Remettre a zero</button>
                 </div>
                 <button id="nextStitchButton" class="primary-button" type="button">Valider la diagonale</button>
+                <div class="thread-progress-section">
+                  <p class="field-label">Bout de fil</p>
+                  <dl class="metric-list">
+                    <div><dt id="currentThreadLabel">En cours</dt><dd id="currentThreadDiagonals">0</dd></div>
+                    <div><dt>Bouts termines (total)</dt><dd id="finishedThreadCount">0</dd></div>
+                    <div><dt>Diagonales / bout (global)</dt><dd id="threadDiagonalAverage">-</dd></div>
+                  </dl>
+                  <button id="changeThreadButton" class="secondary-button thread-change-button" type="button" title="Terminer le bout de fil de la couleur selectionnee">
+                    <img src="assets/icons/scissors.svg" alt="" width="18" height="18"> Changement de fil
+                  </button>
+                  <p id="threadProgressNote" class="empty-message"></p>
+                  <p id="threadChangeStatus" class="empty-message" role="status"></p>
+                </div>
                 <button id="downloadProgressSaveButton" class="secondary-button" type="button">Telecharger la sauvegarde</button>
                 <button id="writeBuiltinProgressButton" class="secondary-button" type="button">Synchroniser sur GitHub</button>
                 <p id="writeBuiltinProgressStatus" class="empty-message">La progression synchronisee sera disponible sur les autres PC.</p>
@@ -213,6 +238,31 @@
               </div>
             </div>
           </div>
+          <section class="stitch-statistics" aria-labelledby="stitch-statistics-title">
+            <h3 id="stitch-statistics-title">Journal de broderie</h3>
+            <p id="stitchStatsSince" class="empty-message"></p>
+            <div class="stitch-journal-columns">
+              <div>
+                <h4>Les 7 derniers jours</h4>
+                <div id="dailyStitchChart" class="daily-stitch-chart" aria-label="Diagonales par jour"></div>
+                <details class="stitch-history-details">
+                  <summary>Historique par jour</summary>
+                  <div class="stitch-history-scroll"><table class="stitch-history-table">
+                    <thead><tr><th scope="col">Jour</th><th scope="col">Diagonales</th><th scope="col">Croix terminees</th></tr></thead>
+                    <tbody id="dailyStitchHistory"></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div>
+                <h4>Historique des bouts de fil</h4>
+                <p id="threadHistorySummary" class="empty-message"></p>
+                <div class="stitch-history-scroll"><table class="stitch-history-table">
+                  <thead><tr><th scope="col">Bout / DMC</th><th scope="col">Diagonales</th><th scope="col">Etat / date</th></tr></thead>
+                  <tbody id="threadHistory"></tbody>
+                </table></div>
+              </div>
+            </div>
+          </section>
         </section>
       </section>
     </main>
@@ -222,6 +272,8 @@
     <script src="src/progress-store.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/stitch-model.js"></script>
+    <script src="src/stitch-stats.js"></script>
+    <script src="src/stitch-stats-view.js"></script>
     <script src="src/stitch-progress.js"></script>
   </body>
 </html>

@@ -79,6 +79,11 @@ const syncConflictPanel = document.querySelector("#syncConflictPanel");
 const undoActionButton = document.querySelector("#undoActionButton");
 const redoActionButton = document.querySelector("#redoActionButton");
 const markUntilToggle = document.querySelector("#markUntilToggle");
+const threadMarkersToggle = document.querySelector("#threadMarkersToggle");
+const changeThreadButton = document.querySelector("#changeThreadButton");
+const activityProgressPanel = document.querySelector("#activityProgressPanel");
+let threadMarkerHits = [];
+let stitchStatsRevision = 0;
 let localSaveQueue = Promise.resolve();
 let patternIds = new WeakMap();
 let storedPatternIds = new Set();
@@ -103,6 +108,8 @@ let pendingLegacyBackup = null;
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
 let stitchedByDmc = storedProgressState.stitchedByDmc;
+let stitchStats = StitchStats.load(storedProgressState.stitchStats, loadedPaths, stitchedByDmc);
+threadMarkersToggle.checked = storedProgressState.showThreadMarkers !== false;
 let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
 let stitchZoom = storedProgressState.zoom || DEFAULT_STITCH_ZOOM;
 let followCurrentPoint = Boolean(storedProgressState.followCurrentPoint);
@@ -143,7 +150,8 @@ function saveProgressState() {
   const paths = loadedPaths;
   const snapshot = { kind: "cross-stitch-progress-state", schemaVersion: 3, stitchUnit: "diagonal", savedAt: new Date().toISOString(),
     stitchedByDmc: normalizeStitchedState(paths, stitchedByDmc), selectedDmc, zoom: stitchZoom, followCurrentPoint,
-    sessionMode, viewPosition: { ...viewPosition }, undoActions: structuredClone(undoActions), redoActions: structuredClone(redoActions) };
+    sessionMode, viewPosition: { ...viewPosition }, undoActions: structuredClone(undoActions), redoActions: structuredClone(redoActions),
+    stitchStats: structuredClone(stitchStats), showThreadMarkers: threadMarkersToggle.checked };
   localSaveQueue = localSaveQueue.catch(() => {}).then(async () => {
     if (pendingLegacyBackup) {
       await progressStore.write("migration-backup:legacy-storage", pendingLegacyBackup);
@@ -176,7 +184,10 @@ function changeStitchCount(dmc, count) {
   const before = stitchedCountForDmc(dmc);
   const after = Math.min(pathForDmc(dmc)?.points.length || 0, Math.max(0, count));
   if (before === after) return;
-  undoActions.push({ dmc, before, after });
+  const statsBefore = StitchStats.snapshot(stitchStats, dmc);
+  StitchStats.record(stitchStats, dmc, before, after);
+  stitchStatsRevision++;
+  undoActions.push({ dmc, before, after, statsBefore, statsAfter: StitchStats.snapshot(stitchStats, dmc) });
   undoActions = undoActions.slice(-100);
   redoActions = [];
   stitchedByDmc[dmc] = after;
@@ -222,6 +233,7 @@ function renderProgressTool() {
   globalProgressPanel.classList.toggle("hidden", !showProgressPanels);
   selectedProgressPanel.classList.toggle("hidden", !showProgressPanels);
   zoomPanel.classList.toggle("hidden", !showProgressPanels);
+  activityProgressPanel.classList.toggle("hidden", !showProgressPanels);
 
   document.body.classList.toggle("session-mode", sessionMode && activeProgressStep === "stitch");
   renderLoadedPaths();
@@ -230,6 +242,7 @@ function renderProgressTool() {
   renderStitchView();
   renderZoomControls();
   renderProgressMetrics();
+  StitchStatsView.render(stitchStats, loadedPaths, stitchedByDmc, selectedDmc, stitchStatsRevision);
   document.querySelector("#sessionModeButton").textContent = sessionMode ? "Vue d'ensemble" : "Vue rapprochee";
   document.querySelector("#sessionModeButton").setAttribute("aria-pressed", String(sessionMode));
   undoActionButton.disabled = undoActions.length === 0;
@@ -341,6 +354,7 @@ function renderGithubConnectionControls() {
 
 function renderStitchView() {
   const context = stitchCanvas.getContext("2d");
+  threadMarkerHits = [];
 
   if (!loadedPaths) {
     stitchCanvas.width = 1;
@@ -421,6 +435,7 @@ function renderStitchView() {
     }
   });
   drawStitchProgress(context, cellSize);
+  drawThreadMarkers(context, cellSize);
   context.restore();
   drawGridRulers(context, stitchView.width, stitchView.height, cellSize);
   renderStitchColorLegend();
@@ -542,6 +557,39 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1) {
   context.lineWidth = Math.max(0.6, Math.min(2, cellSize * (isCut ? 0.035 : 0.05)));
   context.setLineDash(isCut ? [Math.max(2, cellSize * 0.4), Math.max(2, cellSize * 0.3)] : [2, 2]);
   context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+  context.restore();
+}
+
+function drawThreadMarkers(context, cellSize) {
+  if (!threadMarkersToggle.checked) return;
+  const path = pathForDmc(selectedDmc);
+  if (!path) return;
+  context.save();
+  context.font = "bold 11px system-ui";
+  context.textAlign = "center"; context.textBaseline = "middle";
+  const occupied = [];
+  for (const thread of stitchStats.colors[selectedDmc]?.threads || []) {
+    if (thread.end === null) continue;
+    const point = path.points[thread.end - 1];
+    if (!point || point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
+        || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) continue;
+    const anchor = holePixel(StitchModel.holes(point).end, cellSize);
+    const radius = Math.max(9, context.measureText(String(thread.number)).width / 2 + 4);
+    const center = pointCenter(point, cellSize);
+    center.x = Math.min(stitchCanvas.width - radius - 1, Math.max(GRID_RULER_SIZE + radius + 1, center.x));
+    center.y = Math.min(stitchCanvas.height - radius - 1, Math.max(GRID_RULER_SIZE + radius + 1, center.y));
+    // Keep adjacent change markers legible, with a leader to their actual end hole.
+    while (occupied.some(other => Math.hypot(other.x - center.x, other.y - center.y) < other.radius + radius + 2)
+        && center.y + radius * 3 + 3 < stitchCanvas.height) center.y += radius * 2 + 3;
+    context.strokeStyle = "#17679b"; context.lineWidth = 1.5; context.setLineDash([]);
+    context.beginPath(); context.moveTo(anchor.x, anchor.y); context.lineTo(center.x, center.y); context.stroke();
+    context.fillStyle = "#17679b";
+    context.beginPath(); context.arc(center.x, center.y, radius, 0, Math.PI * 2); context.fill();
+    context.strokeStyle = "#ffffff"; context.stroke();
+    context.fillStyle = "#ffffff"; context.fillText(String(thread.number), center.x, center.y);
+    const hit = { ...center, radius, title: `DMC ${selectedDmc} - bout ${thread.number} : ${thread.end - thread.start} diagonales${thread.partial ? " (partiel)" : ""}` };
+    occupied.push(hit); threadMarkerHits.push(hit);
+  }
   context.restore();
 }
 
@@ -745,6 +793,10 @@ function applyProgressSave(progressSave) {
   sessionMode = Boolean(progressSave.sessionMode);
   viewPosition = progressSave.viewPosition || { left: 0, top: 0 };
   stitchedByDmc = normalizeStitchedState(loadedPaths, progressSave.stitchedByDmc);
+  stitchStats = StitchStats.load(progressSave.stitchStats, loadedPaths, stitchedByDmc);
+  stitchStatsRevision++;
+  threadMarkersToggle.checked = progressSave.showThreadMarkers !== false;
+  document.querySelector("#threadChangeStatus").textContent = "";
   selectedDmc = pathForDmc(progressSave.selectedDmc)
     ? progressSave.selectedDmc
     : loadedPaths.paths[0]?.dmc || null;
@@ -765,7 +817,11 @@ function validatePathsFile(data) {
 
 function validateProgressSave(data) {
   try {
-    if (!upgradedProgressSaves.has(data)) upgradedProgressSaves.set(data, StitchModel.upgradeProgressSave(data));
+    if (!upgradedProgressSaves.has(data)) {
+      const upgraded = StitchModel.upgradeProgressSave(data);
+      StitchStats.load(upgraded.stitchStats, upgraded.pathsFile, upgraded.stitchedByDmc);
+      upgradedProgressSaves.set(data, upgraded);
+    }
     return { valid: true, message: "" };
   } catch (error) { return { valid: false, message: error.message }; }
 }
@@ -963,7 +1019,8 @@ function buildProgressSave() {
     savedAt: new Date().toISOString(),
     pathsFile: loadedPaths,
     stitchedByDmc: normalizeStitchedState(loadedPaths, stitchedByDmc),
-    selectedDmc, zoom: stitchZoom, followCurrentPoint, sessionMode, viewPosition
+    selectedDmc, zoom: stitchZoom, followCurrentPoint, sessionMode, viewPosition,
+    stitchStats: structuredClone(stitchStats), showThreadMarkers: threadMarkersToggle.checked
   };
 }
 
@@ -1083,6 +1140,8 @@ pathsJsonFileInput.addEventListener("change", async () => {
     undoActions = []; redoActions = []; sessionMode = false;
     viewPosition = { left: 0, top: 0 };
     stitchedByDmc = {};
+    stitchStats = StitchStats.create(); stitchStatsRevision++;
+    document.querySelector("#threadChangeStatus").textContent = "";
     selectedDmc = loadedPaths.paths[0]?.dmc || null;
     progressSaveFileInput.value = "";
     stitchProgress.load = true;
@@ -1349,6 +1408,7 @@ resetProgressToolButton.addEventListener("click", () => {
   loadedPaths = null;
   selectedDmc = null;
   stitchedByDmc = {};
+  stitchStats = StitchStats.create(); stitchStatsRevision++;
   stitchZoom = DEFAULT_STITCH_ZOOM;
   followCurrentPoint = false;
   stitchProgress = {
@@ -1369,6 +1429,10 @@ undoActionButton.addEventListener("click", () => {
   const action = undoActions.pop();
   if (!action) return;
   redoActions.push(action); selectedDmc = action.dmc; stitchedByDmc[action.dmc] = action.before;
+  if (action.statsBefore) StitchStats.restoreColor(stitchStats, action.dmc, action.statsBefore);
+  else StitchStats.rebaseColor(stitchStats, action.dmc, action.before);
+  stitchStatsRevision++;
+  document.querySelector("#threadChangeStatus").textContent = "";
   stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
   saveProgressState(); renderProgressTool();
 });
@@ -1376,8 +1440,30 @@ redoActionButton.addEventListener("click", () => {
   const action = redoActions.pop();
   if (!action) return;
   undoActions.push(action); selectedDmc = action.dmc; stitchedByDmc[action.dmc] = action.after;
+  if (action.statsAfter) StitchStats.restoreColor(stitchStats, action.dmc, action.statsAfter);
+  else StitchStats.rebaseColor(stitchStats, action.dmc, action.after);
+  stitchStatsRevision++;
+  document.querySelector("#threadChangeStatus").textContent = "";
   stitchProgress.stitch = areAllColorsStitched(loadedPaths, stitchedByDmc);
   saveProgressState(); renderProgressTool();
+});
+changeThreadButton.addEventListener("click", () => {
+  if (!loadedPaths || !selectedDmc) return;
+  const count = stitchedCountForDmc(selectedDmc), statsBefore = StitchStats.snapshot(stitchStats, selectedDmc);
+  if (!StitchStats.finishThread(stitchStats, selectedDmc, count)) return;
+  undoActions.push({ dmc: selectedDmc, before: count, after: count, statsBefore,
+    statsAfter: StitchStats.snapshot(stitchStats, selectedDmc) });
+  undoActions = undoActions.slice(-100); redoActions = []; stitchStatsRevision++;
+  const thread = stitchStats.colors[selectedDmc].threads.at(-1);
+  document.querySelector("#threadChangeStatus").textContent = `DMC ${selectedDmc} : bout ${thread.number} termine, ${count - thread.start} diagonales.`;
+  saveProgressState(); renderProgressTool();
+});
+threadMarkersToggle.addEventListener("change", () => { renderStitchView(); saveProgressState(); });
+stitchCanvas.addEventListener("mousemove", event => {
+  const rect = stitchCanvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * stitchCanvas.width / rect.width;
+  const y = (event.clientY - rect.top) * stitchCanvas.height / rect.height;
+  stitchCanvas.title = threadMarkerHits.find(marker => Math.hypot(marker.x - x, marker.y - y) <= marker.radius)?.title || "";
 });
 stitchCanvas.addEventListener("click", event => {
   if (!markUntilToggle.checked || !loadedPaths) return;
@@ -1415,6 +1501,10 @@ setInterval(() => {
 }, 30000);
 window.addEventListener("online", renderSyncState);
 window.addEventListener("offline", renderSyncState);
+// Refresh daily counters across midnight even when the project is left open.
+setInterval(() => {
+  if (loadedPaths && activeProgressStep === "stitch") StitchStatsView.render(stitchStats, loadedPaths, stitchedByDmc, selectedDmc, stitchStatsRevision);
+}, 60000);
 window.addEventListener("beforeunload", event => {
   if (localSavePending || localSaveError || (loadedPaths && readGithubToken() && progressStore.fingerprint(latestLocalState) !== lastSyncedFingerprint)) { event.preventDefault(); event.returnValue = ""; }
 });
