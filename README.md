@@ -14,6 +14,8 @@ Dans l'outil 2, Vider et Reset demandent confirmation. Les fleches Annuler/Retab
 
 Le meilleur chemin est conserve a part : Vider ou annuler une optimisation ne le supprime pas. Restaurer le meilleur chemin restaure aussi ses contraintes, avec confirmation si elles remplacent les contraintes actuelles. Ces protections sont locales au navigateur ; elles ne sont pas ajoutees aux exports, ne synchronisent pas l'historique entre machines et ne modifient jamais la progression de l'outil 3.
 
+L'outil 2 propose aussi **Moteur 2 : recherche adaptative**, avec un budget total de 1 minute, 10 minutes ou 1 heure. Il combine plusieurs constructions, reorientation globale, reinsertion libre de diagonales, choix adaptatif des operateurs, reparations exactes locales et diversification. Le meilleur chemin reste protege et les ameliorations utilisent le suivi visuel existant. Les deux modes precedents restent disponibles. [Fonctionnement, limites et tests du moteur adaptatif](docs/adaptive-optimizer.md).
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.

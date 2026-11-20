@@ -29,6 +29,13 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
+const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton");
+const adaptiveSearchBudget = document.querySelector("#adaptiveSearchBudget");
+const pathAdaptiveMetrics = document.querySelector("#pathAdaptiveMetrics");
+const pathAdaptiveSeeds = document.querySelector("#pathAdaptiveSeeds");
+const pathAdaptiveExact = document.querySelector("#pathAdaptiveExact");
+const pathAdaptiveBound = document.querySelector("#pathAdaptiveBound");
+const pathAdaptiveGap = document.querySelector("#pathAdaptiveGap");
 const pathLnsMetrics = document.querySelector("#pathLnsMetrics");
 const pathLnsIterations = document.querySelector("#pathLnsIterations");
 const pathLnsSize = document.querySelector("#pathLnsSize");
@@ -756,6 +763,8 @@ function renderPathBuilder() {
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     optimizedPathButton.disabled = true;
     deepOptimizeButton.disabled = true;
+    adaptiveOptimizeButton.disabled = true;
+    adaptiveSearchBudget.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
     return;
@@ -770,6 +779,8 @@ function renderPathBuilder() {
     : `Chemin en cours: ${path.length} / ${expected} diagonales.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   deepOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
+  adaptiveOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
+  adaptiveSearchBudget.disabled = pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
 
@@ -1619,8 +1630,11 @@ function startAdvancedPathSearch(mode = "normal") {
 
   let worker = null;
   const deep = mode === "deep";
+  const adaptive = mode === "adaptive";
+  const budget = adaptive ? Number(adaptiveSearchBudget.value) : 3600000;
   try {
-    worker = deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
+    worker = adaptive ? window.createAdaptivePathOptimizerWorker?.()
+      : deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
     return;
@@ -1631,7 +1645,7 @@ function startAdvancedPathSearch(mode = "normal") {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${deep ? " approfondie" : ""} DMC ${dmc}`);
+  beginPathEdit(`Optimisation${adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1704,7 +1718,7 @@ function startAdvancedPathSearch(mode = "normal") {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch(deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch(adaptive ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1721,15 +1735,15 @@ function startAdvancedPathSearch(mode = "normal") {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
-    ...(deep ? { totalLimitMs: 3600000 } : {}),
+    ...(deep || adaptive ? { totalLimitMs: budget } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
-  if (deep) {
+  if (deep || adaptive) {
     activePathOptimizerDeadlineTimer = setTimeout(() => {
       if (worker !== activePathOptimizerWorker) return;
       flushAdvancedPathSnapshot();
-      finishAdvancedPathSearch("Budget d'une heure termine, meilleur parcours conserve", null, true);
-    }, 3600000);
+      finishAdvancedPathSearch("Budget termine, meilleur parcours conserve", null, true);
+    }, budget + (adaptive ? 2000 : 0));
   }
 }
 
@@ -1894,6 +1908,7 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.method === "adaptive-optimization") return snapshot.phase || "Recherche adaptative";
   if (snapshot?.method === "deep-optimization") {
     if (snapshot.stage === "lns") return snapshot.phase || "Reconstruction LNS";
     if (snapshot.stage === "complete") return "Optimisation approfondie terminee";
@@ -1911,7 +1926,12 @@ function showAdvancedPathFeedback(snapshot) {
 
 function updateAlgorithmLiveMetrics(snapshot) {
   const view = PathVisuals.searchPresentation(snapshot, pathAlgorithmRunning);
-  pathLnsMetrics.classList.toggle("hidden", snapshot?.method !== "deep-optimization");
+  pathLnsMetrics.classList.toggle("hidden", !["deep-optimization", "adaptive-optimization"].includes(snapshot?.method));
+  pathAdaptiveMetrics.classList.toggle("hidden", snapshot?.method !== "adaptive-optimization");
+  pathAdaptiveSeeds.textContent = String(snapshot?.lns?.seeds || 0);
+  pathAdaptiveExact.textContent = String(snapshot?.lns?.exactRepairs || 0);
+  pathAdaptiveBound.textContent = Number.isFinite(snapshot?.adaptive?.lowerBound) ? formatMetric(snapshot.adaptive.lowerBound) : "-";
+  pathAdaptiveGap.textContent = Number.isFinite(snapshot?.adaptive?.gap) ? formatMetric(snapshot.adaptive.gap) : "-";
   pathLnsIterations.textContent = String(snapshot?.lns?.iterations || 0);
   pathLnsSize.textContent = snapshot?.lns?.size ? String(snapshot.lns.size) : "-";
   pathLnsImprovements.textContent = String(snapshot?.lns?.improvements || 0);
@@ -1986,6 +2006,10 @@ optimizedPathButton.addEventListener("click", () => {
 deepOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch("deep");
+});
+adaptiveOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("adaptive");
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {
