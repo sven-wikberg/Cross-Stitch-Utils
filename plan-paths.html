@@ -58,11 +58,20 @@
               <p class="field-label">Optimisation</p>
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
               <button id="deepOptimizeButton" class="secondary-button" type="button">Optimisation approfondie (1 h)</button>
+              <label class="cut-threshold-field" for="adaptiveSearchBudget">
+                Budget du moteur adaptatif
+                <select id="adaptiveSearchBudget">
+                  <option value="60000">1 minute</option>
+                  <option value="600000">10 minutes</option>
+                  <option value="3600000" selected>1 heure</option>
+                </select>
+              </label>
+              <button id="adaptiveOptimizeButton" class="secondary-button" type="button">Moteur 2 : recherche adaptative</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
-                Arret sans amelioration
+                Arret sans amelioration (blocs)
                 <select id="pathStagnationLimit">
                   <option value="10000">10 secondes</option>
                   <option value="30000">30 secondes</option>
@@ -106,6 +115,12 @@
                   <div><dt>Diagonales libres</dt><dd id="pathLnsSize">-</dd></div>
                   <div><dt>Gains LNS</dt><dd id="pathLnsImprovements">0</dd></div>
                   <div><dt>Nouvelles pistes</dt><dd id="pathLnsDiversifications">0</dd></div>
+                </dl>
+                <dl id="pathAdaptiveMetrics" class="algorithm-live-metrics hidden">
+                  <div><dt>Constructions initiales</dt><dd id="pathAdaptiveSeeds">0</dd></div>
+                  <div><dt>Reparations exactes</dt><dd id="pathAdaptiveExact">0</dd></div>
+                  <div title="Minimum de 1 case au dos par transition. Cette borne peut etre impossible a atteindre sur des ilots separes."><dt>Borne theorique</dt><dd id="pathAdaptiveBound">-</dd></div>
+                  <div title="Ce n'est pas le gain encore realisable : l'optimum exact reste inconnu sauf si la borne est atteinte."><dt>Ecart a la borne</dt><dd id="pathAdaptiveGap">-</dd></div>
                 </dl>
               </div>
             </div>
@@ -337,6 +352,7 @@
     <script src="src/relay-search.js"></script>
     <script src="src/block-optimizer-worker.js"></script>
     <script src="src/deep-optimizer-worker.js"></script>
+    <script src="src/adaptive-optimizer-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>

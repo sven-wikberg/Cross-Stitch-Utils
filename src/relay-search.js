@@ -39,7 +39,14 @@
         }
         return join(a, b);
       }
-      return pieces => Math.min(...pieces.reduce((value, [a, b]) => join(value, range(a, b)), null).scores);
+      const score = pieces => {
+        const value = pieces.reduce((summary, [a, b]) => join(summary, range(a, b)), null);
+        return value ? Math.min(...value.scores) : 0;
+      };
+      // Expose the same directional summaries for exact repairs with free outside orientations.
+      score.range = range;
+      score.join = join;
+      return score;
     }
     function* candidates(options, report = () => {}) {
       const { path, constraints = {} } = options, threshold = options.cutThreshold || 10;
