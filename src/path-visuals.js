@@ -11,8 +11,8 @@
       const total = relaying ? snapshot.relay?.total : constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
       const done = relaying ? snapshot.relay?.examined : constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
       const knownCount = Number.isFinite(total) && total > 0 && Number.isFinite(done);
-      const max = timed ? snapshot.totalLimitMs || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs || 60000) : knownCount ? total : 1;
-      const value = timed ? snapshot.elapsedMs || 0 : searching ? snapshot.lastImprovementMs || 0 : knownCount ? done : null;
+      const max = timed ? snapshot.totalLimitMs || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs ?? 60000) : knownCount ? total : 1;
+      const value = timed ? snapshot.elapsedMs || 0 : searching ? (snapshot.stagnationLimitMs === 0 ? max : snapshot.lastImprovementMs || 0) : knownCount ? done : null;
       return {
         phase: { preparation: "Preparation de la recherche", construction: "Construction des blocs",
           configuration: "Preparation des entrees et sorties", search: "Recherche en cours", relay: "Recherche de relais", complete: "Recherche terminee" }[stage] || "Recherche en cours",

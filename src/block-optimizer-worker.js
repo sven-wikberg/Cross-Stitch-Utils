@@ -530,7 +530,7 @@
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
           refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange, lastRelayImprovement,
-          progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
+          progress: stage === "complete" ? 100 : stage === "search" ? (limit === 0 ? 99 : Math.min(99, (now - lastImprovement) / limit * 100)) : progress });
         changed = false;
       }
       function publish(route, metrics, order, insertion = false, intermediate = false, relayed = null) {
@@ -539,8 +539,8 @@
         relayChange = relayed?.diagonals || null;
         if (relayed) {
           relayImprovements++;
-          // Preserve shorter programmatic budgets; normal UI runs never fall below two seconds.
-          limit = Math.max(Math.min(2000, initialLimit), limit * 0.9);
+          // Whole milliseconds let the decreasing delay eventually reach zero.
+          limit = Math.max(0, Math.floor(limit * 0.9));
           lastRelayImprovement = { ...relayed.link, pass: relayPasses };
         }
         changed = true; improvements++; lastImprovement = clock();

@@ -21,6 +21,8 @@ test("search presentation distinguishes preparation counts from inactivity, neve
   assert.equal(c.label, "Sans amelioration (blocs)"); assert.equal(c.value, 12000); assert.equal(c.max, 60000);
   const shortened = visuals.searchPresentation({ ...search, stagnationLimitMs: 8100 }, true);
   assert.equal(shortened.max, 8100); assert.equal(shortened.value, 8100);
+  const immediate = visuals.searchPresentation({ ...search, stagnationLimitMs: 0, lastImprovementMs: 0 }, true);
+  assert.equal(immediate.max, 1); assert.equal(immediate.value, 1);
   assert.equal(visuals.searchPresentation({ ...search, lastImprovementMs: 0 }, true).value, 0);
   assert.equal(visuals.searchPresentation({ ...search, lastImprovementMs: 70000 }, true).value, 60000);
   for (const snapshot of [null, construction, config, search, { stage: "complete" }]) {
