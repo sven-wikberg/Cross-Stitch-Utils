@@ -59,7 +59,7 @@
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
               <button id="deepOptimizeButton" class="secondary-button" type="button">Optimisation approfondie (1 h)</button>
               <label class="cut-threshold-field" for="adaptiveSearchBudget">
-                Budget moteurs 2, 3 et 4
+                Budget moteurs 2 a 5
                 <select id="adaptiveSearchBudget">
                   <option value="60000">1 minute</option>
                   <option value="600000">10 minutes</option>
@@ -69,6 +69,7 @@
               <button id="adaptiveOptimizeButton" class="secondary-button" type="button">Moteur 2 : recherche adaptative</button>
               <button id="pointsOptimizeButton" class="secondary-button" type="button">Moteur 3 : points puis diagonales</button>
               <button id="sectionsOptimizeButton" class="secondary-button" type="button">Moteur 4 : sous-sections</button>
+              <button id="segmentsOptimizeButton" class="secondary-button" type="button">Moteur 5 : raccordements</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p class="field-label">Relais</p>
               <button id="relayOptimizeButton" class="secondary-button" type="button">Optimiser tous les relais</button>
@@ -137,6 +138,12 @@
                   <div><dt>Sous-sections preparees</dt><dd id="pathSectionProgress">-</dd></div>
                   <div><dt>Variantes de traversees</dt><dd id="pathSectionVariants">0</dd></div>
                   <div><dt>Raccordements testes</dt><dd id="pathSectionConnections">0</dd></div>
+                </dl>
+                <dl id="pathSegmentsMetrics" class="algorithm-live-metrics hidden">
+                  <div><dt>Raccordement examine</dt><dd id="pathSegmentLink">-</dd></div>
+                  <div><dt>Segments mobiles</dt><dd id="pathSegmentCount">-</dd></div>
+                  <div><dt>Diagonales concernees</dt><dd id="pathSegmentDiagonals">-</dd></div>
+                  <div><dt>Reorganisations testees</dt><dd id="pathSegmentRepairs">0</dd></div>
                 </dl>
                 <dl id="pathRelayMetrics" class="algorithm-live-metrics hidden">
                   <div><dt>Passe</dt><dd id="pathRelayPass">0</dd></div>
@@ -377,6 +384,7 @@
     <script src="src/point-order-search.js"></script>
     <script src="src/points-diagonals-worker.js"></script>
     <script src="src/section-optimizer-worker.js"></script>
+    <script src="src/segment-optimizer-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>
