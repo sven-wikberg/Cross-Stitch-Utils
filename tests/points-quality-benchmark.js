@@ -9,6 +9,7 @@ const { createBlockOptimizer: blocks } = require("../src/block-optimizer-worker.
 const { createAdaptiveOptimizer: adaptive } = require("../src/adaptive-optimizer-worker.js");
 const { createPointsDiagonalOptimizer: pointsEngine } = require("../src/points-diagonals-worker.js");
 const { createSectionOptimizer: sectionsEngine } = require("../src/section-optimizer-worker.js");
+const { createSegmentOptimizer: segmentsEngine } = require("../src/segment-optimizer-worker.js");
 const fixtures = require("./fixtures/combined-search.js");
 const budget = Number(process.env.BENCHMARK_MS) || 1000;
 const seeds = (process.env.BENCHMARK_SEEDS || "31,73").split(",").map(Number);
@@ -28,6 +29,7 @@ for (const fixture of cases) for (const seed of seeds) {
     let randomState = seed, lastReport = 0;
     const random = () => ((randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0) / 2 ** 32), clock = () => performance.now();
     const search = name === "adaptive" ? adaptive(model, builder, relay, clock, random, blocks)
+      : name === "segments" ? segmentsEngine(model, builder, relay, clock, random)
       : name === "sections" ? sectionsEngine(model, pointSearch, builder, clock, random)
       : pointsEngine(model, pointSearch, builder, relay, adaptive, clock, random);
     let previous = model.metrics(initialPath, fixture.threshold, true).score;
@@ -45,7 +47,7 @@ for (const fixture of cases) for (const seed of seeds) {
     });
     assert.equal(model.validateRoute(result.path, fixture.points), ""); assert.equal(JSON.stringify(initialPath), input);
     results[name] = { ...model.metrics(result.path, fixture.threshold, true), elapsedMs: performance.now() - started,
-      improvements: result.improvements, attempts: result.attempts, pointsSearch: result.pointsSearch, sectionSearch: result.sectionSearch, lns: result.lns };
+      improvements: result.improvements, attempts: result.attempts, pointsSearch: result.pointsSearch, sectionSearch: result.sectionSearch, segmentSearch: result.segmentSearch, lns: result.lns };
   }
   rows.push({ fixture: fixture.name, crosses: fixture.points.length, seed, budget,
     initial: model.metrics(initialPath, fixture.threshold, true).score, results });
