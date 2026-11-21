@@ -1,9 +1,7 @@
 (function (root) {
   "use strict";
-  function createBlockOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random,
-    createRelay = typeof require === "function" ? require("./relay-search.js").createRelaySearch : globalThis.createRelaySearch) {
+  function createBlockOptimizer(model, createBuilder, clock = () => performance.now(), random = Math.random) {
     const builder = createBuilder(model, clock), epsilon = 1e-8;
-    const relaySearch = createRelay(model, builder, clock);
     const better = (score, cuts, otherScore, otherCuts) => Number.isFinite(score)
       && (score < otherScore - epsilon || (Math.abs(score - otherScore) <= epsilon && cuts < otherCuts));
     const compareMetrics = (a, b) => Math.abs(a.score - b.score) > epsilon ? a.score - b.score
@@ -472,15 +470,12 @@
       return { path, unitLinks };
     }
     function optimizePath(options, report = () => {}) {
-      const started = clock(), initialLimit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const started = clock(), limit = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimit = Number.isFinite(options.maxDurationMs) ? Math.max(1, options.maxDurationMs) : Infinity;
       const totalExpired = () => totalLimit !== Infinity && clock() - started >= totalLimit;
-      let limit = initialLimit;
       let lastReport = -Infinity, attempts = 0, improvements = 0, restarts = 0, unitAttempts = 0, lastImprovement = started;
       let insertionAttempts = 0, insertions = 0;
       let refinedOrders = 0, intermediateImprovements = 0, interleavedRestarts = 0;
-      let relay = null, relayPasses = 0, relayImprovements = 0, relayAttempts = 0, relayChange = null;
-      let lastRelayImprovement = null;
       let best = null, bestOrder, bestMetrics, initialMetrics, changed = false, phase = "Construction du parcours initial";
       let stage = "construction", blocks = { total: 0, prepared: 0 }, progress = 0;
       const problem = prepareProblem(options, snapshot => {
@@ -529,20 +524,13 @@
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
           elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-          refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange, lastRelayImprovement,
-          progress: stage === "complete" ? 100 : stage === "search" ? (limit === 0 ? 99 : Math.min(99, (now - lastImprovement) / limit * 100)) : progress });
+          refinedOrders, intermediateImprovements, interleavedRestarts,
+          progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });
         changed = false;
       }
-      function publish(route, metrics, order, insertion = false, intermediate = false, relayed = null) {
+      function publish(route, metrics, order, insertion = false, intermediate = false) {
         if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
         best = route; bestOrder = order ? order.slice() : routeOrder(route); bestMetrics = metrics;
-        relayChange = relayed?.diagonals || null;
-        if (relayed) {
-          relayImprovements++;
-          // Whole milliseconds let the decreasing delay eventually reach zero.
-          limit = Math.max(0, Math.floor(limit * 0.9));
-          lastRelayImprovement = { ...relayed.link, pass: relayPasses };
-        }
         changed = true; improvements++; lastImprovement = clock();
         if (insertion) insertions++;
         if (intermediate) intermediateImprovements++;
@@ -616,7 +604,7 @@
         refineRoute(route, metrics, true);
       }
       function searchRound() {
-        stage = "search"; phase = "Optimisation des liaisons entre blocs"; relay = null; emit(true);
+        stage = "search"; phase = "Optimisation des liaisons entre blocs"; emit(true);
         remember(best, bestMetrics);
         refineRoute(best, bestMetrics);
         if (problem.insertions.contacts.size && bestMetrics.score > lowerBound + epsilon) {
@@ -711,46 +699,25 @@
           }
         }
       }
-      while (!totalExpired()) {
-        searchRound();
-        if (bestMetrics.score <= lowerBound + epsilon || totalExpired()) break;
-        stage = "relay"; phase = "Recherche de relais"; relayPasses++;
-        relay = { examined: 0, total: 0, attempts: 0, timedOut: false }; emit(true);
-        let improved = false;
-        const budgetMs = Math.min(15000, Math.max(250, initialLimit), totalLimit === Infinity ? Infinity : Math.max(1, totalLimit - (clock() - started)));
-        for (const candidate of relaySearch.candidates({ path: best.path, constraints: problem.constraints,
-          cutThreshold: problem.threshold, budgetMs }, progress => { relay = progress; emit(); })) {
-          attempts++; relayAttempts++;
-          if (candidate.score >= bestMetrics.score - epsilon) continue;
-          const route = candidate.materialize();
-          if (!route || model.validateRoute(route.path, problem.cells) || !model.satisfiesConstraints(route.path, problem.constraints)) continue;
-          const metrics = zones.measure(route.path, problem.threshold);
-          if (metrics.score >= bestMetrics.score - epsilon) continue;
-          const changedDiagonals = candidate.moved.map(i => model.key(best.path[i]));
-          if (!publish(route, metrics, null, false, false, { diagonals: changedDiagonals, link: candidate.relayLink })) continue;
-          restarts++; improved = true; refined.clear();
-          remember(best, bestMetrics); emit(true); break;
-        }
-        if (!improved) break;
-      }
-      stage = "complete"; phase = "Optimisation terminee : recherche et relais au plateau";
+      if (!totalExpired()) searchRound();
+      stage = "complete"; phase = "Optimisation des blocs terminee";
       if (totalExpired()) reason = "time-limit";
       const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);
       const final = { method: "block-optimization", stage, phase, path: best.path, unitLinks: best.unitLinks, metrics: bestMetrics,
         initialMetrics, blocks, elapsedMs: clock() - started, lastImprovementMs: clock() - lastImprovement,
         stagnationLimitMs: limit, attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
-        refinedOrders, intermediateImprovements, interleavedRestarts, relay, relayPasses, relayImprovements, relayAttempts, relayChange, lastRelayImprovement,
+        refinedOrders, intermediateImprovements, interleavedRestarts,
         progress: 100, reason, order: actualOrder };
       report(final); return final;
     }
     return { prepareProblem, evaluateOrder, materialize, blockInsertions, optimizePath, compareMetrics, satisfiesConstraints: model.satisfiesConstraints };
   }
-  function workerMain(createModel, createBuilder, createOptimizer, createRelay) {
+  function workerMain(createModel, createBuilder, createOptimizer) {
     self.onmessage = event => {
       const options = event.data;
       if (options.type !== "start") return;
       try {
-        const result = createOptimizer(createModel(), createBuilder, undefined, undefined, createRelay).optimizePath(options,
+        const result = createOptimizer(createModel(), createBuilder).optimizePath(options,
           snapshot => self.postMessage({ ...snapshot, type: "progress", runId: options.runId }));
         self.postMessage({ ...result, type: "complete", runId: options.runId });
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
@@ -759,7 +726,7 @@
   root.createBlockOptimizer = createBlockOptimizer;
   root.createPathOptimizerApi = () => createBlockOptimizer(root.StitchModel, root.createOrthogonalPathBuilder);
   root.createPathOptimizerWorker = () => {
-    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createBlockOptimizer.toString()},${root.createRelaySearch.toString()});`;
+    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createBlockOptimizer.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     const worker = new Worker(url); URL.revokeObjectURL(url); return worker;
   };

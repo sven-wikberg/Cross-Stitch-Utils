@@ -42,115 +42,58 @@ test("relay transfers match every orientation, including source repair, cuts and
   }
 });
 
-test("a one-diagonal relay breaks a block-search plateau, then ordinary optimization resumes", () => {
-  const points = require("./fixtures/combined-search.js").cutAware, reports = [];
-  const result = createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => 0, seeded()).optimizePath(
-    { points, cutThreshold: 3, stagnationLimitMs: 1 }, s => reports.push(s));
-  const firstPlateau = reports.find(s => s.stage === "relay");
-  close(firstPlateau.metrics.score, 49.38905042258274);
-  assert.ok(result.metrics.score < firstPlateau.metrics.score - 8);
-  assert.ok(result.relayImprovements >= 2 && result.relayPasses > result.relayImprovements);
-  assert.ok(result.lastRelayImprovement.pass < result.relayPasses, "A later unsuccessful pass retains the last accepted relay");
-  assert.equal(result.metrics.cuts, 1);
-  assert.ok(reports.some(s => s.relayChange?.length === 1), "one half-cross is enough to unlock the improvement");
-  for (let i = 1; i < reports.length; i++) {
-    const a = reports[i - 1], b = reports[i];
-    if (a.metrics && b.metrics && a.stage !== "construction") assert.ok(b.metrics.score <= a.metrics.score + 1e-8);
-    if (b.relayImprovements > (a.relayImprovements || 0)) {
-      assert.equal(b.lastRelayImprovement.pass, b.relayPasses);
-      assert.ok(b.lastRelayImprovement.rank >= 1 && b.lastRelayImprovement.rank <= b.lastRelayImprovement.total);
-      assert.ok(b.lastRelayImprovement.length > Math.SQRT2);
-      assert.ok(reports.slice(i + 1).some(s => s.stage === "search" && s.relayImprovements >= b.relayImprovements));
-      assert.ok(b.lastImprovementMs <= 1);
-    } else assert.deepEqual(b.lastRelayImprovement || null, a.lastRelayImprovement || null,
-      "Scanning, ordinary improvements and restarts cannot overwrite the last accepted relay");
-    if (b.path && b.stage !== "construction") assert.equal(model.validateRoute(b.path, points), "");
+test("best-per-link evaluates the entire neighborhood instead of accepting its first gain", () => {
+  const points = require("./fixtures/combined-search.js").cutAware, path = model.expandCells(points, 3);
+  const all = [...search.candidates({ path, cutThreshold: 3 })], best = [...search.bestCandidates({ path, cutThreshold: 3 })];
+  let firstIsWorse = false;
+  for (const candidate of best) {
+    const group = all.filter(c => c.link === candidate.link);
+    close(candidate.score, Math.min(...group.map(c => c.score)));
+    const firstGain = group.find(c => c.score < score(path, 3) - 1e-8);
+    if (firstGain && firstGain.score > candidate.score + 1e-8) firstIsWorse = true;
+    const route = candidate.materialize();
+    if (route) { assert.equal(model.validateRoute(route.path, points), ""); close(score(route.path, 3), candidate.score); }
   }
-  assert.deepEqual(result.lastRelayImprovement, reports.at(-1).lastRelayImprovement);
+  assert.ok(firstIsWorse, "exercise a neighborhood where the first improving move is not its best move");
+  assert.equal(new Set(best.map(c => c.link)).size, best.length);
 });
 
-test("relay scans respect locks and a separate deadline, and report actual examined links", () => {
+test("an interrupted neighborhood never publishes its partially evaluated best candidate", () => {
+  const points = require("./fixtures/combined-search.js").cutAware, path = model.expandCells(points, 3);
+  let now = 0; const reports = [];
+  const best = [...createRelaySearch(model, builder, () => now).bestCandidates({ path, cutThreshold: 3, budgetMs: 50 }, s => {
+    reports.push(s);
+    if (s.candidatesExamined === 1) now = 100;
+  })];
+  assert.equal(best.length, 0); assert.equal(reports.at(-1).timedOut, true);
+  assert.equal(reports.at(-1).examined, 0);
+  assert.ok(reports.at(-1).candidateCount > 1);
+});
+
+test("relay scans respect locks and deadlines and expose actual link and candidate counts", () => {
   const points = Array.from({ length: 30 }, (_, i) => ({ x: (i * 7) % 31, y: i % 4 })), path = model.expandCells(points);
-  assert.equal([...search.candidates({ path, constraints: { lockedPrefix: path } })].length, 0);
+  assert.equal([...search.bestCandidates({ path, constraints: { lockedPrefix: path } })].length, 0);
   let time = 0; const reports = [];
-  [...createRelaySearch(model, builder, () => time += 10).candidates({ path, budgetMs: 30 }, p => reports.push(p))];
+  [...createRelaySearch(model, builder, () => time += 10).bestCandidates({ path, budgetMs: 30 }, p => reports.push(p))];
   assert.equal(reports.at(-1).timedOut, true);
   assert.ok(reports.at(-1).examined < reports.at(-1).total);
+  const full = [];
+  [...search.bestCandidates({ path }, s => full.push(s))];
+  assert.equal(full.at(-1).examined, full.at(-1).total);
+  assert.ok(full.every(s => s.candidatesExamined <= s.candidateCount && s.candidateCount <= 64));
   const view = createPathVisuals(model, builder).searchPresentation({ stage: "relay", relay: { examined: 4, total: 12 } }, true);
   assert.equal(view.phase, "Recherche de relais"); assert.equal(view.label, "Liaisons examinees");
   assert.equal(view.value, 4); assert.equal(view.max, 12); assert.ok(view.active && !view.searching);
-  assert.equal(createPathVisuals(model, builder).searchPresentation({ stage: "relay" }, false).active, false);
 });
 
-test("accepted relays shorten block inactivity by ten percent down to zero, with fresh runs", () => {
-  const points = require("./fixtures/combined-search.js").cutAware, budgets = [];
-  const engine = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded(), (...args) => {
-    const relaySearch = createRelaySearch(...args);
-    return { candidates(options, report) {
-      budgets.push(options.budgetMs);
-      return relaySearch.candidates(options, report);
-    } };
-  });
-  for (const initialLimit of [10000, 10000, 2100, 1]) {
-    const reports = [], firstBudget = budgets.length;
-    const result = engine.optimizePath({ points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
-    assert.equal(reports[0].stagnationLimitMs, initialLimit, "each run starts with the full selected delay");
-    assert.equal(reports.find(s => s.stage === "relay").stagnationLimitMs, initialLimit);
-    assert.ok(result.relayImprovements >= 2, "exercise consecutive accepted relays");
-    let ordinaryGain = false, expected = initialLimit;
-    for (let i = 0; i < reports.length; i++) {
-      const current = reports[i], previous = reports[i - 1];
-      const relayGains = (current.relayImprovements || 0) - (previous?.relayImprovements || 0);
-      const normalGains = current.improvements - (previous?.improvements || 0) - relayGains;
-      if (normalGains > 0) ordinaryGain = true;
-      for (let n = 0; n < relayGains; n++) expected = Math.max(0, Math.floor(expected * 0.9));
-      close(current.stagnationLimitMs, expected);
-      assert.ok(Number.isFinite(current.progress), "zero delay never produces invalid progress");
-      if (previous) {
-        assert.ok(current.stagnationLimitMs <= previous.stagnationLimitMs, "the delay never increases within a run");
-        if (!relayGains) assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs, "ordinary gains and attempts keep the reduced delay");
-      }
-    }
-    assert.ok(ordinaryGain);
-    assert.equal(budgets.length - firstBudget, result.relayPasses);
-    assert.ok(budgets.slice(firstBudget).every(budget => budget === Math.min(15000, Math.max(250, initialLimit))),
-      "relay scans keep the initial budget even after successful relays");
-    if (initialLimit === 2100) assert.ok(result.stagnationLimitMs < 2000);
-    if (initialLimit === 1) {
-      assert.equal(result.stagnationLimitMs, 0);
-      assert.ok(result.relayImprovements >= 2, "relay search continues after the delay reaches zero");
-    }
-    assert.equal(model.validateRoute(result.path, points), "");
-  }
-});
-
-test("a normal global gain resets inactivity but keeps the reduced limit for subsequent relays", () => {
-  const points = require("./fixtures/combined-search.js").timerRecovery;
-  for (const initialLimit of [10000, 2100]) {
+test("base block search stops without automatically running relays or changing its selected delay", () => {
+  const points = require("./fixtures/combined-search.js").cutAware;
+  for (const stagnationLimitMs of [1, 2100, 10000]) {
     const reports = [];
     const result = createBlockOptimizer(model, createOrthogonalFixtureBuilder, () => 0, seeded()).optimizePath(
-      { points, cutThreshold: 3, stagnationLimitMs: initialLimit }, s => reports.push(s));
-    let normalGain = false, decayedAgain = false;
-    for (let i = 1; i < reports.length; i++) {
-      const previous = reports[i - 1], current = reports[i];
-      const relayGains = (current.relayImprovements || 0) - (previous.relayImprovements || 0);
-      if (!relayGains && current.improvements > previous.improvements && previous.stagnationLimitMs < initialLimit) {
-        assert.ok(current.metrics.score < previous.metrics.score);
-        assert.equal(current.stagnationLimitMs, previous.stagnationLimitMs);
-        assert.equal(current.lastImprovementMs, 0);
-        assert.equal(current.relayImprovements, 2, "total relay history is retained");
-        assert.deepEqual(current.lastRelayImprovement, previous.lastRelayImprovement);
-        if (initialLimit === 2100) assert.ok(current.stagnationLimitMs < 2000, "a normal gain keeps the delay below the former floor");
-        normalGain = true;
-      } else if (normalGain && relayGains) {
-        assert.equal(relayGains, 1);
-        close(current.stagnationLimitMs, Math.floor(previous.stagnationLimitMs * 0.9));
-        assert.equal(current.relayImprovements, 3);
-        decayedAgain = true;
-      }
-      assert.ok(current.stagnationLimitMs <= previous.stagnationLimitMs);
-    }
-    assert.ok(normalGain && decayedAgain, "exercise relay, normal gain, then another relay with the real optimizer");
+      { points, cutThreshold: 3, stagnationLimitMs }, s => reports.push(s));
+    close(result.metrics.score, 49.38905042258274);
+    assert.ok(reports.every(s => s.stage !== "relay" && s.stagnationLimitMs === stagnationLimitMs));
     assert.equal(model.validateRoute(result.path, points), "");
   }
 });

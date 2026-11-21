@@ -253,7 +253,7 @@ test("exhaustive search may return to an old eight-connected zone when score imp
   close(result.metrics.score, best, "exhaustive block-order optimum");
   assert.equal(result.metrics.zoneReturns, 1);
   assert.equal(result.reason, "exhaustive");
-  assert.equal(result.attempts - result.relayAttempts, 120);
+  assert.equal(result.attempts, 120);
   assert.equal(result.lastImprovementMs, 0, "exhaustion need not consume the inactivity budget");
   assert.equal(result.method, "block-optimization");
   assert.equal(engine.compareMetrics({ score: 9, cuts: 1, distance: 6, zoneReturns: 99 },
@@ -377,9 +377,9 @@ test("restarts and preparation do not consume or reset the global search inactiv
     close(snapshot.metrics.score, result.metrics.score, "steady global best");
   }
   assert.equal(result.reason, "inactivity");
-  assert.ok(relayReports[0].lastImprovementMs >= limit && relayReports[0].lastImprovementMs <= limit + 2000);
-  assert.ok(result.lastImprovementMs >= limit && result.lastImprovementMs <= limit + 20000, "relay scan has a separate budget, with coarse-clock reporting overhead");
-  const searchAttempts = result.attempts - result.relayAttempts;
+  assert.equal(relayReports.length, 0, "relay optimization is launched separately");
+  assert.ok(result.lastImprovementMs >= limit && result.lastImprovementMs <= limit + 20000, "the base search stops at its inactivity deadline");
+  const searchAttempts = result.attempts;
   assert.ok(searchAttempts > 100 && searchAttempts < 140, "deadline bounds search despite restarting");
   assertPath(result, points);
 });

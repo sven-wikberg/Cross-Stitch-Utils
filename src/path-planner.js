@@ -32,6 +32,10 @@ const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
 const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton");
 const pointsOptimizeButton = document.querySelector("#pointsOptimizeButton");
 const sectionsOptimizeButton = document.querySelector("#sectionsOptimizeButton");
+const relayOptimizeButton = document.querySelector("#relayOptimizeButton");
+const pathRelayMetrics = document.querySelector("#pathRelayMetrics");
+const pathRelayPass = document.querySelector("#pathRelayPass");
+const pathRelayCandidates = document.querySelector("#pathRelayCandidates");
 const pathSectionsMetrics = document.querySelector("#pathSectionsMetrics");
 const pathSectionOrders = document.querySelector("#pathSectionOrders");
 const pathSectionProgress = document.querySelector("#pathSectionProgress");
@@ -778,6 +782,7 @@ function renderPathBuilder() {
     adaptiveOptimizeButton.disabled = true;
     pointsOptimizeButton.disabled = true;
     sectionsOptimizeButton.disabled = true;
+    relayOptimizeButton.disabled = true;
     adaptiveSearchBudget.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -796,6 +801,8 @@ function renderPathBuilder() {
   adaptiveOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   pointsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   sectionsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
+  relayOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning || !complete;
+  relayOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
   adaptiveSearchBudget.disabled = pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
@@ -1649,9 +1656,14 @@ function startAdvancedPathSearch(mode = "normal") {
   const adaptive = mode === "adaptive";
   const points = mode === "points";
   const sections = mode === "sections";
+  const relayOnly = mode === "relay";
+  if (relayOnly && !bestCompletePathForColor(selectedDmc).length) {
+    showAlgorithmFeedback("Les relais necessitent un chemin complet et valide.");
+    return;
+  }
   const budget = adaptive || points || sections ? Number(adaptiveSearchBudget.value) : 3600000;
   try {
-    worker = sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
+    worker = relayOnly ? window.createRelayOptimizerWorker?.() : sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
       : deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
@@ -1663,7 +1675,7 @@ function startAdvancedPathSearch(mode = "normal") {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
+  beginPathEdit(`Optimisation${relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1736,7 +1748,7 @@ function startAdvancedPathSearch(mode = "normal") {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch(adaptive || points || sections ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch(relayOnly || adaptive || points || sections ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1926,6 +1938,7 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.method === "relay-optimization") return snapshot.phase || "Recherche de relais";
   if (snapshot?.method === "point-sections") return snapshot.phase || "Parcours par sous-sections";
   if (snapshot?.method === "points-diagonals") return snapshot.phase || "Points puis diagonales";
   if (snapshot?.method === "adaptive-optimization") return snapshot.phase || "Recherche adaptative";
@@ -1950,6 +1963,10 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAdaptiveMetrics.classList.toggle("hidden", snapshot?.method !== "adaptive-optimization");
   pathPointsMetrics.classList.toggle("hidden", snapshot?.method !== "points-diagonals");
   pathSectionsMetrics.classList.toggle("hidden", snapshot?.method !== "point-sections");
+  pathRelayMetrics.classList.toggle("hidden", snapshot?.method !== "relay-optimization");
+  pathRelayPass.textContent = String(snapshot?.relayPasses || 0);
+  pathRelayCandidates.textContent = snapshot?.relay?.candidateCount
+    ? `${snapshot.relay.candidatesExamined} / ${snapshot.relay.candidateCount}` : "-";
   pathSectionOrders.textContent = String(snapshot?.sectionSearch?.completed || 0);
   pathSectionProgress.textContent = snapshot?.sectionSearch?.sections
     ? `${snapshot.sectionSearch.prepared} / ${snapshot.sectionSearch.sections}` : "-";
@@ -2049,6 +2066,10 @@ pointsOptimizeButton.addEventListener("click", () => {
 sectionsOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch("sections");
+});
+relayOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("relay");
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {

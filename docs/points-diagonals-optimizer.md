@@ -48,10 +48,13 @@ peut empieter legerement sur la seconde partie, sans depasser le budget total
 hors operations finales indivisibles.
 
 L'affinement repart du meilleur parcours reel disponible, pas obligatoirement
-d'une nouvelle conversion : relais d'une seule diagonale, reinsertions libres
-et reparations exactes de petites fenetres. Ces operations peuvent casser la
+d'une nouvelle conversion : reinsertions libres et reparations exactes de
+petites fenetres. Ces operations peuvent casser la
 structure en pile de la conversion. Une derniere passe globale sur les sens
 est toujours faite avant de terminer.
+
+La recherche geometrique de relais est maintenant separee de ce moteur et se
+lance avec le bouton `Optimiser tous les relais`, sur le meilleur chemin obtenu.
 
 Chaque candidat doit respecter les regles communes : `/` avant `\`, aucune
 diagonale dupliquee/manquante, aucun trou de sortie identique au trou d'entree

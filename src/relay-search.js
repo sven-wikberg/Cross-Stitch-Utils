@@ -61,8 +61,8 @@
         }
       }
       links.sort((a, b) => b.cost - a.cost || b.length - a.length || a.at - b.at);
-      let examined = 0, attempts = 0, timedOut = false;
-      const notify = () => report({ examined, total: links.length, attempts, timedOut });
+      let examined = 0, attempts = 0, timedOut = false, candidateCount = 0, candidatesExamined = 0;
+      const notify = () => report({ examined, total: links.length, attempts, timedOut, candidateCount, candidatesExamined });
       notify();
       if (!links.length) return;
       const score = transfers(path, threshold, fixed), byKey = new Map(path.map((p, i) => [model.key(p), i]));
@@ -144,7 +144,10 @@
       for (const link of links) {
         if (expired()) { timedOut = true; break; }
         const to = link.at, a = model.holes(path[to - 1]).end, b = model.holes(path[to]).start;
-        for (const from of nearby(a, b, link)) {
+        const neighbors = nearby(a, b, link);
+        let best = null;
+        candidateCount = neighbors.length; candidatesExamined = 0; notify();
+        for (const from of neighbors) {
           if (expired()) { timedOut = true; break; }
           if (to >= locked) {
             const pieces = from < to ? [[0, from], [from + 1, to], [from, from + 1], [to, path.length]]
@@ -152,22 +155,32 @@
             const rank = i => i === from ? (from < to ? to - 1 : to)
               : from < to && i > from && i < to ? i - 1 : from > to && i >= to && i < from ? i + 1 : i;
             const candidate = proposal(pieces, [from], rank, link, "relocate");
-            if (candidate) yield candidate;
+            if (candidate) {
+              if (!options.bestPerLink) yield candidate;
+              else if (!best || candidate.score < best.score) best = candidate;
+            }
           }
           for (const target of [to - 1, to]) {
             if (fixed(target) || target === from) continue;
             const [i, j] = [Math.min(from, target), Math.max(from, target)];
             const pieces = [[0, i], [j, j + 1], [i + 1, j], [i, i + 1], [j + 1, path.length]];
             const candidate = proposal(pieces, [from, target], k => k === from ? target : k === target ? from : k, link, "swap");
-            if (candidate) yield candidate;
+            if (candidate) {
+              if (!options.bestPerLink) yield candidate;
+              else if (!best || candidate.score < best.score) best = candidate;
+            }
           }
+          candidatesExamined++; notify();
         }
-        examined++; notify();
         if (timedOut) break;
+        examined++; notify();
+        // Never call a partial neighborhood's winner the best of all candidates.
+        if (options.bestPerLink && best) yield best;
       }
       notify();
     }
-    return { candidates, segmentDistance, transfers };
+    const bestCandidates = (options, report) => candidates({ ...options, bestPerLink: true }, report);
+    return { candidates, bestCandidates, segmentDistance, transfers };
   }
   root.createRelaySearch = createRelaySearch;
   if (typeof module !== "undefined") module.exports = { createRelaySearch };

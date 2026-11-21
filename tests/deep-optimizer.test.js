@@ -4,6 +4,7 @@ const model = require("../src/stitch-model.js");
 const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
 const { createBlockOptimizer } = require("../src/block-optimizer-worker.js");
 const { createRelaySearch } = require("../src/relay-search.js");
+const { createRelayOptimizer } = require("../src/relay-optimizer-worker.js");
 const { createLnsSearch, createDeepOptimizer } = require("../src/deep-optimizer-worker.js");
 const { createPathVisuals } = require("../src/path-visuals.js");
 const seeded = () => { let s = 31; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32); };
@@ -152,12 +153,13 @@ test("deep progress counts elapsed budget rather than inactivity and remains sep
 
 test("coordinated LNS repair improves a real block-and-relay plateau", () => {
   const points = require("./fixtures/combined-search.js").timerRecovery;
-  const plateau = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded()).optimizePath(
+  const base = createBlockOptimizer(model, createOrthogonalPathBuilder, () => 0, seeded()).optimizePath(
     { points, cutThreshold: 3, stagnationLimitMs: 1 });
+  const plateau = createRelayOptimizer(model, createOrthogonalPathBuilder, createRelaySearch).optimizePath({ points, initialPath: base.path, cutThreshold: 3 });
   let now = 0;
   const result = engine(() => ++now).optimizePath({ points, initialPath: plateau.path, cutThreshold: 3,
     totalLimitMs: 30000, warmupMs: 0 });
   assert.ok(result.metrics.score < plateau.metrics.score - 1);
-  assert.ok(result.lns.improvements >= 2 && result.lns.diversifications > 0);
+  assert.ok(result.lns.improvements >= 1 && result.lns.diversifications > 0);
   assert.equal(model.validateRoute(result.path, points), "");
 });

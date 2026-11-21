@@ -162,7 +162,7 @@
       emit(true);
       const warmup = Math.min(options.warmupMs ?? 60000, totalLimitMs * 0.1);
       if (!best || warmup > 0) {
-        const result = createBlock(model, createBuilder, clock, random, createRelay).optimizePath({ ...options, constraints,
+        const result = createBlock(model, createBuilder, clock, random).optimizePath({ ...options, constraints,
           maxDurationMs: Math.max(1, Math.min(warmup, deadline - clock())) }, snapshot => {
           const { path, unitLinks, ...details } = snapshot; warm = details;
           stage = snapshot.stage === "complete" ? "lns" : snapshot.stage; phase = snapshot.phase;
