@@ -1990,7 +1990,7 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
   pathAlgorithmLastImprovement.textContent = view.timed
     ? formatAlgorithmTime(Math.max(0, (snapshot.totalLimitMs || 3600000) - (snapshot.elapsedMs || 0)))
-    : `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs || pathStagnationLimitMs, true)}`;
+    : `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs ?? pathStagnationLimitMs, true)}`;
   pathAlgorithmProgress.setAttribute("aria-valuetext", view.timed ? `${pathAlgorithmLastImprovement.textContent} restant`
     : view.searching ? pathAlgorithmLastImprovement.textContent : view.count || "Preparation en cours");
 }

@@ -51,7 +51,7 @@ async function run() {
     let expectedDelay = 10000, previousRelays = 0;
     for (const report of result.reports) {
       const relayGains = report.relays - previousRelays;
-      for (let i = 0; i < relayGains; i++) expectedDelay = Math.max(2000, expectedDelay * 0.9);
+      for (let i = 0; i < relayGains; i++) expectedDelay = Math.floor(expectedDelay * 0.9);
       assert.ok(Math.abs(report.stagnationLimitMs - expectedDelay) < 1e-7);
       previousRelays = report.relays;
     }
@@ -89,6 +89,10 @@ async function run() {
     assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "8100");
     assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("value"), "0");
     assert.equal(await page.locator("#pathRelayImprovements").textContent(), "2");
+    await page.evaluate(() => showAdvancedPathFeedback({ stage: "search", stagnationLimitMs: 0, lastImprovementMs: 0 }));
+    assert.equal(await page.locator("#pathAlgorithmLastImprovement").innerText(), "0:00 / 0:00");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "1");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("value"), "1");
     await page.setViewportSize({ width: 1600, height: 1100 });
     // Inspect the real relay progress presentation without changing any route or saved state.
     await page.evaluate(() => {
