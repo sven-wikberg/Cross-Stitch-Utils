@@ -307,6 +307,7 @@
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
     };
   }
+  root.createAdaptiveOptimizer = createAdaptiveOptimizer;
   root.createAdaptivePathOptimizerWorker = () => {
     const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${root.createRelaySearch.toString()},${root.createBlockOptimizer.toString()},${createAdaptiveOptimizer.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
