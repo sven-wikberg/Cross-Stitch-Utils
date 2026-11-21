@@ -70,6 +70,8 @@
               <button id="pointsOptimizeButton" class="secondary-button" type="button">Moteur 3 : points puis diagonales</button>
               <button id="sectionsOptimizeButton" class="secondary-button" type="button">Moteur 4 : sous-sections</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
+              <p class="field-label">Relais</p>
+              <button id="relayOptimizeButton" class="secondary-button" type="button">Optimiser tous les relais</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
@@ -135,6 +137,10 @@
                   <div><dt>Sous-sections preparees</dt><dd id="pathSectionProgress">-</dd></div>
                   <div><dt>Variantes de traversees</dt><dd id="pathSectionVariants">0</dd></div>
                   <div><dt>Raccordements testes</dt><dd id="pathSectionConnections">0</dd></div>
+                </dl>
+                <dl id="pathRelayMetrics" class="algorithm-live-metrics hidden">
+                  <div><dt>Passe</dt><dd id="pathRelayPass">0</dd></div>
+                  <div><dt>Candidats examines</dt><dd id="pathRelayCandidates">-</dd></div>
                 </dl>
               </div>
             </div>
@@ -364,6 +370,7 @@
     <script src="src/stitch-model.js"></script>
     <script src="src/orthogonal-path-worker.js"></script>
     <script src="src/relay-search.js"></script>
+    <script src="src/relay-optimizer-worker.js"></script>
     <script src="src/block-optimizer-worker.js"></script>
     <script src="src/deep-optimizer-worker.js"></script>
     <script src="src/adaptive-optimizer-worker.js"></script>

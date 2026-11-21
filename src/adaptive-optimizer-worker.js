@@ -230,7 +230,7 @@
       if (createBlock && warmup > 0 && metrics.score > lowerBound + epsilon) {
         phase = "Construction initiale par blocs"; emit(true);
         try {
-          const candidate = createBlock(model, createBuilder, clock, random, createRelay).optimizePath({
+          const candidate = createBlock(model, createBuilder, clock, random).optimizePath({
             ...options, initialPath: best, constraints, maxDurationMs: warmup
           }, snapshot => {
             if (snapshot.path) keep(snapshot.path);

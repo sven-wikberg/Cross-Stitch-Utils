@@ -5,6 +5,7 @@ const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.j
 const { createBlockOptimizer } = require("../src/block-optimizer-worker.js");
 const { createDeepOptimizer, createLnsSearch } = require("../src/deep-optimizer-worker.js");
 const { createRelaySearch } = require("../src/relay-search.js");
+const { createRelayOptimizer } = require("../src/relay-optimizer-worker.js");
 const builder = createOrthogonalPathBuilder(model);
 const cell = (x, y = 0) => ({ x, y });
 const rectangle = (w, h, x = 0, y = 0) => Array.from({ length: w * h }, (_, i) => cell(x + i % w, y + Math.floor(i / w)));
@@ -114,9 +115,10 @@ test("wider blocks keep old interleaved routes, relay improvements and deep LNS 
   const result = engine().optimizePath({ points, initialPath, cutThreshold: 3, stagnationLimitMs: 1 }, s => reports.push(s));
   valid(result, points, {}, 3);
   assert.ok(result.blocks.total < builder.orthogonalComponents(points).length);
-  assert.ok(result.relayPasses > 0 && result.relayImprovements > 0);
-  const plateau = reports.find(s => s.stage === "relay");
-  assert.ok(result.metrics.score < plateau.metrics.score);
+  assert.ok(reports.every(s => s.stage !== "relay"));
+  const relayed = createRelayOptimizer(model, createOrthogonalPathBuilder, createRelaySearch).optimizePath({ points, initialPath: result.path, cutThreshold: 3 });
+  assert.ok(relayed.relayPasses > 0 && relayed.relayImprovements > 0);
+  assert.ok(relayed.metrics.score < result.metrics.score);
   const resumed = engine(1000).optimizePath({ points, initialPath: result.path, cutThreshold: 3, stagnationLimitMs: 1 });
   valid(resumed, points, {}, 3); assert.ok(resumed.metrics.score <= result.metrics.score + 1e-8);
   let now = 0;

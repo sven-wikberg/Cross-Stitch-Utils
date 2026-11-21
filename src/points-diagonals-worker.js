@@ -2,7 +2,7 @@
   "use strict";
   function createPointsDiagonalOptimizer(model, createPoints, createBuilder, createRelay, createAdaptive,
     clock = () => performance.now(), random = Math.random) {
-    const epsilon = 1e-8, builder = createBuilder(model, clock), relay = createRelay(model, builder, clock);
+    const epsilon = 1e-8;
     const repairs = createAdaptive(model, createBuilder, createRelay, clock, random);
     const measure = (path, threshold) => model.metrics(path, threshold, true);
     function decoderContext(order, constraints = {}) {
@@ -153,21 +153,10 @@
         } catch (error) { if (error.message !== "POINT_SEARCH_TIMEOUT") throw error; }
       }
       if (pending && clock() < deadline) convert(pending, true);
-      stage = "diagonals"; phase = "Diagonales : recherche de relais"; emit(true);
+      stage = "diagonals"; phase = "Diagonales : reinsertion libre"; emit(true);
       let iteration = 0, state = null;
       while (clock() < deadline && metrics.score > lowerBound + epsilon && best.length > Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1) {
-        if (iteration++ % 5 === 0) {
-          phase = "Diagonales : recherche de relais"; emit();
-          const oldBest = best;
-          const previousAttempts = stats.refinementAttempts;
-          for (const candidate of relay.candidates({ path: oldBest, constraints, cutThreshold: threshold, budgetMs: Math.min(3000, deadline - clock()) }, progress => {
-            stats.refinementAttempts = previousAttempts + progress.attempts; emit();
-          })) {
-            if (candidate.score >= metrics.score - epsilon) continue;
-            const route = candidate.materialize();
-            if (route && keep(route.path, { diagonals: candidate.moved.map(i => model.key(oldBest[i])), link: candidate.relayLink })) break;
-          }
-        }
+        iteration++;
         if (clock() >= deadline || metrics.score <= lowerBound + epsilon) break;
         if (!state || state.path !== best) state = repairs.context(best, threshold, constraints);
         const size = Math.min(24, 6 + iteration % 10 * 2), selected = repairs.select(state, iteration % 4, size);
