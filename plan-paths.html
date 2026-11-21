@@ -59,7 +59,7 @@
               <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
               <button id="deepOptimizeButton" class="secondary-button" type="button">Optimisation approfondie (1 h)</button>
               <label class="cut-threshold-field" for="adaptiveSearchBudget">
-                Budget du moteur adaptatif
+                Budget moteurs 2 et 3
                 <select id="adaptiveSearchBudget">
                   <option value="60000">1 minute</option>
                   <option value="600000">10 minutes</option>
@@ -67,6 +67,7 @@
                 </select>
               </label>
               <button id="adaptiveOptimizeButton" class="secondary-button" type="button">Moteur 2 : recherche adaptative</button>
+              <button id="pointsOptimizeButton" class="secondary-button" type="button">Moteur 3 : points puis diagonales</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
               <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
@@ -121,6 +122,12 @@
                   <div><dt>Reparations exactes</dt><dd id="pathAdaptiveExact">0</dd></div>
                   <div title="Minimum de 1 case au dos par transition. Cette borne peut etre impossible a atteindre sur des ilots separes."><dt>Borne theorique</dt><dd id="pathAdaptiveBound">-</dd></div>
                   <div title="Ce n'est pas le gain encore realisable : l'optimum exact reste inconnu sauf si la borne est atteinte."><dt>Ecart a la borne</dt><dd id="pathAdaptiveGap">-</dd></div>
+                </dl>
+                <dl id="pathPointsMetrics" class="algorithm-live-metrics hidden">
+                  <div><dt>Ordres proposes</dt><dd id="pathPointOrders">0</dd></div>
+                  <div><dt>Ordres convertis</dt><dd id="pathPointConversions">0</dd></div>
+                  <div><dt>Parcours de fil testes</dt><dd id="pathPointTrials">0</dd></div>
+                  <div><dt>Reparations de diagonales</dt><dd id="pathPointRepairs">0</dd></div>
                 </dl>
               </div>
             </div>
@@ -353,6 +360,8 @@
     <script src="src/block-optimizer-worker.js"></script>
     <script src="src/deep-optimizer-worker.js"></script>
     <script src="src/adaptive-optimizer-worker.js"></script>
+    <script src="src/point-order-search.js"></script>
+    <script src="src/points-diagonals-worker.js"></script>
     <script src="src/path-visuals.js"></script>
     <script src="src/path-planner-store.js"></script>
     <script src="src/path-edit-history.js"></script>

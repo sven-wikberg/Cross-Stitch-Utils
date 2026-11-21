@@ -16,6 +16,8 @@ Le meilleur chemin est conserve a part : Vider ou annuler une optimisation ne le
 
 L'outil 2 propose aussi **Moteur 2 : recherche adaptative**, avec un budget total de 1 minute, 10 minutes ou 1 heure. Il combine plusieurs constructions, reorientation globale, reinsertion libre de diagonales, choix adaptatif des operateurs, reparations exactes locales et diversification. Le meilleur chemin reste protege et les ameliorations utilisent le suivi visuel existant. Les deux modes precedents restent disponibles. [Fonctionnement, limites et tests du moteur adaptatif](docs/adaptive-optimizer.md).
 
+**Moteur 3 : points puis diagonales** reprend la recherche historique par cases (2-opt, deplacements de chaines, relances), convertit ses ordres en parcours de demi-croix avec retours, puis affine les diagonales. Seul le score reel entre trous decide du resultat conserve; le score simplifie des cases ne remplace jamais celui du chemin. Les moteurs 2 et 3 partagent le selecteur de budget total. [Fonctionnement, limites et tests du moteur 3](docs/points-diagonals-optimizer.md).
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.
