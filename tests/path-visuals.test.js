@@ -30,6 +30,9 @@ test("search presentation distinguishes preparation counts from inactivity, neve
     assert.equal(view.active, false); assert.equal(Boolean(view.showConstruction), false);
   }
   assert.equal(visuals.searchPresentation(null, true).value, null);
+  const sections = visuals.searchPresentation({ method: "point-sections", stage: "sections", totalLimitMs: 60000, elapsedMs: 2300 }, true);
+  assert.equal(sections.timed, true); assert.equal(sections.label, "Temps restant");
+  assert.equal(sections.max, 60000); assert.equal(sections.value, 2300);
   assert.deepEqual([construction, config, search], before);
 });
 
