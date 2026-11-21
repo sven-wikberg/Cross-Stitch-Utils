@@ -64,7 +64,7 @@ reste donc intact, meme si la recherche par points prefere un autre ordre.
 ## Interface et verification
 
 Le bouton `Moteur 3 : points puis diagonales` utilise le selecteur commun
-`Budget moteurs 2 et 3` : 1 minute, 10 minutes ou 1 heure. Ce budget est total,
+`Budget moteurs 2, 3 et 4` : 1 minute, 10 minutes ou 1 heure. Ce budget est total,
 preparation comprise, et non un delai sans amelioration. Le moteur est dans un
 Web Worker. Le score reel, le temps restant, les phases, les compteurs et les
 raccordements ameliores restent visibles. Arreter, annuler/retablir, restaurer

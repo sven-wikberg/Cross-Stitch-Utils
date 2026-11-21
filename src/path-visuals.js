@@ -3,7 +3,7 @@
   function createPathVisuals(model, builder) {
     function searchPresentation(snapshot, running) {
       const stage = snapshot?.stage || "preparation";
-      const timed = running && ["deep-optimization", "adaptive-optimization", "points-diagonals"].includes(snapshot?.method);
+      const timed = running && ["deep-optimization", "adaptive-optimization", "points-diagonals", "point-sections"].includes(snapshot?.method);
       const searching = running && stage === "search" && !timed;
       const relaying = running && stage === "relay";
       const constructing = running && stage === "construction";

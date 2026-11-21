@@ -31,6 +31,12 @@ const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
 const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton");
 const pointsOptimizeButton = document.querySelector("#pointsOptimizeButton");
+const sectionsOptimizeButton = document.querySelector("#sectionsOptimizeButton");
+const pathSectionsMetrics = document.querySelector("#pathSectionsMetrics");
+const pathSectionOrders = document.querySelector("#pathSectionOrders");
+const pathSectionProgress = document.querySelector("#pathSectionProgress");
+const pathSectionVariants = document.querySelector("#pathSectionVariants");
+const pathSectionConnections = document.querySelector("#pathSectionConnections");
 const pathPointsMetrics = document.querySelector("#pathPointsMetrics");
 const pathPointOrders = document.querySelector("#pathPointOrders");
 const pathPointConversions = document.querySelector("#pathPointConversions");
@@ -771,6 +777,7 @@ function renderPathBuilder() {
     deepOptimizeButton.disabled = true;
     adaptiveOptimizeButton.disabled = true;
     pointsOptimizeButton.disabled = true;
+    sectionsOptimizeButton.disabled = true;
     adaptiveSearchBudget.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
@@ -788,6 +795,7 @@ function renderPathBuilder() {
   deepOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   adaptiveOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   pointsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
+  sectionsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   adaptiveSearchBudget.disabled = pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
@@ -1640,9 +1648,10 @@ function startAdvancedPathSearch(mode = "normal") {
   const deep = mode === "deep";
   const adaptive = mode === "adaptive";
   const points = mode === "points";
-  const budget = adaptive || points ? Number(adaptiveSearchBudget.value) : 3600000;
+  const sections = mode === "sections";
+  const budget = adaptive || points || sections ? Number(adaptiveSearchBudget.value) : 3600000;
   try {
-    worker = points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
+    worker = sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
       : deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
@@ -1654,7 +1663,7 @@ function startAdvancedPathSearch(mode = "normal") {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
+  beginPathEdit(`Optimisation${sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1727,7 +1736,7 @@ function startAdvancedPathSearch(mode = "normal") {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch(adaptive || points ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch(adaptive || points || sections ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1744,15 +1753,15 @@ function startAdvancedPathSearch(mode = "normal") {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
-    ...(deep || adaptive || points ? { totalLimitMs: budget } : {}),
+    ...(deep || adaptive || points || sections ? { totalLimitMs: budget } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
-  if (deep || adaptive || points) {
+  if (deep || adaptive || points || sections) {
     activePathOptimizerDeadlineTimer = setTimeout(() => {
       if (worker !== activePathOptimizerWorker) return;
       flushAdvancedPathSnapshot();
       finishAdvancedPathSearch("Budget termine, meilleur parcours conserve", null, true);
-    }, budget + (adaptive || points ? 2000 : 0));
+    }, budget + (adaptive || points || sections ? 2000 : 0));
   }
 }
 
@@ -1917,6 +1926,7 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.method === "point-sections") return snapshot.phase || "Parcours par sous-sections";
   if (snapshot?.method === "points-diagonals") return snapshot.phase || "Points puis diagonales";
   if (snapshot?.method === "adaptive-optimization") return snapshot.phase || "Recherche adaptative";
   if (snapshot?.method === "deep-optimization") {
@@ -1939,6 +1949,12 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathLnsMetrics.classList.toggle("hidden", !["deep-optimization", "adaptive-optimization"].includes(snapshot?.method));
   pathAdaptiveMetrics.classList.toggle("hidden", snapshot?.method !== "adaptive-optimization");
   pathPointsMetrics.classList.toggle("hidden", snapshot?.method !== "points-diagonals");
+  pathSectionsMetrics.classList.toggle("hidden", snapshot?.method !== "point-sections");
+  pathSectionOrders.textContent = String(snapshot?.sectionSearch?.completed || 0);
+  pathSectionProgress.textContent = snapshot?.sectionSearch?.sections
+    ? `${snapshot.sectionSearch.prepared} / ${snapshot.sectionSearch.sections}` : "-";
+  pathSectionVariants.textContent = String(snapshot?.sectionSearch?.variants || 0);
+  pathSectionConnections.textContent = String(snapshot?.sectionSearch?.connections || 0);
   pathPointOrders.textContent = String(snapshot?.pointsSearch?.orders || 0);
   pathPointConversions.textContent = String(snapshot?.pointsSearch?.conversions || 0);
   pathPointTrials.textContent = String(snapshot?.pointsSearch?.diagonalTrials || 0);
@@ -2029,6 +2045,10 @@ adaptiveOptimizeButton.addEventListener("click", () => {
 pointsOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch("points");
+});
+sectionsOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("sections");
 });
 
 stopPathAlgorithmButton.addEventListener("click", () => {
