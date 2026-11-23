@@ -36,6 +36,9 @@ test("search presentation distinguishes preparation counts from inactivity, neve
   const segments = visuals.searchPresentation({ method: "segment-optimization", stage: "search", totalLimitMs: 600000, elapsedMs: 12300 }, true);
   assert.equal(segments.timed, true); assert.equal(segments.searching, false);
   assert.equal(segments.max, 600000); assert.equal(segments.value, 12300);
+  const chains = visuals.searchPresentation({ method: "chain-reinsertion", stage: "search", totalLimitMs: 60000, elapsedMs: 8900 }, true);
+  assert.equal(chains.timed, true); assert.equal(chains.searching, false);
+  assert.equal(chains.max, 60000); assert.equal(chains.value, 8900);
   assert.deepEqual([construction, config, search], before);
 });
 

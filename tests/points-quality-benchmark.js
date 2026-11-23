@@ -10,13 +10,14 @@ const { createAdaptiveOptimizer: adaptive } = require("../src/adaptive-optimizer
 const { createPointsDiagonalOptimizer: pointsEngine } = require("../src/points-diagonals-worker.js");
 const { createSectionOptimizer: sectionsEngine } = require("../src/section-optimizer-worker.js");
 const { createSegmentOptimizer: segmentsEngine } = require("../src/segment-optimizer-worker.js");
+const { createChainOptimizer: chainsEngine } = require("../src/chain-optimizer-worker.js");
 const fixtures = require("./fixtures/combined-search.js");
 const budget = Number(process.env.BENCHMARK_MS) || 1000;
 const seeds = (process.env.BENCHMARK_SEEDS || "31,73").split(",").map(Number);
 const engines = (process.env.BENCHMARK_ENGINES || "adaptive,points").split(",");
 const cases = ["timerRecovery", "interleaved", "bridge", "cutAware"].map(name => ({ name, points: fixtures[name], threshold: 3 }));
 if (process.env.BENCHMARK_LARGE) {
-  const saved = process.env.BENCHMARK_PATTERN_REF
+  const saved = process.env.BENCHMARK_PATTERN_FILE ? JSON.parse(fs.readFileSync(process.env.BENCHMARK_PATTERN_FILE, "utf8")) : process.env.BENCHMARK_PATTERN_REF
     ? JSON.parse(require("node:child_process").execFileSync("git", ["show", process.env.BENCHMARK_PATTERN_REF], { encoding: "utf8", maxBuffer: 100000000 }))
     : require("../data/patterns/33bfcc0bf2848cf99a30abae5acd47b03b35046d3f22728961abb8120a1de627.json");
   const dmc = process.env.BENCHMARK_COLOR || "3810", points = saved.pattern.grid.cells.filter(p => !p.empty && p.dmc === dmc);
@@ -29,6 +30,7 @@ for (const fixture of cases) for (const seed of seeds) {
     let randomState = seed, lastReport = 0;
     const random = () => ((randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0) / 2 ** 32), clock = () => performance.now();
     const search = name === "adaptive" ? adaptive(model, builder, relay, clock, random, blocks)
+      : name === "chains" ? chainsEngine(model, builder, relay, segmentsEngine, clock)
       : name === "segments" ? segmentsEngine(model, builder, relay, clock, random)
       : name === "sections" ? sectionsEngine(model, pointSearch, builder, clock, random)
       : pointsEngine(model, pointSearch, builder, relay, adaptive, clock, random);
@@ -47,13 +49,13 @@ for (const fixture of cases) for (const seed of seeds) {
     });
     assert.equal(model.validateRoute(result.path, fixture.points), ""); assert.equal(JSON.stringify(initialPath), input);
     results[name] = { ...model.metrics(result.path, fixture.threshold, true), elapsedMs: performance.now() - started,
-      improvements: result.improvements, attempts: result.attempts, pointsSearch: result.pointsSearch, sectionSearch: result.sectionSearch, segmentSearch: result.segmentSearch, lns: result.lns };
+      improvements: result.improvements, attempts: result.attempts, pointsSearch: result.pointsSearch, sectionSearch: result.sectionSearch, segmentSearch: result.segmentSearch, chainSearch: result.chainSearch, lns: result.lns };
   }
   rows.push({ fixture: fixture.name, crosses: fixture.points.length, seed, budget,
     initial: model.metrics(initialPath, fixture.threshold, true).score, results });
   console.log(`${fixture.name}, seed ${seed}: ${Object.entries(results).map(([name, r]) => `${name}=${r.score.toFixed(3)} (${Math.round(r.elapsedMs)}ms)`).join("; ")}`);
 }
-const output = path.resolve(__dirname, `../exports/verification/points-benchmark-${budget}-${process.env.BENCHMARK_LARGE ? "large" : "small"}${process.env.BENCHMARK_PATTERN_REF ? "-saved" : ""}.json`);
+const output = path.resolve(__dirname, `../exports/verification/points-benchmark-${budget}-${process.env.BENCHMARK_LARGE ? "large" : "small"}${process.env.BENCHMARK_PATTERN_FILE ? "-input" : process.env.BENCHMARK_PATTERN_REF ? "-saved" : ""}.json`);
 fs.mkdirSync(path.dirname(output), { recursive: true });
 fs.writeFileSync(output, JSON.stringify({ note: "Same input, real hole-to-hole score and wall-time budget. Randomized heuristics, no general optimality claim. Source pattern and progress remain unchanged.", rows }, null, 2));
 console.log(output);
