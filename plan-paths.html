@@ -268,11 +268,21 @@
                     <output id="pathImprovementGain" class="path-improvement-gain" aria-live="polite" aria-atomic="true"></output>
                     <output id="pathComparisonScore" class="path-comparison-score"></output>
                   </div>
-                  <div class="path-score-chart">
-                    <span>Evolution du score</span>
-                    <canvas id="pathScoreHistory" width="240" height="40" aria-label="Evolution du meilleur score"></canvas>
-                  </div>
                 </div>
+                <details id="pathGainDetails" class="path-gain-details" open>
+                  <summary>Gains par moteur <output id="pathGainTotal"></output></summary>
+                  <div class="path-gain-analysis">
+                    <div class="path-score-chart">
+                      <span id="pathScoreChartLabel">Evolution du score</span>
+                      <canvas id="pathScoreHistory" width="600" height="170" tabindex="0" aria-label="Evolution du meilleur score"></canvas>
+                      <output id="pathScoreReading" class="path-score-reading"></output>
+                    </div>
+                    <table class="path-gain-table" aria-label="Gains cumules par moteur et boucle pour la couleur selectionnee">
+                      <thead><tr><th scope="col">Moteur / boucle</th><th scope="col">Gain</th><th scope="col">Temps</th></tr></thead>
+                      <tbody id="pathGainRows"></tbody>
+                    </table>
+                  </div>
+                </details>
                 <div class="path-search-legend" aria-label="Legende du parcours">
                   <span><i class="legend-gain"></i>Ameliore</span>
                   <span><i class="legend-cut"></i>Coupe</span>
@@ -402,6 +412,7 @@
     <script src="src/path-settings.js"></script>
     <script src="src/path-viewport.js"></script>
     <script src="src/path-batch-plan.js"></script>
+    <script src="src/path-search-stats.js"></script>
     <script src="src/color-order.js"></script>
     <script src="src/path-planner.js"></script>
   </body>

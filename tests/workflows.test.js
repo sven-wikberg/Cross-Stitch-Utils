@@ -875,8 +875,11 @@ async function run() {
     assert.equal(await planner.evaluate(() => pathImprovementCanvas.classList.contains("active")), true);
     assert.ok(await planner.evaluate(() => scoreHistory.length >= 2));
     assert.equal(await planner.locator("#pathSearchActivity").count(), 0);
-    assert.ok(await planner.evaluate(() => pathScoreHistory.getContext("2d").getImageData(0, 0, 240, 40).data
-      .some((value, i, pixels) => i % 4 === 0 && value < 40 && pixels[i + 1] > 100 && pixels[i + 2] < 150 && pixels[i + 3] > 100)),
+    assert.ok(await planner.evaluate(() => {
+      const pixels = pathScoreHistory.getContext("2d").getImageData(0, 0, pathScoreHistory.width, pathScoreHistory.height).data;
+      const rgb = PathSearchStats.modes.normal.color.match(/\w\w/g).map(value => parseInt(value, 16));
+      return pixels.some((value, i) => i % 4 === 0 && rgb.every((channel, c) => Math.abs(pixels[i + c] - channel) < 4) && pixels[i + 3] > 200);
+    }),
       "The score chart contains a visible improvement trace");
     assert.equal(await planner.locator("#pathSearchCanvas").count(), 0, "Orange trial regions have been removed");
     const beforeProbeOnly = await planner.evaluate(() => ({ pixels: patternCanvas.toDataURL(), path: currentPath(),
