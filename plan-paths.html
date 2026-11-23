@@ -72,9 +72,9 @@
               <button id="segmentsOptimizeButton" class="secondary-button" type="button">Moteur 5 : raccordements</button>
               <button id="chainsOptimizeButton" class="secondary-button" type="button">Moteur 6 : reinsertion de chaines</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
+              <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <p class="field-label">Relais</p>
               <button id="relayOptimizeButton" class="secondary-button" type="button">Optimiser tous les relais</button>
-              <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
               <label class="cut-threshold-field" for="pathStagnationLimit">
                 Arret sans amelioration (blocs)
@@ -398,6 +398,7 @@
     <script src="src/path-edit-history.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/path-viewport.js"></script>
+    <script src="src/path-batch-plan.js"></script>
     <script src="src/path-planner.js"></script>
   </body>
 </html>

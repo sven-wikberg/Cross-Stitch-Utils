@@ -25,6 +25,14 @@ async function observePathWorkers(page, holdMessages = false, stagnationLimitMs 
   await page.evaluate(({ hold, limit, capturePaths }) => {
     const createWorker = window.pathWorkerHarness?.createWorker || window.createPathOptimizerWorker;
     const harness = window.pathWorkerHarness = { createWorker, holdMessages: hold, messages: [], workers: [], stagnationLimitMs: limit };
+    window.batchTestFactories ||= Object.fromEntries(["createSectionOptimizerWorker", "createChainOptimizerWorker"].map(name => [name, window[name]]));
+    for (const [name, create] of Object.entries(window.batchTestFactories)) {
+      window[name] = () => {
+        const worker = create(), post = worker.postMessage.bind(worker);
+        worker.postMessage = message => post({ ...message, totalLimitMs: 100 });
+        return worker;
+      };
+    }
     window.createPathOptimizerWorker = () => {
       const worker = createWorker(), target = new EventTarget();
       const record = { pending: [], posted: [], terminated: false,
@@ -462,7 +470,8 @@ async function run() {
       const dmc = data.paths[i].dmc;
       assertBlockResult(batchSnapshots[i], data.paths[i].points, dmc === "310" ? savedConstraints : {});
       assertSearchSnapshots(await planner.evaluate(runId => pathWorkerHarness.messages.filter(message => message.runId === runId), batchSnapshots[i].runId), data.paths[i].points);
-      assert.deepEqual(await planner.evaluate(dmc => pathsByDmc[dmc], dmc), batchSnapshots[i].path);
+      assert.ok(await planner.evaluate(({ dmc, initial }) => comparePathPerformance(pathsByDmc[dmc], initial, dmc) <= 0,
+        { dmc, initial: batchSnapshots[i].path }), "Later batch engines preserve or improve the blocks result");
     }
     assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), lockedDiagonals);
     assert.deepEqual(await planner.evaluate(() => constraintsByDmc["310"]), savedConstraints);

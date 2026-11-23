@@ -24,6 +24,10 @@ L'outil 2 propose aussi **Moteur 2 : recherche adaptative**, avec un budget tota
 
 **Moteur 6 : reinsertion de chaines** deplace des portions entieres ailleurs dans le meilleur parcours, en tenant compte des demi-croix ouvertes et des positions legales. Il optimise les sens, compare le score global et conserve seulement les gains valides. Il peut terminer avant le budget apres un tour sans amelioration. Le suivi visuel, les autres moteurs et les sauvegardes sont preserves ; les relais restent separes. [Fonctionnement, limites et tests du moteur 6](docs/chain-optimizer.md).
 
+**Optimiser toutes les couleurs** enchaine, pour chaque couleur, les blocs, le moteur 4, puis des cycles moteur 6 + relais. Un cycle complet sans baisse du score reel (precision `1e-8`) termine cette couleur et lance la suivante. Chaque phase reprend le meilleur chemin valide connu, jamais un resultat moins bon. Le suivi indique la couleur, la phase et le cycle, en plus des apercus et gains habituels. Le budget selectionne s'applique a chaque passage des moteurs 4 et 6, pas a tout le lot ; les blocs gardent leur delai sans amelioration et les relais leur balayage complet. L'absence de gain dans ces recherches limitees n'est pas une preuve d'optimalite globale.
+
+Arreter conserve le meilleur parcours et la phase a reprendre, y compris apres rechargement. La phase interrompue est relancee depuis ce meilleur parcours avec les reglages actuellement selectionnes ; les couleurs deja terminees ne sont pas recalculees. L'annulation reste disponible par phase. Modifier manuellement la couleur interrompue relance sa sequence depuis les blocs ; lancer un moteur seul ne valide jamais tout le lot. Les fichiers de sauvegarde et la progression de l'outil 3 ne sont pas modifies.
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.
