@@ -40,6 +40,7 @@ async function run() {
     assert.equal(await page.locator("#undoPathPointButton").isDisabled(), true);
     await page.locator("#patternJsonFile").setInputFiles({ name: "test.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await page.waitForFunction(() => loadedPattern?.project.name === "Safety test");
+    await page.locator('#pathColorLegend [data-dmc="310"]').click();
     const initial = await state();
     await clickConfirm("#clearPathButton", false);
     assert.deepEqual(await state(), initial);

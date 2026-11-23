@@ -18,7 +18,7 @@ async function run() {
       return { x, y, empty: !color, dmc: color?.dmc || null, symbol: color?.symbol || null };
     }) } };
   const data = { kind: "cross-stitch-paths", schemaVersion: 1, project: pattern.project, pattern, paths };
-  const expected = ["321", "700", "500", "310", "BLANC"];
+  const expected = ["BLANC", "310", "500", "321", "700"];
   const browser = await chromium.launch({ headless: true, channel: "msedge" }), errors = [];
   const open = async name => {
     const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
@@ -49,21 +49,21 @@ async function run() {
       group.dmc = "500"; pattern.pendingAssignmentCellKeys = group.cellKeys.slice();
       renderAssignments();
     });
-    assert.deepEqual(await codes(importer, "#assignmentChoices [data-dmc]"), ["500", "700", "310", "321", "BLANC"], "Counts include pending group assignments without double counting");
+    assert.deepEqual(await codes(importer, "#assignmentChoices [data-dmc]"), ["321", "BLANC", "310", "700", "500"], "Counts include pending group assignments without double counting");
     assert.deepEqual(await importer.evaluate(() => buildFinalPattern()), source, "Counting pending changes does not apply them to cells");
     await importer.evaluate(() => { pattern.symbolGroups[1].dmc = null; renderAssignments(); });
-    assert.deepEqual(await codes(importer, "#assignmentChoices [data-dmc]"), ["700", "500", "310", "321", "BLANC"], "An unassigned pending group does not retain its old color count");
+    assert.deepEqual(await codes(importer, "#assignmentChoices [data-dmc]"), ["321", "BLANC", "310", "500", "700"], "An unassigned pending group does not retain its old color count");
     await importer.evaluate(() => {
       pattern.symbolGroups[1].dmc = "500";
       renderColors(); document.querySelector("#colorsTableBody tr button").click();
     });
-    assert.deepEqual(await importer.evaluate(() => pattern.colors.map(c => c.dmc)), ["310", "321", "700", "BLANC"], "Deleting a sorted row removes its source color, not its display index");
+    assert.deepEqual(await importer.evaluate(() => pattern.colors.map(c => c.dmc)), ["310", "500", "700", "BLANC"], "Deleting a sorted row removes its source color, not its display index");
 
     const planner = await open("plan-paths.html");
     await planner.locator("#patternJsonFile").setInputFiles({ name: "order.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Tri des couleurs");
     assert.deepEqual(await codes(planner, "#pathColorLegend [data-dmc]"), expected);
-    assert.equal(await planner.evaluate(() => selectedDmc), "321");
+    assert.equal(await planner.evaluate(() => selectedDmc), "BLANC");
     const exportBefore = await planner.evaluate(() => buildPathExport());
     await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     await planner.evaluate(() => { renderPathTool(); savePathPlannerState(); return plannerSaveQueue; });
@@ -72,36 +72,36 @@ async function run() {
     assert.deepEqual(await planner.evaluate(() => buildPathExport()), exportBefore);
     await planner.locator('[data-step="paths"]').click();
     await planner.evaluate(() => {
-      selectedDmc = "321"; pathsByDmc["700"] = []; pathsByDmc["500"] = [];
+      selectedDmc = "310"; pathsByDmc["700"] = []; pathsByDmc["500"] = [];
       selectNextIncompleteColor(); renderPathTool();
     });
-    assert.equal(await planner.evaluate(() => selectedDmc), "700", "Next color follows descending count");
+    assert.equal(await planner.evaluate(() => selectedDmc), "500", "Next color follows ascending count");
     await planner.evaluate(() => { window.createPathOptimizerWorker = () => Object.assign(new EventTarget(), { postMessage() {}, terminate() {} }); });
     await planner.locator("#batchOptimizeButton").click();
-    assert.deepEqual(await planner.evaluate(() => batchPlan.pending), expected);
+    assert.deepEqual(await planner.evaluate(() => batchPlan.pending), expected.slice(1), "The unused color is skipped before optimizing the smallest nonempty color");
     await planner.locator("#stopPathAlgorithmButton").click();
     await planner.evaluate(() => {
       batchPlan = PathBatchPlan.prepare({ pending: ["310", "500", "321", "700"], results: [] }, null);
       renderPathTool();
     });
     await planner.locator("#batchOptimizeButton").click();
-    assert.deepEqual(await planner.evaluate(() => batchPlan.pending), ["310", "321", "700", "500"], "Resume finishes the interrupted color before the newly sorted remaining queue");
+    assert.deepEqual(await planner.evaluate(() => batchPlan.pending), ["310", "500", "321", "700"], "Resume finishes the interrupted color before the newly sorted remaining queue");
     await planner.locator("#stopPathAlgorithmButton").click();
     await planner.screenshot({ path: path.join(output, "color-order-planner.png"), fullPage: true });
 
     const progress = await open("stitch-progress.html");
     await progress.locator("#pathsJsonFile").setInputFiles({ name: "order.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await progress.waitForFunction(() => activeProgressStep === "stitch");
-    assert.equal(await progress.evaluate(() => selectedDmc), "321");
+    assert.equal(await progress.evaluate(() => selectedDmc), "BLANC");
     const originalPaths = await progress.evaluate(() => loadedPaths);
-    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), expected.slice(0, 4));
+    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), expected.slice(1));
     await progress.evaluate(() => { changeStitchCount("321", 11); });
-    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), expected.slice(0, 4), "Counts are total stitches, not remaining stitches");
+    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), expected.slice(1), "Counts are total stitches, not remaining stitches");
     await progress.locator('#stitchColorLegend [data-dmc="310"]').click();
     await progress.locator("#nextStitchButton").click();
     await progress.evaluate(() => { changeStitchCount("500", 6); changeStitchCount("700", 12); });
-    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), ["321", "310"]);
-    assert.deepEqual(await codes(progress, "#completedColorList [data-dmc]"), ["700", "500", "BLANC"]);
+    assert.deepEqual(await codes(progress, "#stitchColorLegend [data-dmc]"), ["310", "321"]);
+    assert.deepEqual(await codes(progress, "#completedColorList [data-dmc]"), ["BLANC", "500", "700"]);
     const saved = await progress.evaluate(() => ({ selectedDmc, stitchedByDmc: normalizeStitchedState(loadedPaths, stitchedByDmc), action: pathForDmc(selectedDmc).points[stitchedCountForDmc(selectedDmc)] }));
     assert.deepEqual(await progress.evaluate(() => loadedPaths), originalPaths, "Rendering and progress leave every path order untouched");
     await progress.evaluate(() => localSaveQueue); await progress.reload();
