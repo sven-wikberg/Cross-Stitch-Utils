@@ -11,7 +11,7 @@
 
   function byCount(items, countOf) {
     return items.map((item, index) => ({ item, index, count: countOf(item) || 0 }))
-      .sort((a, b) => b.count - a.count || a.index - b.index)
+      .sort((a, b) => a.count - b.count || a.index - b.index)
       .map(entry => entry.item);
   }
 

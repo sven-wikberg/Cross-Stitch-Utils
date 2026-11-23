@@ -72,6 +72,7 @@ async function run() {
   };
   try {
     await load(page); await installHarness(page);
+    await page.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["310", "321", "BLANC"], results: [] }, null); });
     await page.locator("#batchOptimizeButton").click(); await phase("normal");
     await deliver(worst); await phase("sections");
     assert.deepEqual(await page.evaluate(() => batchRuns.at(-1).message.initialPath), worst);
@@ -115,7 +116,7 @@ async function run() {
       ["sections", "sections", "chains", "relay", "chains", "relay", "normal", "sections", "chains", "relay"]);
     await page.locator("#undoPathPointButton").click();
     assert.equal(await page.evaluate(() => batchPlan.current.phase), "relay");
-    assert.equal(await page.evaluate(() => batchPlan.results.length), 1);
+    assert.equal(await page.evaluate(() => batchPlan.results.length), 2);
     await page.locator("#redoPathActionButton").click();
     assert.equal(await page.evaluate(() => batchPlan.results.length), 3);
     await page.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["321"], results: [] }, 3); renderPathTool(); });

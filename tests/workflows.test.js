@@ -217,6 +217,7 @@ async function run() {
     await page.waitForFunction(() => !document.querySelector("main").inert);
     await page.locator("#pathsJsonFile").setInputFiles({ name: "fixture.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await page.waitForFunction(() => activeProgressStep === "stitch");
+    await page.locator('#stitchColorLegend [data-dmc="310"]').click();
     await page.locator("#nextStitchButton").click();
     assert.equal(await page.evaluate(() => stitchedCountForDmc("310")), 1);
     await page.locator("#undoActionButton").click();
@@ -362,6 +363,7 @@ async function run() {
     }
     await planner.locator("#patternJsonFile").setInputFiles({ name: "fixture.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Verification");
+    await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     assert.equal(await planner.locator("#pathStagnationLimit").isVisible(), true);
     await planner.locator("#pathStagnationLimit").selectOption("10000");
     await planner.evaluate(() => plannerSaveQueue);
@@ -390,9 +392,11 @@ async function run() {
     assert.equal(await planner.evaluate(() => constraintsByDmc["310"].forcedCuts.length), 1);
     await planner.locator("#lockedPrefixCount").fill("2");
     await planner.locator("#lockedPrefixCount").dispatchEvent("change");
+    await planner.locator("#lockedPrefixCount").press("Tab");
     const lockedDiagonals = await planner.evaluate(() => currentPath().slice(0, 2));
     const constrainedPath = await planner.evaluate(() => currentPath());
     const savedConstraints = await planner.evaluate(() => constraintsByDmc["310"]);
+    await planner.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["310", "321"], results: [] }, null); });
     await observePathWorkers(planner, true);
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => pathWorkerHarness.messages.some(message => message.type === "complete"));
@@ -427,10 +431,11 @@ async function run() {
     await planner.waitForFunction(() => loadedPattern?.project.name === "Fresh constrained construction");
     await planner.locator("#cutThresholdInput").fill("12");
     await planner.locator("#cutThresholdInput").dispatchEvent("change");
+    await planner.locator("#cutThresholdInput").press("Tab");
     await planner.evaluate(({ prefix, constraints }) => {
       pathsByDmc["310"] = prefix;
       constraintsByDmc["310"] = constraints;
-      batchPlan = { pending: ["310", "321"], results: [] };
+      batchPlan = PathBatchPlan.prepare({ pending: ["310", "321"], results: [] }, null);
       renderPathTool();
     }, { prefix: lockedDiagonals, constraints: savedConstraints });
     await planner.locator("#batchOptimizeButton").click();
@@ -493,6 +498,7 @@ async function run() {
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "alternating.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(alternating)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Alternating zones");
+    await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     assert.ok(await planner.evaluate(() => pathPerformanceMetrics(currentPath()).zoneReturns > 0));
     const alternatingBefore = await planner.evaluate(() => currentPath());
     await observePathWorkers(planner, true);
@@ -731,6 +737,7 @@ async function run() {
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "better-old.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(betterOldRoute)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Restore a better saved route");
+    await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     const previousBest = await planner.evaluate(() => currentPath());
     await planner.evaluate(() => { pathWorkerHarness.messages = []; });
     await planner.locator("#optimizedPathButton").click();
@@ -811,6 +818,7 @@ async function run() {
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "timed.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(timed)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Global inactivity");
+    await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     await observePathWorkers(planner);
     await planner.locator("#optimizedPathButton").click();
     await planner.waitForFunction(() => !pathAlgorithmRunning && pathWorkerHarness.messages.some(message => message.type === "complete"));
@@ -837,6 +845,7 @@ async function run() {
     await planner.locator('[data-step="load"]').click();
     await planner.locator("#patternJsonFile").setInputFiles({ name: "bridge.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(bridge)) });
     await planner.waitForFunction(() => loadedPattern?.project.name === "Small block bridges");
+    await planner.locator('#pathColorLegend [data-dmc="310"]').click();
     const originalBridgeExport = await planner.evaluate(() => buildPathExport());
     await planner.locator("#pathWorkColor").evaluate(input => {
       input.value = "#007fa3"; input.dispatchEvent(new Event("input", { bubbles: true }));

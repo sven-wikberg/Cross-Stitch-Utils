@@ -64,6 +64,7 @@ async function run() {
     assert.equal(await page.locator("#activityProgressPanel").isVisible(), false);
     await page.locator("#pathsJsonFile").setInputFiles({ name: "stats.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fixture())) });
     await page.waitForFunction(() => activeProgressStep === "stitch");
+    await page.locator('#stitchColorLegend [data-dmc="310"]').click();
     const advance = async count => { for (let i = 0; i < count; i++) await page.locator("#nextStitchButton").click(); };
     await advance(2);
     await page.locator("body").click({ position: { x: 1595, y: 5 } });
