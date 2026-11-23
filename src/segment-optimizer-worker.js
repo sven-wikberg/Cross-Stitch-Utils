@@ -243,6 +243,7 @@
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
     };
   }
+  root.createSegmentOptimizer = createSegmentOptimizer;
   root.createSegmentOptimizerWorker = () => {
     const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${root.createRelaySearch.toString()},${createSegmentOptimizer.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));

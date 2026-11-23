@@ -101,3 +101,26 @@ test("the deep browser worker is self-contained and streams monotonic LNS gains 
   assert.equal(result.totalLimitMs, 400); assert.ok(result.elapsedMs >= 400 && result.elapsedMs < 1500);
   assert.ok(result.lns.iterations > 0); assert.equal(result.reason, "time-limit");
 });
+
+test("the chain browser worker is self-contained, streams global gains and rejects incomplete input", async () => {
+  for (const file of ["segment-optimizer-worker.js", "chain-optimizer-worker.js"]) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "../src", file), "utf8"), context);
+  }
+  const chainSource = context.createChainOptimizerWorker().source;
+  const source = workerSource.replace(context.createPathOptimizerWorker().source, chainSource);
+  new Function(chainSource);
+  const points = require("./fixtures/combined-search.js").timerRecovery, initialPath = model.expandCells(points, 3);
+  let previous = model.metrics(initialPath, 3, true).score, gains = 0;
+  const result = await runWorker({ runId: "chain-engine", points, initialPath, cutThreshold: 3, totalLimitMs: 2000 }, snapshot => {
+    assert.notEqual(snapshot.type, "error", snapshot.message);
+    if (!snapshot.path) return;
+    assert.equal(model.validateRoute(snapshot.path, points), "");
+    assert.ok(snapshot.metrics.score <= previous + 1e-8);
+    if (snapshot.metrics.score < previous - 1e-8) gains++;
+    previous = snapshot.metrics.score;
+  }, source);
+  assert.equal(result.method, "chain-reinsertion"); assert.ok(gains > 0);
+  assert.ok(result.chainSearch.moves > 0); assert.equal(result.reason, "exhausted");
+  const invalid = await runWorker({ runId: "invalid-chain", points, initialPath: initialPath.slice(1) }, () => {}, source);
+  assert.equal(invalid.type, "error"); assert.match(invalid.message, /complet/);
+});

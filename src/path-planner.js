@@ -33,6 +33,12 @@ const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton")
 const pointsOptimizeButton = document.querySelector("#pointsOptimizeButton");
 const sectionsOptimizeButton = document.querySelector("#sectionsOptimizeButton");
 const segmentsOptimizeButton = document.querySelector("#segmentsOptimizeButton");
+const chainsOptimizeButton = document.querySelector("#chainsOptimizeButton");
+const pathChainsMetrics = document.querySelector("#pathChainsMetrics");
+const pathChainLink = document.querySelector("#pathChainLink");
+const pathChainSize = document.querySelector("#pathChainSize");
+const pathChainDestinations = document.querySelector("#pathChainDestinations");
+const pathChainMoves = document.querySelector("#pathChainMoves");
 const pathSegmentsMetrics = document.querySelector("#pathSegmentsMetrics");
 const pathSegmentLink = document.querySelector("#pathSegmentLink");
 const pathSegmentCount = document.querySelector("#pathSegmentCount");
@@ -789,6 +795,7 @@ function renderPathBuilder() {
     pointsOptimizeButton.disabled = true;
     sectionsOptimizeButton.disabled = true;
     segmentsOptimizeButton.disabled = true;
+    chainsOptimizeButton.disabled = true;
     relayOptimizeButton.disabled = true;
     adaptiveSearchBudget.disabled = true;
     clearPathButton.disabled = true;
@@ -810,6 +817,8 @@ function renderPathBuilder() {
   sectionsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   segmentsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning || !complete;
   segmentsOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
+  chainsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning || !complete;
+  chainsOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
   relayOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning || !complete;
   relayOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
   adaptiveSearchBudget.disabled = pathAlgorithmRunning;
@@ -1666,15 +1675,16 @@ function startAdvancedPathSearch(mode = "normal") {
   const points = mode === "points";
   const sections = mode === "sections";
   const segments = mode === "segments";
+  const chains = mode === "chains";
   const relayOnly = mode === "relay";
-  if ((relayOnly || segments) && !bestCompletePathForColor(selectedDmc).length) {
+  if ((relayOnly || segments || chains) && !bestCompletePathForColor(selectedDmc).length) {
     showAlgorithmFeedback("Ce moteur necessite un chemin complet et valide.");
     return;
   }
-  const timedEngine = adaptive || points || sections || segments;
+  const timedEngine = adaptive || points || sections || segments || chains;
   const budget = timedEngine ? Number(adaptiveSearchBudget.value) : 3600000;
   try {
-    worker = segments ? window.createSegmentOptimizerWorker?.() : relayOnly ? window.createRelayOptimizerWorker?.() : sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
+    worker = chains ? window.createChainOptimizerWorker?.() : segments ? window.createSegmentOptimizerWorker?.() : relayOnly ? window.createRelayOptimizerWorker?.() : sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
       : deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
   } catch (error) {
     showAlgorithmFeedback(`Impossible de demarrer le moteur: ${error.message}`);
@@ -1686,7 +1696,7 @@ function startAdvancedPathSearch(mode = "normal") {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
+  beginPathEdit(`Optimisation${chains ? " par reinsertion de chaines" : segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
   scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -1949,6 +1959,7 @@ function stopAdvancedPathSearch() {
 }
 
 function optimizerPhaseLabel(snapshot) {
+  if (snapshot?.method === "chain-reinsertion") return snapshot.phase || "Reinsertion de chaines";
   if (snapshot?.method === "segment-optimization") return snapshot.phase || "Optimisation des raccordements";
   if (snapshot?.method === "relay-optimization") return snapshot.phase || "Recherche de relais";
   if (snapshot?.method === "point-sections") return snapshot.phase || "Parcours par sous-sections";
@@ -1976,6 +1987,11 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathPointsMetrics.classList.toggle("hidden", snapshot?.method !== "points-diagonals");
   pathSectionsMetrics.classList.toggle("hidden", snapshot?.method !== "point-sections");
   pathSegmentsMetrics.classList.toggle("hidden", snapshot?.method !== "segment-optimization");
+  pathChainsMetrics.classList.toggle("hidden", snapshot?.method !== "chain-reinsertion");
+  pathChainLink.textContent = snapshot?.chainSearch?.total ? `${snapshot.chainSearch.rank} / ${snapshot.chainSearch.total}` : "-";
+  pathChainSize.textContent = String(snapshot?.chainSearch?.size || 0);
+  pathChainDestinations.textContent = snapshot?.chainSearch?.destinations ? `${snapshot.chainSearch.tested} / ${snapshot.chainSearch.destinations}` : "-";
+  pathChainMoves.textContent = String(snapshot?.chainSearch?.moves || 0);
   pathSegmentLink.textContent = snapshot?.segmentSearch?.total ? `${snapshot.segmentSearch.rank} / ${snapshot.segmentSearch.total}` : "-";
   pathSegmentCount.textContent = String(snapshot?.segmentSearch?.segments || 0);
   pathSegmentDiagonals.textContent = String(snapshot?.segmentSearch?.diagonals || 0);
@@ -2087,6 +2103,10 @@ sectionsOptimizeButton.addEventListener("click", () => {
 segmentsOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch("segments");
+});
+chainsOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("chains");
 });
 relayOptimizeButton.addEventListener("click", () => {
   batchRunning = false;

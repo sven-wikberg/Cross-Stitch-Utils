@@ -57,7 +57,7 @@ Ces essais ne sont jamais affiches comme meilleur chemin ni sauvegardes.
 ## Interface et sauvegardes
 
 Le bouton `Moteur 5 : raccordements` est disponible avec un parcours complet.
-Le budget commun des moteurs 2 a 5 est de 1 minute, 10 minutes ou 1 heure,
+Le budget commun des moteurs 2 a 6 est de 1 minute, 10 minutes ou 1 heure,
 preparation comprise. Une derniere passe globale sur les sens est toujours
 effectuee, meme si le budget de recherche vient de se terminer.
 
