@@ -883,6 +883,11 @@ select:focus {
   gap: 8px;
 }
 
+#batchStatus,
+#batchCycleGain {
+  margin: 0;
+}
+
 .cut-threshold-field {
   gap: 6px;
   color: rgba(255, 255, 255, 0.72);

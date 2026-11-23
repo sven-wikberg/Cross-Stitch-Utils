@@ -139,27 +139,39 @@
       const constraints = { ...(options.constraints || {}), forcedCuts: [
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
       ] };
-      const started = clock(), totalLimitMs = Math.max(1, options.totalLimitMs || 3600000), deadline = started + totalLimitMs;
-      const pointDeadline = started + totalLimitMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
+      const started = clock(), stopAfterInactivity = options.stopAfterInactivity === true;
+      const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimitMs = stopAfterInactivity ? null : Math.max(1, options.totalLimitMs || 3600000);
+      const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
+      let lastImproved = started, deadline = started + budgetMs;
+      const pointDeadline = started + budgetMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
       const stats = { orders: 0, conversions: 0, completed: 0, bestConversionScore: null, sections: 0, prepared: 0, crosses: 0, variants: 0,
         connections: 0, trials: 0, refinements: 0, pointEvaluations: 0, restarts: 0 };
       let best = null, metrics = null, initialMetrics = null, improvements = 0, changed = false;
-      let stage = "points", phase = "Points : preparation", lastReport = -Infinity, reason = "budget";
+      let stage = "points", phase = "Points : preparation", lastReport = -Infinity, reason = stopAfterInactivity ? "inactivity" : "budget";
       const valid = path => path && path.length === cells.length * 2 && !model.validateRoute(path, cells) && model.satisfiesConstraints(path, constraints);
       function emit(force = false) {
         const now = clock(); if (!force && now - lastReport < 250) return;
         lastReport = now;
         report({ method: "point-sections", stage, phase, elapsedMs: now - started, totalLimitMs, metrics, initialMetrics,
           improvements, attempts: stats.pointEvaluations + stats.trials + stats.connections, restarts: stats.restarts,
-          sectionSearch: { ...stats }, progress: Math.min(100, (now - started) / totalLimitMs * 100), reason,
+          sectionSearch: { ...stats }, ...timing(now), reason,
           ...(best && changed ? { path: best.map(model.copy) } : {}) });
         changed = false;
+      }
+      function timing(now) {
+        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
+          remainingMs: Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
       }
       function keep(path) {
         if (!valid(path)) return false;
         const value = measure(path, threshold); initialMetrics ||= value;
         if (best && value.score >= metrics.score - epsilon) return false;
-        if (best) improvements++;
+        if (best) {
+          improvements++; lastImproved = clock();
+          if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+        }
         best = path.map(model.copy); metrics = value; changed = true; emit(true); return true;
       }
       const ids = new Map(cells.map((p, i) => [model.cellKey(p), i])), seen = new Set(), initialOrder = [];
@@ -191,7 +203,7 @@
         stats.conversions++; stats.sections = 0; stats.prepared = 0;
         const trialsBefore = stats.trials, connectionsBefore = stats.connections;
         const result = decode(route.map(i => cells[i]), { constraints, cutThreshold: threshold, round, boundaries,
-          breadth: round ? 4 : 3, deadline: Math.min(deadline, clock() + Math.max(1000, Math.min(15000, totalLimitMs * 0.15))) }, s => {
+          breadth: round ? 4 : 3, deadline: Math.min(deadline, clock() + Math.max(1000, Math.min(15000, budgetMs * 0.15))) }, s => {
           stage = s.phase; stats.sections = s.total;
           stats.prepared = s.phase === "sections" ? s.prepared : s.total; stats.crosses = s.crosses || 0;
           stats.variants = s.variants; stats.trials = trialsBefore + s.tested;
@@ -218,8 +230,8 @@
       if (editable && metrics.score > lowerBound + epsilon && clock() < pointDeadline) {
         try {
           const result = createPoints(clock, random).optimizePath({ points: cells, initialPath: initialOrder.map(id => cells[id]),
-            cutThreshold: threshold, totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: totalLimitMs,
-            shouldStop: () => metrics.score <= lowerBound + epsilon,
+            cutThreshold: threshold, totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
+            shouldStop: () => metrics.score <= lowerBound + epsilon || (stopAfterInactivity && clock() >= deadline),
             onCandidate: route => { pending = route.slice(); stats.orders++; convert(route); },
             onProgress: s => { stats.pointEvaluations = s.evaluations; stats.restarts = s.restarts;
               phase = `Points : ${s.phase.toLowerCase()}`; emit(); } });
@@ -229,24 +241,29 @@
       convert(pending, true);
       // Refine the section interfaces without returning to unrestricted diagonal permutations.
       let round = 0;
-      while (elite.length && clock() < deadline && metrics.score > lowerBound + epsilon && editable) {
-        const entry = elite[round % elite.length], boundaries = new Set(entry.boundaries);
-        if (round % 2) {
-          const splittable = entry.sections.filter(s => !s.upperOnly && s.cells.length > 1).sort((a, b) => b.cells.length - a.cells.length);
-          const section = splittable[Math.floor(round / 2) % Math.max(1, splittable.length)];
-          if (section) boundaries.add(section.start + Math.floor(section.cells.length / 2));
+      while (true) {
+        while ((elite.length || stopAfterInactivity) && clock() < deadline && metrics.score > lowerBound + epsilon && editable) {
+          const entry = elite[round % elite.length] || { route: pending, boundaries: [], sections: [] }, boundaries = new Set(entry.boundaries);
+          if (round % 2) {
+            const splittable = entry.sections.filter(s => !s.upperOnly && s.cells.length > 1).sort((a, b) => b.cells.length - a.cells.length);
+            const section = splittable[Math.floor(round / 2) % Math.max(1, splittable.length)];
+            if (section) boundaries.add(section.start + Math.floor(section.cells.length / 2));
+          }
+          stats.refinements++; stage = "sections"; phase = "Affinement des entrees et sorties";
+          convert(entry.route, true, ++round, boundaries);
         }
-        stats.refinements++; stage = "sections"; phase = "Affinement des entrees et sorties";
-        convert(entry.route, true, ++round, boundaries);
+        // A final orientation gain must receive a full new inactivity interval.
+        const improved = keep(model.orient(best, threshold, constraints, true));
+        if (!stopAfterInactivity || !improved) break;
       }
-      keep(model.orient(best, threshold, constraints, true));
       if (metrics.score <= lowerBound + epsilon) reason = "lower-bound";
       else if (!editable) reason = "locked";
       stage = "complete"; phase = reason === "lower-bound" ? "Borne minimale atteinte" : "Sous-sections : recherche terminee";
       changed = true; emit(true);
+      const finished = clock();
       return { method: "point-sections", stage, phase, path: best, metrics, initialMetrics, improvements,
         attempts: stats.pointEvaluations + stats.trials + stats.connections, restarts: stats.restarts,
-        sectionSearch: { ...stats }, elapsedMs: clock() - started, totalLimitMs, reason, progress: 100 };
+        sectionSearch: { ...stats }, elapsedMs: finished - started, totalLimitMs, reason, ...timing(finished) };
     }
     return { splitSections, sectionVariants, combineSections, decode, optimizePath, unpack };
   }

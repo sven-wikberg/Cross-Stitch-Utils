@@ -24,26 +24,34 @@ async function run() {
     await page.locator("#patternJsonFile").setInputFiles({ name: "adaptive.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await page.waitForFunction(() => loadedPattern?.project.name === "Moteur adaptatif");
     const initial = await page.evaluate(() => currentPath());
-    assert.equal(await page.locator("#adaptiveSearchBudget").inputValue(), "3600000");
+    assert.equal(await page.locator("#adaptiveSearchBudget").count(), 0);
+    assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "60000");
     await page.evaluate(() => {
-      window.adaptiveReports = []; window.adaptiveBudget = null;
+      window.adaptiveReports = []; window.adaptiveInactivity = null;
       const create = window.createAdaptivePathOptimizerWorker;
       window.createAdaptivePathOptimizerWorker = () => {
         const worker = create(), post = worker.postMessage.bind(worker);
-        worker.postMessage = message => { window.adaptivePosted = message; post({ ...message, totalLimitMs: adaptiveBudget || message.totalLimitMs }); };
+        worker.postMessage = message => { window.adaptivePosted = message; post({ ...message, stagnationLimitMs: adaptiveInactivity ?? message.stagnationLimitMs }); };
         worker.addEventListener("message", event => adaptiveReports.push(event.data));
         return worker;
       };
     });
-    await page.locator("#adaptiveSearchBudget").selectOption("60000");
+    await page.locator("#pathStagnationLimit").selectOption("30000");
     await page.locator("#adaptiveOptimizeButton").click();
     await page.waitForFunction(() => activePathOptimizerSnapshot?.lns?.iterations > 0);
-    assert.equal(await page.evaluate(() => adaptivePosted.totalLimitMs), 60000);
-    for (const id of ["adaptiveOptimizeButton", "adaptiveSearchBudget", "optimizedPathButton", "deepOptimizeButton"]) assert.ok(await page.locator(`#${id}`).isDisabled());
+    const posted = await page.evaluate(() => adaptivePosted);
+    assert.equal(posted.stopAfterInactivity, true);
+    assert.equal(posted.stagnationLimitMs, 30000);
+    assert.equal(Object.hasOwn(posted, "totalLimitMs"), false);
+    assert.deepEqual(posted.initialPath, initial);
+    assert.equal(posted.cutThreshold, 3);
+    assert.deepEqual(posted.constraints, { forcedCuts: [], lockedPrefix: [] });
+    assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
+    for (const id of ["adaptiveOptimizeButton", "pathStagnationLimit", "optimizedPathButton", "deepOptimizeButton", "batchOptimizeButton", "currentColorOptimizeButton"]) assert.ok(await page.locator(`#${id}`).isDisabled());
     assert.ok(await page.locator("#pathAdaptiveMetrics").isVisible());
     assert.ok(await page.locator("#pathLnsMetrics").isVisible());
-    assert.equal(await page.locator("#pathAlgorithmClockLabel").textContent(), "Temps restant");
-    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "60000");
+    assert.match(await page.locator("#pathAlgorithmClockLabel").textContent(), /inactivit|sans amelioration/i);
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "30000");
     await page.waitForFunction(() => pathImprovement && scoreHistory.length > 1);
     await page.screenshot({ path: path.join(output, "planner-adaptive-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -60,11 +68,14 @@ async function run() {
     await page.locator("#undoPathPointButton").click(); assert.deepEqual(await page.evaluate(() => currentPath()), initial);
     assert.deepEqual(await page.evaluate(() => bestPathsByDmc["310"]), stopped);
     await page.locator("#redoPathActionButton").click(); assert.deepEqual(await page.evaluate(() => currentPath()), stopped);
-    await page.evaluate(() => { adaptiveBudget = 350; adaptiveReports = []; });
+    await page.evaluate(() => { adaptiveInactivity = 350; adaptiveReports = []; });
     await page.locator("#adaptiveOptimizeButton").click();
     await page.waitForFunction(() => !pathAlgorithmRunning && adaptiveReports.some(s => s.type === "complete"));
     const result = await page.evaluate(() => adaptiveReports.at(-1));
-    assert.equal(result.totalLimitMs, 350);
+    assert.equal(result.stopAfterInactivity, true);
+    assert.equal(result.stagnationLimitMs, 350);
+    assert.notEqual(result.reason, "time-limit");
+    assert.equal(model.validateRoute(result.path, points), "");
     assert.ok(result.metrics.score <= model.metrics(stopped, 3, true).score + 1e-8);
     assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
     assert.ok(await page.locator("#optimizedPathButton").isEnabled());
@@ -73,7 +84,7 @@ async function run() {
     await page.locator('[data-step="paths"]').click();
     assert.equal(model.validateRoute(await page.evaluate(() => currentPath()), points), "");
     assert.deepEqual(errors, []);
-    console.log("adaptive planner passed: real worker, budget, gains, highlights, desktop/mobile, stop, best, undo/redo, completion, reload");
+    console.log("adaptive planner passed: real worker, inactivity, gains, highlights, desktop/mobile, stop, best, undo/redo, completion, reload");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

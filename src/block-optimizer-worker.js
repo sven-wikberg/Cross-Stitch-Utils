@@ -530,8 +530,10 @@
       }
       function publish(route, metrics, order, insertion = false, intermediate = false) {
         if (compareMetrics(metrics, bestMetrics) >= -epsilon) return false;
+        const scoreImproved = metrics.score < bestMetrics.score - epsilon;
         best = route; bestOrder = order ? order.slice() : routeOrder(route); bestMetrics = metrics;
-        changed = true; improvements++; lastImprovement = clock();
+        changed = true;
+        if (scoreImproved) { improvements++; lastImprovement = clock(); }
         if (insertion) insertions++;
         if (intermediate) intermediateImprovements++;
         emit(); return true;
@@ -699,7 +701,18 @@
           }
         }
       }
-      if (!totalExpired()) searchRound();
+      if (!totalExpired()) {
+        do {
+          searchRound();
+          if (!options.stopAfterInactivity) break;
+          if (bestMetrics.score <= lowerBound + epsilon) { reason = "lower-bound"; break; }
+          if ((problem.constraints.lockedPrefix?.length || 0) >= best.path.length) { reason = "locked"; break; }
+          if (expired()) { reason = "inactivity"; break; }
+          // Revisit earlier orders after interleaved improvements, without resetting the global timer.
+          refined.clear();
+        } while (!expired());
+        if (options.stopAfterInactivity && reason === "exhaustive") reason = "inactivity";
+      }
       stage = "complete"; phase = "Optimisation des blocs terminee";
       if (totalExpired()) reason = "time-limit";
       const actualOrder = best.path.map(point => actionOwners.get(model.key(point))).filter((id, i, ids) => !i || id !== ids[i - 1]);

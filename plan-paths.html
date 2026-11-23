@@ -55,29 +55,15 @@
           </dl>
           <div class="path-algorithm-panel">
             <div class="algorithm-group">
-              <p class="field-label">Optimisation</p>
-              <button id="optimizedPathButton" class="primary-button" type="button">Optimiser les blocs</button>
-              <button id="deepOptimizeButton" class="secondary-button" type="button">Optimisation approfondie (1 h)</button>
-              <label class="cut-threshold-field" for="adaptiveSearchBudget">
-                Budget moteurs 2 a 6
-                <select id="adaptiveSearchBudget">
-                  <option value="60000">1 minute</option>
-                  <option value="600000">10 minutes</option>
-                  <option value="3600000" selected>1 heure</option>
-                </select>
-              </label>
-              <button id="adaptiveOptimizeButton" class="secondary-button" type="button">Moteur 2 : recherche adaptative</button>
-              <button id="pointsOptimizeButton" class="secondary-button" type="button">Moteur 3 : points puis diagonales</button>
-              <button id="sectionsOptimizeButton" class="secondary-button" type="button">Moteur 4 : sous-sections</button>
-              <button id="segmentsOptimizeButton" class="secondary-button" type="button">Moteur 5 : raccordements</button>
-              <button id="chainsOptimizeButton" class="secondary-button" type="button">Moteur 6 : reinsertion de chaines</button>
+              <button id="currentColorOptimizeButton" class="primary-button" type="button">Optimiser la couleur actuelle</button>
               <button id="batchOptimizeButton" class="secondary-button" type="button">Optimiser toutes les couleurs</button>
-              <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
-              <p class="field-label">Relais</p>
-              <button id="relayOptimizeButton" class="secondary-button" type="button">Optimiser tous les relais</button>
               <button id="stopPathAlgorithmButton" class="secondary-button algorithm-stop-button hidden" type="button">Arreter et garder le parcours</button>
+              <p id="batchStatus" class="compact-status" role="status" aria-live="polite"></p>
+              <p id="batchCycleGain" class="compact-status hidden"></p>
+            </div>
+            <div class="algorithm-group">
               <label class="cut-threshold-field" for="pathStagnationLimit">
-                Arret sans amelioration (blocs)
+                Arret sans amelioration
                 <select id="pathStagnationLimit">
                   <option value="10000">10 secondes</option>
                   <option value="30000">30 secondes</option>
@@ -157,6 +143,23 @@
                   <div><dt>Candidats examines</dt><dd id="pathRelayCandidates">-</dd></div>
                 </dl>
               </div>
+            </div>
+            <div class="algorithm-group">
+              <p class="field-label">Moteurs</p>
+              <button id="optimizedPathButton" class="secondary-button" type="button">Moteur 1 : blocs</button>
+              <button id="adaptiveOptimizeButton" class="secondary-button" type="button">Moteur 2 : recherche adaptative</button>
+              <button id="pointsOptimizeButton" class="secondary-button" type="button">Moteur 3 : points puis diagonales</button>
+              <button id="sectionsOptimizeButton" class="secondary-button" type="button">Moteur 4 : sous-sections</button>
+              <button id="segmentsOptimizeButton" class="secondary-button" type="button">Moteur 5 : raccordements</button>
+            </div>
+            <div class="algorithm-group">
+              <p class="field-label">Boucles</p>
+              <button id="chainsOptimizeButton" class="secondary-button" type="button">Boucle 1 : reinsertion de chaines</button>
+              <button id="relayOptimizeButton" class="secondary-button" type="button">Boucle 2 : relais</button>
+            </div>
+            <div class="algorithm-group">
+              <p class="field-label">Optimisation approfondie</p>
+              <button id="deepOptimizeButton" class="secondary-button" type="button">Lancer la recherche LNS (1 h)</button>
             </div>
           </div>
           <details id="pathDetails" class="planner-details">

@@ -58,7 +58,6 @@ const pathPointOrders = document.querySelector("#pathPointOrders");
 const pathPointConversions = document.querySelector("#pathPointConversions");
 const pathPointTrials = document.querySelector("#pathPointTrials");
 const pathPointRepairs = document.querySelector("#pathPointRepairs");
-const adaptiveSearchBudget = document.querySelector("#adaptiveSearchBudget");
 const pathAdaptiveMetrics = document.querySelector("#pathAdaptiveMetrics");
 const pathAdaptiveSeeds = document.querySelector("#pathAdaptiveSeeds");
 const pathAdaptiveExact = document.querySelector("#pathAdaptiveExact");
@@ -193,6 +192,7 @@ let plannerSaveFailed = false;
 let plannerSavePending = 0;
 const constraintApi = window.createPathOptimizerApi();
 const batchOptimizeButton = document.querySelector("#batchOptimizeButton");
+const currentColorOptimizeButton = document.querySelector("#currentColorOptimizeButton");
 const pathEditMode = document.querySelector("#pathEditMode");
 const lockedPrefixCount = document.querySelector("#lockedPrefixCount");
 
@@ -799,7 +799,6 @@ function renderPathBuilder() {
     segmentsOptimizeButton.disabled = true;
     chainsOptimizeButton.disabled = true;
     relayOptimizeButton.disabled = true;
-    adaptiveSearchBudget.disabled = true;
     clearPathButton.disabled = true;
     savePathAndNextButton.disabled = true;
     return;
@@ -823,7 +822,6 @@ function renderPathBuilder() {
   chainsOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
   relayOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning || !complete;
   relayOptimizeButton.title = complete ? "" : "Un chemin complet est necessaire";
-  adaptiveSearchBudget.disabled = pathAlgorithmRunning;
   clearPathButton.disabled = path.length === 0 || pathAlgorithmRunning;
   savePathAndNextButton.disabled = !complete || pathAlgorithmRunning;
 
@@ -1353,8 +1351,12 @@ function showPathSavedStatus() {
 
 function renderPlanningOptions() {
   batchOptimizeButton.disabled = !loadedPattern || pathAlgorithmRunning;
-  batchOptimizeButton.textContent = batchRunning ? "Optimisation des couleurs en cours" : batchPlan.pending.length ? "Reprendre les couleurs restantes" : "Optimiser toutes les couleurs";
-  document.querySelector("#batchStatus").textContent = PathBatchPlan.status(batchPlan, batchRunning);
+  currentColorOptimizeButton.disabled = !loadedPattern || !selectedDmc || !cellsForColor(selectedDmc).length || pathAlgorithmRunning;
+  batchOptimizeButton.textContent = batchRunning && batchPlan.scope === "all" ? "Optimisation des couleurs en cours"
+    : batchPlan.scope === "all" && batchPlan.pending.length ? "Reprendre les couleurs restantes" : "Optimiser toutes les couleurs";
+  currentColorOptimizeButton.textContent = batchRunning && batchPlan.scope === "color" ? "Optimisation de la couleur en cours"
+    : batchPlan.scope === "color" && batchPlan.pending[0] === selectedDmc ? "Reprendre la couleur actuelle" : "Optimiser la couleur actuelle";
+  renderBatchStatus();
   const results = document.querySelector("#batchResults");
   document.querySelector("#batchStatus").classList.toggle("hidden", !batchPlan.pending.length && !batchPlan.results.length);
   document.querySelector("#batchResultDetails").classList.toggle("hidden", !batchPlan.results.length);
@@ -1377,6 +1379,17 @@ function renderPlanningOptions() {
   if (diagonal !== "auto") settings.push(diagonal === "lower" ? "Diagonale /" : "Diagonale \\");
   if (direction !== "auto") settings.push(direction === "1" ? "Sens droite" : "Sens gauche");
   document.querySelector("#constraintsStatus").textContent = settings.join(" - ");
+}
+
+function renderBatchStatus(metrics = null) {
+  document.querySelector("#batchStatus").textContent = PathBatchPlan.status(batchPlan, batchRunning);
+  const gain = document.querySelector("#batchCycleGain"), current = batchPlan.current;
+  const visible = current?.dmc === selectedDmc && Number.isFinite(current.cycleStartScore);
+  gain.classList.toggle("hidden", !visible);
+  if (visible) {
+    const score = (metrics || pathPerformanceMetrics(currentPath(), selectedDmc)).score;
+    gain.textContent = `Gain du cycle : ${formatSignedMetric(current.cycleStartScore - score)}`;
+  }
 }
 
 for (const control of [pathEditMode, document.querySelector("#diagonalMode"), document.querySelector("#diagonalDirection")]) {
@@ -1406,11 +1419,16 @@ function runNextBatchColor() {
   }
 }
 
-batchOptimizeButton.addEventListener("click", () => {
+function startColorOptimization(scope) {
   if (!loadedPattern || pathAlgorithmRunning) return;
-  const colors = orderedPathColors().map(color => color.dmc);
-  if (!batchPlan.pending.length) batchPlan = { pending: colors, results: [] };
-  else {
+  if (scope === "color" && (!selectedDmc || !cellsForColor(selectedDmc).length)) return;
+  const colors = scope === "color" ? [selectedDmc] : orderedPathColors().map(color => color.dmc);
+  batchPlan = PathBatchPlan.normalize(batchPlan);
+  if (batchPlan.scope !== scope || !batchPlan.pending.length || (scope === "color" && batchPlan.pending[0] !== selectedDmc)) {
+    const current = colors.includes(batchPlan.current?.dmc) ? batchPlan.current : null;
+    batchPlan = PathBatchPlan.normalize({ version: 2, scope, current, results: [],
+      pending: current ? [current.dmc, ...colors.filter(dmc => dmc !== current.dmc)] : colors });
+  } else {
     const current = batchPlan.current?.dmc;
     const remaining = colors.filter(dmc => batchPlan.pending.includes(dmc) && dmc !== current);
     batchPlan.pending = current && batchPlan.pending.includes(current) ? [current, ...remaining] : remaining;
@@ -1418,7 +1436,10 @@ batchOptimizeButton.addEventListener("click", () => {
   batchRunning = true;
   savePathPlannerState();
   runNextBatchColor();
-});
+}
+
+batchOptimizeButton.addEventListener("click", () => startColorOptimization("all"));
+currentColorOptimizeButton.addEventListener("click", () => startColorOptimization("color"));
 
 function updateConstraints(constraints) {
   constraintsByDmc[selectedDmc] = constraints;
@@ -1714,8 +1735,8 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
     showAlgorithmFeedback("Ce moteur necessite un chemin complet et valide.");
     return;
   }
-  const timedEngine = adaptive || points || sections || segments || chains;
-  const budget = timedEngine ? Number(adaptiveSearchBudget.value) : 3600000;
+  const inactivityEngine = !deep && !chains && !relayOnly;
+  const budget = 3600000;
   try {
     worker = chains ? window.createChainOptimizerWorker?.() : segments ? window.createSegmentOptimizerWorker?.() : relayOnly ? window.createRelayOptimizerWorker?.() : sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
       : deep ? window.createDeepPathOptimizerWorker?.() : window.createPathOptimizerWorker?.();
@@ -1804,7 +1825,7 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
       if (worker !== activePathOptimizerWorker) return;
       applyAdvancedPathSnapshot(dmc, message);
       if (worker !== activePathOptimizerWorker) return;
-      finishAdvancedPathSearch(relayOnly || timedEngine ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
+      finishAdvancedPathSearch(relayOnly || chains || inactivityEngine ? message.phase : deep ? "Optimisation approfondie terminee" : "Optimisation des blocs terminee", null, true);
     }
   });
 
@@ -1821,15 +1842,17 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
-    ...(deep || timedEngine ? { totalLimitMs: budget } : {}),
+    ...(deep ? { totalLimitMs: budget } : {}),
+    ...(inactivityEngine ? { stopAfterInactivity: true } : {}),
+    ...(chains ? { untilStable: true } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
-  if (deep || timedEngine) {
+  if (deep) {
     activePathOptimizerDeadlineTimer = setTimeout(() => {
       if (worker !== activePathOptimizerWorker) return;
       flushAdvancedPathSnapshot();
       finishAdvancedPathSearch("Budget termine, meilleur parcours conserve", null, true);
-    }, budget + (timedEngine ? 2000 : 0));
+    }, budget + 2000);
   }
 }
 
@@ -1881,6 +1904,11 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
     pathOptimizationBaselinesByDmc[dmc] = snapshot.initialMetrics.score;
     activePathOptimizerNeedsSave = true;
   }
+  if (PathBatchPlan.matches(batchPlan, activePathOptimizerBatchJob) && Number.isFinite(snapshot.initialMetrics?.score)) {
+    for (const key of ["initial", "cycleStartScore", "phaseStartScore"]) {
+      if (!Number.isFinite(batchPlan.current[key])) batchPlan.current[key] = snapshot.initialMetrics.score;
+    }
+  }
 
   let pathChanged = false;
   if (Array.isArray(snapshot.path) && !StitchModel.validateRoute(snapshot.path, cellsForColor(dmc), false)) {
@@ -1927,6 +1955,7 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
   }
 
   showAdvancedPathFeedback(activePathOptimizerSnapshot);
+  renderBatchStatus(activePathOptimizerSnapshot.metrics);
 }
 
 function finishAdvancedPathSearch(label, snapshot, completed) {
@@ -1965,7 +1994,8 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
     if (completed) {
       const metrics = pathPerformanceMetrics(pathsByDmc[finishedDmc], finishedDmc);
       batchPlan = PathBatchPlan.complete(batchPlan, batchJob, {
-        ...metrics, initial: pathOptimizationBaselinesByDmc[finishedDmc]
+        ...metrics, initial: pathOptimizationBaselinesByDmc[finishedDmc],
+        stable: ["exhausted", "lower-bound", "locked"].includes(finalSnapshot?.reason)
       });
       batchRunning = batchRunning && Boolean(batchPlan.pending.length);
     } else batchRunning = false;

@@ -25,11 +25,12 @@ async function observePathWorkers(page, holdMessages = false, stagnationLimitMs 
   await page.evaluate(({ hold, limit, capturePaths }) => {
     const createWorker = window.pathWorkerHarness?.createWorker || window.createPathOptimizerWorker;
     const harness = window.pathWorkerHarness = { createWorker, holdMessages: hold, messages: [], workers: [], stagnationLimitMs: limit };
-    window.batchTestFactories ||= Object.fromEntries(["createSectionOptimizerWorker", "createChainOptimizerWorker"].map(name => [name, window[name]]));
+    window.batchTestFactories ||= Object.fromEntries(["createAdaptivePathOptimizerWorker", "createPointsDiagonalWorker",
+      "createSectionOptimizerWorker", "createSegmentOptimizerWorker", "createChainOptimizerWorker"].map(name => [name, window[name]]));
     for (const [name, create] of Object.entries(window.batchTestFactories)) {
       window[name] = () => {
         const worker = create(), post = worker.postMessage.bind(worker);
-        worker.postMessage = message => post({ ...message, totalLimitMs: 100 });
+        worker.postMessage = message => post({ ...message, totalLimitMs: 100, stagnationLimitMs: limit });
         return worker;
       };
     }
@@ -354,7 +355,7 @@ async function run() {
     }), "The active optimizer is loaded after its orthogonal construction dependency");
     assert.equal(await planner.evaluate(() => typeof createPathOptimizerApi().optimizePath), "function");
     assert.equal([...plannerScripts].some(src => /(?:path-optimizer|diagonal-optimizer)(?:-worker)?\.js$/.test(src)), false, "The legacy engines are not loaded");
-    assert.equal(await planner.locator("#optimizedPathButton").innerText(), "Optimiser les blocs");
+    assert.equal(await planner.locator("#optimizedPathButton").innerText(), "Moteur 1 : blocs");
     assert.match(await planner.locator('label[for="pathStagnationLimit"]').innerText(), /Arret sans amelioration/);
     assert.equal(await planner.locator("#pathStagnationLimit").inputValue(), "60000");
     assert.equal(await planner.locator("#pathStagnationLimit option").evaluateAll(options => Math.min(...options.map(option => Number(option.value)))), 10000);
@@ -470,13 +471,17 @@ async function run() {
     await planner.locator("#batchOptimizeButton").click();
     await planner.waitForFunction(() => !pathAlgorithmRunning && !batchRunning && batchPlan.results.length === 2);
     const batchSnapshots = await planner.evaluate(() => pathWorkerHarness.messages.filter(message => message.type === "complete"));
-    assert.equal(batchSnapshots.length, 2);
+    assert.ok(batchSnapshots.length >= 2);
     for (let i = 0; i < data.paths.length; i++) {
       const dmc = data.paths[i].dmc;
-      assertBlockResult(batchSnapshots[i], data.paths[i].points, dmc === "310" ? savedConstraints : {});
-      assertSearchSnapshots(await planner.evaluate(runId => pathWorkerHarness.messages.filter(message => message.runId === runId), batchSnapshots[i].runId), data.paths[i].points);
+      const snapshots = batchSnapshots.filter(snapshot => !require("../src/stitch-model.js").validateRoute(snapshot.path, data.paths[i].points));
+      assert.ok(snapshots.length > 0);
+      for (const snapshot of snapshots) {
+        assertBlockResult(snapshot, data.paths[i].points, dmc === "310" ? savedConstraints : {}, 12, false);
+        assertSearchSnapshots(await planner.evaluate(runId => pathWorkerHarness.messages.filter(message => message.runId === runId), snapshot.runId), data.paths[i].points);
+      }
       assert.ok(await planner.evaluate(({ dmc, initial }) => comparePathPerformance(pathsByDmc[dmc], initial, dmc) <= 0,
-        { dmc, initial: batchSnapshots[i].path }), "Later batch engines preserve or improve the blocks result");
+        { dmc, initial: snapshots[0].path }), "Later batch engines preserve or improve the blocks result");
     }
     assert.deepEqual(await planner.evaluate(() => pathsByDmc["310"].slice(0, 2)), lockedDiagonals);
     assert.deepEqual(await planner.evaluate(() => constraintsByDmc["310"]), savedConstraints);
@@ -525,7 +530,7 @@ async function run() {
     assert.equal(await planner.locator("#pathAlgorithmRestarts").textContent(), String(search.restarts));
     assert.equal(await planner.locator("#pathAlgorithmImprovements").textContent(), String(search.improvements));
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").isVisible(), true);
-    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("aria-label"), "Sans amelioration (blocs)");
+    assert.equal(await planner.locator("#pathAlgorithmProgress").getAttribute("aria-label"), "Sans amelioration");
     assert.equal(await planner.locator("#pathAlgorithmLastImprovement").innerText(),
       await planner.evaluate(snapshot => `${formatAlgorithmTime(snapshot.lastImprovementMs)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs, true)}`, search));
     assert.equal(await planner.locator("#pathAlgorithmDistance").innerText(), "Recherche en cours");
@@ -654,7 +659,8 @@ async function run() {
     assertBlockResult(completedGroups, alternating.paths[0].points);
     assertSearchSnapshots(groupSnapshots, alternating.paths[0].points);
     assert.equal(completedGroups.blocks.total, 2);
-    assert.equal(completedGroups.reason, "exhaustive", "Small block sets finish once every order is tested");
+    assert.equal(completedGroups.reason, "inactivity", "Small block sets also use the selected idle limit");
+    assert.ok(completedGroups.lastImprovementMs >= completedGroups.stagnationLimitMs);
     assert.ok(completedGroups.attempts > 0, "Block-order or entry/exit candidates were evaluated");
     completedGroups.path.forEach((point, i, route) => {
       const sameGroup = i > 0 && (point.x < 20) === (route[i - 1].x < 20);

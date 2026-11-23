@@ -72,8 +72,9 @@
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
       ] };
       const valid = path => Array.isArray(path) && !model.validateRoute(path, points) && model.satisfiesConstraints(path, constraints);
-      if (!valid(options.initialPath)) throw new Error("Le moteur 6 necessite un chemin complet et valide.");
-      const started = clock(), totalLimitMs = Math.max(0, options.totalLimitMs ?? 3600000), deadline = started + totalLimitMs;
+      if (!valid(options.initialPath)) throw new Error("La reinsertion de chaines necessite un chemin complet et valide.");
+      const untilStable = options.untilStable === true;
+      const started = clock(), totalLimitMs = untilStable ? Infinity : Math.max(0, options.totalLimitMs ?? 3600000), deadline = started + totalLimitMs;
       let best = options.initialPath.map(model.copy), metrics = model.metrics(best, threshold, true);
       const initialMetrics = metrics, stats = { scans: 0, chains: 0, size: 0, rank: 0, total: 0, tested: 0, destinations: 0, moves: 0 };
       let stage = "preparation", phase = "Preparation des chaines", changed = true, lastReport = -Infinity;
@@ -81,10 +82,13 @@
       function emit(force = false) {
         const now = clock(); if (!force && now - lastReport < 150) return;
         lastReport = now;
-        report({ method: "chain-reinsertion", stage, phase, metrics, initialMetrics, totalLimitMs, elapsedMs: now - started,
+        report({ method: "chain-reinsertion", stage, phase, metrics, initialMetrics,
+          totalLimitMs: untilStable ? null : totalLimitMs, untilStable, elapsedMs: now - started,
           attempts, improvements, restarts: 0, lastGain, lastImprovementMs: now - lastImproved,
           chainSearch: { ...stats }, lastChainImprovement,
-          ...(changed ? { path: best.map(model.copy) } : {}), progress: totalLimitMs ? Math.min(100, 100 * (now - started) / totalLimitMs) : 100 });
+          ...(changed ? { path: best.map(model.copy) } : {}), progress: untilStable
+            ? stage === "complete" ? 100 : stats.total ? 100 * stats.rank / stats.total : 0
+            : totalLimitMs ? Math.min(100, 100 * (now - started) / totalLimitMs) : 100 });
         changed = false;
       }
       function keep(path, chain = null) {
@@ -138,7 +142,13 @@
           if (improved) break;
         }
         if (interrupted) break;
-        if (!improved) { reason = "exhausted"; break; }
+        if (!improved) {
+          if (untilStable) {
+            try { if (keep(model.orient(best, threshold, constraints, true))) { resumeRank = 0; continue; } }
+            catch { /* Keep the valid incumbent. */ }
+          }
+          reason = "exhausted"; break;
+        }
       }
       // The final global orientation pass is independent of the search deadline.
       try { keep(model.orient(best, threshold, constraints, true)); } catch { /* Keep the valid incumbent. */ }
@@ -146,7 +156,8 @@
       phase = reason === "lower-bound" ? "Borne minimale atteinte" : reason === "time-limit"
         ? "Budget termine, meilleur parcours conserve" : "Reinsertion des chaines terminee";
       changed = true; emit(true);
-      return { method: "chain-reinsertion", stage, phase, path: best, metrics, initialMetrics, totalLimitMs, elapsedMs: clock() - started,
+      return { method: "chain-reinsertion", stage, phase, path: best, metrics, initialMetrics,
+        totalLimitMs: untilStable ? null : totalLimitMs, untilStable, elapsedMs: clock() - started,
         attempts, improvements, restarts: 0, lastGain, chainSearch: { ...stats }, lastChainImprovement, reason, progress: 100 };
     }
     return { context, bounds, pieces, closedRange, ranges, destinations, optimizePath };
