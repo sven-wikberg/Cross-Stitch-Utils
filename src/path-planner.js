@@ -1426,7 +1426,7 @@ function startColorOptimization(scope) {
   batchPlan = PathBatchPlan.normalize(batchPlan);
   if (batchPlan.scope !== scope || !batchPlan.pending.length || (scope === "color" && batchPlan.pending[0] !== selectedDmc)) {
     const current = colors.includes(batchPlan.current?.dmc) ? batchPlan.current : null;
-    batchPlan = PathBatchPlan.normalize({ version: 2, scope, current, results: [],
+    batchPlan = PathBatchPlan.normalize({ version: batchPlan.version, scope, current, results: [],
       pending: current ? [current.dmc, ...colors.filter(dmc => dmc !== current.dmc)] : colors });
   } else {
     const current = batchPlan.current?.dmc;

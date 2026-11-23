@@ -82,12 +82,15 @@ peuvent etre lancees seules ou dans le [cycle automatique](../README.md#cycle-au
 `Optimiser la couleur actuelle` et `Optimiser toutes les couleurs` executent la
 meme sequence : moteurs 1, 2, 3, 4, 5, puis boucles 1 et 2. Toutes les couleurs
 sont traitees par nombre total de points croissant. Chaque boucle est relancee
-tant qu'une passe apporte un gain global strict ; ensuite, un gain superieur a
-`1e-8` sur le cycle complet relance les sept phases au moteur 1. La couleur est
+tant qu'une passe apporte un gain global strict. Le duo chaines puis relais est
+repete tant que l'une des deux boucles rapporte un gain. Apres un duo complet
+sans gain seulement, un gain superieur a `1e-8` sur le cycle complet relance
+les moteurs au moteur 1. Le bilan du duo ne remplace pas celui du cycle. La couleur est
 terminee seulement apres un cycle complet sans gain strict, sans garantie
 d'optimalite globale. La LNS de 1 heure n'entre jamais dans cette sequence.
 
-La pause et le rechargement conservent la phase, la passe et le cycle. La phase
+La pause et le rechargement conservent la phase, la passe, le duo, le cycle et
+leurs bilans de score. La phase
 interrompue repart du meilleur parcours compatible, pas de l'etat interne du
 worker. Un ancien brouillon de planification incompatible redemarre au moteur 1
 depuis le meilleur chemin, sans le supprimer. Chaque phase reste annulable.

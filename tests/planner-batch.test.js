@@ -116,6 +116,10 @@ async function run() {
     await page.screenshot({ path: path.join(output, "planner-batch-mobile.png"), fullPage: true });
     await deliver(best); await phase("chains");
     assert.equal(await page.evaluate(() => batchPlan.current.pass), 2);
+    await deliver(best); await phase("relay"); await deliver(best); await phase("chains");
+    assert.equal(await page.evaluate(() => batchPlan.current.cycle), 1);
+    assert.equal(await page.evaluate(() => batchPlan.current.loopRound), 2);
+    assert.match(await page.locator("#batchStatus").textContent(), /cycle 1.*duo 2.*Boucle 1/);
     await deliver(best); await phase("relay"); await deliver(best); await phase("normal");
     assert.equal(await page.evaluate(() => batchPlan.current.cycle), 2);
     for (const next of ["adaptive", "points", "sections", "segments", "chains", "relay", "normal"]) {
@@ -133,6 +137,7 @@ async function run() {
     assert.match(await page.locator("#batchStatus").textContent(), /3 couleurs terminees/);
     assert.deepEqual(await page.evaluate(() => batchRuns.map(r => r.mode)),
       ["adaptive", "adaptive", "points", "sections", "segments", "chains", "chains", "relay",
+        "chains", "relay",
         "normal", "adaptive", "points", "sections", "segments", "chains", "relay",
         "normal", "adaptive", "points", "sections", "segments", "chains", "relay"]);
     await page.locator("#undoPathPointButton").click();
@@ -179,7 +184,7 @@ async function run() {
       assert.equal(model.validateRoute(await realPage.evaluate(dmc => pathsByDmc[dmc], dmc), cells), "");
     }
     assert.deepEqual(errors, []);
-    console.log("batch planner passed: all seven phases, per-loop stabilization, full cycles, one/all colors, real workers, best protection, feedback, stop/reload, errors, undo/redo, manual isolation, unused colors");
+    console.log("batch planner passed: all seven phases, per-loop and paired-loop stabilization, full cycles, one/all colors, real workers, best protection, feedback, stop/reload, errors, undo/redo, manual isolation, unused colors");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
