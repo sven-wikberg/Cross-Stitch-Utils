@@ -553,18 +553,33 @@ function goToStep(step) {
   render();
 }
 
+function importColorCounts() {
+  const pending = Array.isArray(pattern.pendingAssignmentCellKeys) ? new Set(pattern.pendingAssignmentCellKeys) : null;
+  const assigned = new Map();
+  for (const group of pattern.symbolGroups || []) {
+    for (const key of group.cellKeys) {
+      if (!pending || pending.has(key)) assigned.set(key, group.isEmpty ? null : group.dmc);
+    }
+  }
+  return ColorOrder.countCells(pattern.grid.cells, cell => {
+    const key = reviewCellKey(cell);
+    return assigned.has(key) ? assigned.get(key) : cell.empty ? null : cell.dmc;
+  });
+}
+
 function renderColors() {
   colorsTableBody.innerHTML = "";
   emptyColorsMessage.hidden = pattern.colors.length > 0;
 
-  pattern.colors.forEach((color, index) => {
+  const counts = importColorCounts();
+  ColorOrder.byCount(pattern.colors, color => counts.get(color.dmc)).forEach((color) => {
     const row = document.createElement("tr");
 
     row.innerHTML = `
       <td><span class="color-swatch"></span></td>
       <td></td>
       <td class="row-actions">
-        <button class="danger-button" type="button" data-remove-color="${index}" title="Supprimer">
+        <button class="danger-button" type="button" data-remove-color="${pattern.colors.indexOf(color)}" title="Supprimer">
           X
         </button>
       </td>
@@ -756,7 +771,8 @@ function renderAssignments() {
   }
 
   assignmentChoices.innerHTML = "";
-  pattern.colors.forEach((color) => {
+  const counts = importColorCounts();
+  ColorOrder.byCount(pattern.colors, color => counts.get(color.dmc)).forEach((color) => {
     const button = document.createElement("button");
     button.className = "assignment-choice-button";
     button.type = "button";
@@ -985,16 +1001,10 @@ function renderReviewColorCounts(finalPattern, ready) {
     return;
   }
 
-  const countsByDmc = finalPattern.grid.cells.reduce((counts, cell) => {
-    if (!cell.empty && cell.dmc) {
-      counts.set(cell.dmc, (counts.get(cell.dmc) || 0) + 1);
-    }
-
-    return counts;
-  }, new Map());
+  const countsByDmc = ColorOrder.countCells(finalPattern.grid.cells);
   const emptyCount = finalPattern.grid.cells.filter((cell) => cell.empty).length;
 
-  finalPattern.colors.forEach((color) => {
+  ColorOrder.byCount(finalPattern.colors, color => countsByDmc.get(color.dmc)).forEach((color) => {
     const row = document.createElement("tr");
     row.className = "review-color-row";
     row.dataset.reviewDmc = color.dmc;

@@ -110,7 +110,7 @@ let loadedPaths = storedProgressState.pathsFile;
 let stitchedByDmc = storedProgressState.stitchedByDmc;
 let stitchStats = StitchStats.load(storedProgressState.stitchStats, loadedPaths, stitchedByDmc);
 threadMarkersToggle.checked = storedProgressState.showThreadMarkers !== false;
-let selectedDmc = storedProgressState.selectedDmc || loadedPaths?.paths[0]?.dmc || null;
+let selectedDmc = storedProgressState.selectedDmc || orderedStitchPaths()[0]?.dmc || null;
 let stitchZoom = storedProgressState.zoom || DEFAULT_STITCH_ZOOM;
 let followCurrentPoint = Boolean(storedProgressState.followCurrentPoint);
 let githubSyncInProgress = false;
@@ -370,7 +370,7 @@ function renderStitchView() {
   }
 
   if (!selectedDmc || !pathForDmc(selectedDmc)) {
-    selectedDmc = loadedPaths.paths[0]?.dmc || null;
+    selectedDmc = orderedStitchPaths()[0]?.dmc || null;
   }
 
   const pattern = loadedPaths.pattern;
@@ -680,9 +680,13 @@ function drawCircle(context, point, cellSize, fill, stroke, alpha = 1) {
   context.restore();
 }
 
+function orderedStitchPaths() {
+  return ColorOrder.byCount(loadedPaths?.paths || [], path => path.points.length);
+}
+
 function renderStitchColorLegend() {
   stitchColorLegend.innerHTML = "";
-  const activePaths = loadedPaths.paths.filter((path) => stitchedCountForDmc(path.dmc) < path.points.length);
+  const activePaths = orderedStitchPaths().filter((path) => stitchedCountForDmc(path.dmc) < path.points.length);
 
   if (activePaths.length === 0) {
     stitchColorLegend.innerHTML = '<p class="empty-message">Toutes les couleurs sont terminees.</p>';
@@ -708,7 +712,7 @@ function renderStitchColorLegend() {
 }
 
 function renderCompletedColorList() {
-  const completedPaths = loadedPaths.paths.filter((path) => stitchedCountForDmc(path.dmc) === path.points.length);
+  const completedPaths = orderedStitchPaths().filter((path) => stitchedCountForDmc(path.dmc) === path.points.length);
   completedColorList.innerHTML = "";
 
   if (completedPaths.length === 0) {
@@ -832,7 +836,7 @@ function applyProgressSave(progressSave) {
   document.querySelector("#threadChangeStatus").textContent = "";
   selectedDmc = pathForDmc(progressSave.selectedDmc)
     ? progressSave.selectedDmc
-    : loadedPaths.paths[0]?.dmc || null;
+    : orderedStitchPaths()[0]?.dmc || null;
   pathsJsonFileInput.value = "";
   progressSaveFileInput.value = "";
   stitchProgress.load = true;
@@ -1175,7 +1179,7 @@ pathsJsonFileInput.addEventListener("change", async () => {
     stitchedByDmc = {};
     stitchStats = StitchStats.create(); stitchStatsRevision++;
     document.querySelector("#threadChangeStatus").textContent = "";
-    selectedDmc = loadedPaths.paths[0]?.dmc || null;
+    selectedDmc = orderedStitchPaths()[0]?.dmc || null;
     progressSaveFileInput.value = "";
     stitchProgress.load = true;
     stitchProgress.stitch = false;
