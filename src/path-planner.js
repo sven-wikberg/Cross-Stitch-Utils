@@ -140,6 +140,7 @@ const PATH_OBJECTIVE_VERSION = 3;
 const PATH_TIMING_VERSION = 1;
 const pathZoneCache = new WeakMap();
 const pathBlockCache = new WeakMap();
+const pathColorCountsCache = new WeakMap();
 const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
 const WORK_COLOR_STORAGE_KEY = "cross-stitch-path-work-color";
 const FOLLOW_GAINS_STORAGE_KEY = "cross-stitch-path-follow-gains";
@@ -161,7 +162,7 @@ let pathProgress = {
   export: false
 };
 let activePathStep = "load";
-let selectedDmc = storedState.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
+let selectedDmc = storedState.selectedDmc || orderedPathColors()[0]?.dmc || null;
 let isDrawingPath = false;
 let lastDrawnCellKey = null;
 let lastPointerCell = null;
@@ -325,7 +326,7 @@ function applyPlannerDraft(state) {
   pathsByDmc = state.pathsByDmc || {};
   bestPathsByDmc = state.bestPathsByDmc || {};
   bestPathConstraintsByDmc = state.bestPathConstraintsByDmc || {};
-  selectedDmc = state.selectedDmc || loadedPattern?.colors[0]?.dmc || null;
+  selectedDmc = state.selectedDmc || orderedPathColors()[0]?.dmc || null;
   cutThreshold = normalizeCutThreshold(state.cutThreshold) || DEFAULT_CUT_THRESHOLD;
   pathStagnationLimitMs = normalizePathStagnationLimit(state.pathStagnationLimitMs) || DEFAULT_PATH_STAGNATION_LIMIT;
   constraintsByDmc = state.constraintsByDmc || {};
@@ -464,7 +465,7 @@ function renderPatternGrid(canvasOnly = false) {
 
   const colorByDmc = new Map(loadedPattern.colors.map((color) => [color.dmc, color]));
   if (!selectedDmc || !colorByDmc.has(selectedDmc)) {
-    selectedDmc = loadedPattern.colors[0]?.dmc || null;
+    selectedDmc = orderedPathColors()[0]?.dmc || null;
   }
 
   if (followPathGains && followedPathImprovement !== pathImprovement && comparisonMode === "after"
@@ -1012,12 +1013,25 @@ function drawGridRulers(context, width, height, cellSize) {
   context.restore();
 }
 
+function pathColorCounts() {
+  if (!loadedPattern) return new Map();
+  if (!pathColorCountsCache.has(loadedPattern)) {
+    pathColorCountsCache.set(loadedPattern, ColorOrder.countCells(loadedPattern.grid.cells));
+  }
+  return pathColorCountsCache.get(loadedPattern);
+}
+
+function orderedPathColors() {
+  const counts = pathColorCounts();
+  return ColorOrder.byCount(loadedPattern?.colors || [], color => counts.get(color.dmc));
+}
+
 function renderPathColorLegend() {
   pathColorLegend.innerHTML = "";
 
-  loadedPattern.colors.forEach((color) => {
+  orderedPathColors().forEach((color) => {
     const path = pathsByDmc[color.dmc] || [];
-    const expected = cellsForColor(color.dmc).length * 2;
+    const expected = (pathColorCounts().get(color.dmc) || 0) * 2;
     const complete = expected > 0 && path.length === expected;
     const item = document.createElement("button");
     item.className = "path-color-item";
@@ -1246,10 +1260,11 @@ function selectNextIncompleteColor() {
     return;
   }
 
-  const currentIndex = loadedPattern.colors.findIndex((color) => color.dmc === selectedDmc);
-  const nextColor = loadedPattern.colors.find((color, index) => index > currentIndex && !isPathComplete(color.dmc))
-    || loadedPattern.colors.find((color) => !isPathComplete(color.dmc))
-    || loadedPattern.colors[Math.min(currentIndex + 1, loadedPattern.colors.length - 1)];
+  const colors = orderedPathColors();
+  const currentIndex = colors.findIndex((color) => color.dmc === selectedDmc);
+  const nextColor = colors.find((color, index) => index > currentIndex && !isPathComplete(color.dmc))
+    || colors.find((color) => !isPathComplete(color.dmc))
+    || colors[Math.min(currentIndex + 1, colors.length - 1)];
 
   selectedDmc = nextColor?.dmc || selectedDmc;
 }
@@ -1344,7 +1359,7 @@ function renderPlanningOptions() {
   document.querySelector("#batchStatus").classList.toggle("hidden", !batchPlan.pending.length && !batchPlan.results.length);
   document.querySelector("#batchResultDetails").classList.toggle("hidden", !batchPlan.results.length);
   results.replaceChildren();
-  batchPlan.results.forEach((result) => {
+  ColorOrder.byCount(batchPlan.results, result => pathColorCounts().get(result.dmc)).forEach((result) => {
     const row = document.createElement("p");
     row.textContent = `DMC ${result.dmc} : ${Number.isFinite(result.initial) ? formatMetric(result.initial) : "-"} > ${formatMetric(result.score)} (${result.cuts} coupes)`;
     results.appendChild(row);
@@ -1393,7 +1408,13 @@ function runNextBatchColor() {
 
 batchOptimizeButton.addEventListener("click", () => {
   if (!loadedPattern || pathAlgorithmRunning) return;
-  if (!batchPlan.pending.length) batchPlan = { pending: loadedPattern.colors.map((color) => color.dmc), results: [] };
+  const colors = orderedPathColors().map(color => color.dmc);
+  if (!batchPlan.pending.length) batchPlan = { pending: colors, results: [] };
+  else {
+    const current = batchPlan.current?.dmc;
+    const remaining = colors.filter(dmc => batchPlan.pending.includes(dmc) && dmc !== current);
+    batchPlan.pending = current && batchPlan.pending.includes(current) ? [current, ...remaining] : remaining;
+  }
   batchRunning = true;
   savePathPlannerState();
   runNextBatchColor();
@@ -1481,7 +1502,7 @@ patternJsonFileInput.addEventListener("change", async () => {
     bestPathConstraintsByDmc = structuredClone(constraintsByDmc);
     pathEditHistory = createPathEditHistory();
     pathConstructionSummaries = {};
-    selectedDmc = loadedPattern.colors[0]?.dmc || null;
+    selectedDmc = orderedPathColors()[0]?.dmc || null;
     pathOptimizationBaselinesByDmc = {};
     pathProgress.load = true;
     pathProgress.paths = areAllColorPathsComplete(loadedPattern, pathsByDmc);
