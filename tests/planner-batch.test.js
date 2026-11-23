@@ -91,6 +91,7 @@ async function run() {
     await page.waitForFunction(() => !document.querySelector("main").inert);
     await page.locator('[data-step="paths"]').click();
     assert.deepEqual(await page.evaluate(() => currentPath()), middle);
+    assert.ok(await page.evaluate(() => pathSearchStatsByDmc["310"].totals.adaptive.gain > 0), "Accepted gains survive stop and reload");
     assert.match(await page.locator("#batchStatus").textContent(), /Moteur 2.*en pause/);
     await installHarness(page);
     await page.locator("#batchOptimizeButton").click(); await phase("adaptive");
@@ -110,6 +111,26 @@ async function run() {
     assert.ok(await page.evaluate(() => pathImprovement));
     assert.match(await page.locator("#batchStatus").textContent(), /Couleur 1 \/ 3.*cycle 1.*Boucle 1/);
     assert.match(await page.locator("#batchCycleGain").textContent(), /Gain du cycle : \+/);
+    const gains = await page.evaluate(() => pathSearchStatsByDmc["310"]);
+    assert.ok(Math.abs(gains.totals.adaptive.gain - (model.metrics(worst, 10, true).score - model.metrics(middle, 10, true).score)) < 1e-8);
+    assert.ok(Math.abs(gains.totals.chains.gain - (model.metrics(middle, 10, true).score - model.metrics(best, 10, true).score)) < 1e-8);
+    assert.equal(gains.totals.segments.gain, 0, "A no-gain engine is measured too");
+    assert.equal(gains.totals.relay, undefined, "A not-yet-run loop stays distinct from a zero-gain loop");
+    assert.equal(await page.locator('#pathGainRows [data-mode="segments"] td').first().textContent(), "0");
+    assert.equal(await page.locator('#pathGainRows [data-mode="relay"] td').first().textContent(), "-");
+    assert.equal(await page.locator('#pathGainRows [data-mode="chains"]').evaluate(row => row.classList.contains("active")), true);
+    assert.ok(await page.evaluate(() => {
+      const data = pathScoreHistory.getContext("2d").getImageData(0, 0, pathScoreHistory.width, pathScoreHistory.height).data;
+      return ["adaptive", "chains"].every(mode => {
+        const rgb = PathSearchStats.modes[mode].color.match(/\w\w/g).map(value => parseInt(value, 16));
+        for (let i = 0; i < data.length; i += 4) if (rgb.every((value, c) => Math.abs(data[i + c] - value) < 4) && data[i + 3] > 200) return true;
+        return false;
+      });
+    }), "The actual curve contains each contributing engine's color");
+    await page.locator("#pathScoreHistory").focus(); await page.keyboard.press("Home");
+    assert.ok(await page.locator("#pathScoreReading").textContent());
+    await page.keyboard.press("End");
+    assert.match(await page.locator("#pathScoreReading").textContent(), /Boucle 1/);
     await page.screenshot({ path: path.join(output, "planner-batch-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
@@ -126,6 +147,7 @@ async function run() {
       await deliver(best); await phase(next);
     }
     assert.equal(await page.evaluate(() => selectedDmc), "321");
+    assert.equal(await page.locator('#pathGainRows [data-mode="adaptive"] td').first().textContent(), "-", "Color statistics never leak to the next color");
     assert.deepEqual(await page.evaluate(() => bestPathsByDmc["310"]), best);
     for (const next of ["adaptive", "points", "sections", "segments", "chains", "relay"]) {
       await deliver(second); await phase(next);
@@ -140,11 +162,13 @@ async function run() {
         "chains", "relay",
         "normal", "adaptive", "points", "sections", "segments", "chains", "relay",
         "normal", "adaptive", "points", "sections", "segments", "chains", "relay"]);
+    const completedStats = await page.evaluate(() => pathSearchStatsByDmc);
     await page.locator("#undoPathPointButton").click();
     assert.equal(await page.evaluate(() => batchPlan.current.phase), "relay");
     assert.equal(await page.evaluate(() => batchPlan.results.length), 2);
     await page.locator("#redoPathActionButton").click();
     assert.equal(await page.evaluate(() => batchPlan.results.length), 3);
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), completedStats, "Undo/redo restores exact attribution, not double-counted gains");
     await page.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["321"], results: [] }, 3); renderPathTool(); });
     await page.locator("#relayOptimizeButton").click(); await deliver(second);
     assert.equal(await page.evaluate(() => batchPlan.results.length), 0, "A manual engine cannot complete the batch");
@@ -162,6 +186,25 @@ async function run() {
     assert.equal(await page.evaluate(() => batchPlan.results.length), 1);
     assert.match(await page.locator("#batchStatus").textContent(), /1 couleur terminee.*cycle complet sans gain/);
     assert.deepEqual(errors, []);
+    await page.locator('#pathColorLegend [data-dmc="310"]').click();
+    const beforeSettings = await page.evaluate(() => pathSearchStatsByDmc);
+    assert.ok(await page.locator('#pathGainRows [data-mode="chains"] td').first().textContent() !== "-");
+    await page.evaluate(() => { beginPathEdit("Test sans modification"); finishPathEdit(); });
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), beforeSettings, "An unchanged manual action does not erase the measurements");
+    await page.locator("#cutThresholdInput").fill("8");
+    await page.locator("#cutThresholdInput").dispatchEvent("change");
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), {}, "A new objective cannot reuse gains measured with a different score");
+    await page.locator("#undoPathPointButton").click();
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), beforeSettings);
+    page.once("dialog", dialog => dialog.accept());
+    await page.locator("#clearPathButton").click();
+    assert.equal(await page.evaluate(() => pathSearchStatsByDmc["310"]), undefined);
+    await page.locator("#undoPathPointButton").click();
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), beforeSettings);
+    await page.evaluate(() => plannerSaveQueue); await page.reload();
+    await page.waitForFunction(() => !document.querySelector("main").inert);
+    await page.locator('[data-step="paths"]').click();
+    assert.deepEqual(await page.evaluate(() => pathSearchStatsByDmc), beforeSettings, "All color totals persist, including the finished ones");
 
     const realPage = await browser.newPage();
     realPage.on("pageerror", error => errors.push(error.message));

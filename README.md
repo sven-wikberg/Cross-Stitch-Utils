@@ -40,6 +40,14 @@ Chaque boucle est relancee tant qu'une passe apporte un gain global strict. Le *
 
 Arreter conserve le meilleur parcours et l'etat phase/passe/duo/cycle, y compris les deux bilans de score et apres rechargement. La phase interrompue est relancee depuis ce meilleur parcours avec les reglages actuellement selectionnes, sans reprendre l'etat interne du worker ; les couleurs deja terminees ne sont pas recalculees. Chaque phase reste annulable. Les brouillons de planification de version 2 conservent leur moteur en cours ; s'ils etaient dans les boucles, ils reprennent un duo complet depuis les chaines, en conservant le bilan du cycle. Les brouillons plus anciens incompatibles redemarrent au moteur 1 depuis le meilleur chemin conserve : la migration ne supprime jamais ce meilleur chemin. Modifier manuellement la couleur interrompue relance aussi sa sequence depuis les blocs ; lancer un moteur seul ne valide jamais tout le lot. Les formats et fichiers de sauvegarde de broderie ainsi que la progression de l'outil 3 ne sont pas modifies.
 
+### Gains par moteur
+
+Le panneau repliable **Gains par moteur** accompagne la grille de l'outil 2. Sa courbe colore chaque portion selon le moteur ou la boucle en cours, y compris les plateaux. Le tableau cumule le gain de score reel et le temps de recherche pour chacun des cinq moteurs, les deux boucles et la recherche approfondie. `-` indique un moteur non lance ; `0` indique un moteur lance sans gain. Le survol de la courbe ou les fleches du clavier donnent le moteur, le score et le gain du point observe.
+
+Les mesures sont propres a chaque couleur et restent continues entre les phases, les cycles et les relances manuelles. Seules les ameliorations globales strictes effectivement conservees sont creditees ; les apercus refuses, doublons et parcours partiels ne rapportent aucun gain. La construction du premier parcours fixe la reference, elle n'est pas comptee comme un gain depuis zero. Le temps correspond au temps ecoule pendant les recherches, hors pauses. Ces chiffres decrivent l'apport dans l'ordre reel d'execution, pas un classement independant des moteurs : un moteur peut preparer des ameliorations pour le suivant.
+
+Le bilan est conserve dans le brouillon local, y compris apres rechargement, et suit annuler/retablir. Une modification manuelle du parcours ou de ses contraintes commence un nouveau bilan pour cette couleur ; changer la distance de coupe recommence les bilans pour toutes les couleurs. L'import d'un autre projet repart aussi sans attribution ancienne. Les recherches faites avant cette fonctionnalite ne peuvent pas etre attribuees retroactivement. Pour rester leger, la courbe conserve au plus 400 points recents et compacte les plateaux ; les totaux cumules restent exacts. Aucun chemin supplementaire n'est conserve pour ces statistiques, et les fichiers exportes et sauvegardes de l'outil 3 sont inchanges.
+
 ## Outils envisages
 
 - Convertisseur d'image en grille de points.

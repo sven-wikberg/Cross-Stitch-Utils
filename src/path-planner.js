@@ -24,6 +24,8 @@ let viewportPattern = null, inspectionMode = "draw", comparisonMode = "after", v
 const comparisonPaths = new Map(), viewPointers = new Map();
 let overviewCache = null, inspectionLinks = null;
 const pathScoreHistory = document.querySelector("#pathScoreHistory");
+const pathGainRows = document.querySelector("#pathGainRows");
+const pathScoreReading = document.querySelector("#pathScoreReading");
 const pathWorkColor = document.querySelector("#pathWorkColor");
 const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
@@ -146,15 +148,17 @@ const FOLLOW_GAINS_STORAGE_KEY = "cross-stitch-path-follow-gains";
 let followPathGains = localStorage.getItem(FOLLOW_GAINS_STORAGE_KEY) === "true", followedPathImprovement = null;
 pathFollowGains.checked = followPathGains;
 let workColor = PathVisuals.workPalette(localStorage.getItem(WORK_COLOR_STORAGE_KEY)).color;
-let scoreHistory = [], scoreHistoryDmc = null;
+let scoreHistory = [], scoreChartPoints = [], scoreChartHover = null, scoreChartDmc = null;
 pathWorkColor.value = workColor;
 
 let storedState = migratePlannerState(loadStoredState());
+let pathSearchStatsByDmc = PathSearchStats.normalizeAll(storedState.pathSearchStatsByDmc);
 let loadedPattern = storedState.pattern;
 let pathsByDmc = storedState.pathsByDmc;
 let bestPathsByDmc = storedState.bestPathsByDmc;
 let bestPathConstraintsByDmc = storedState.bestPathConstraintsByDmc || {};
 let pathEditHistory = createPathEditHistory(storedState.editHistory);
+let pathEditPreservesSearchStats = false;
 let pathProgress = {
   load: Boolean(loadedPattern),
   paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, storedState.pathsByDmc),
@@ -174,6 +178,7 @@ let activePathOptimizerDeadlineTimer = null;
 let activePathOptimizerRunId = null;
 let activePathOptimizerDmc = null;
 let activePathOptimizerBatchJob = null;
+let activeSearchStartedAt = 0;
 let activePathOptimizerLastSavedAt = 0;
 let activePathOptimizerNeedsSave = false;
 let activePathOptimizerSnapshot = null;
@@ -202,7 +207,7 @@ function migratePlannerState(state) {
   }
   if (state?.pattern && state.pathObjectiveVersion !== PATH_OBJECTIVE_VERSION) {
     state = { ...state, pathObjectiveVersion: PATH_OBJECTIVE_VERSION,
-      editHistory: undefined, pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
+      editHistory: undefined, pathOptimizationBaselinesByDmc: {}, pathSearchStatsByDmc: {}, batchPlan: { pending: [], results: [] } };
   }
   if (!state?.pattern || state.pathSchemaVersion === 2) return state;
   const threshold = state.cutThreshold || 10, oldConstraints = state.constraintsByDmc || {};
@@ -216,7 +221,7 @@ function migratePlannerState(state) {
   }]));
   return { ...state, pathSchemaVersion: 2, pathsByDmc: paths, bestPathsByDmc: convert(state.bestPathsByDmc),
     editHistory: undefined, bestPathConstraintsByDmc: {}, constraintsByDmc: constraints,
-    pathOptimizationBaselinesByDmc: {}, batchPlan: { pending: [], results: [] } };
+    pathOptimizationBaselinesByDmc: {}, pathSearchStatsByDmc: {}, batchPlan: { pending: [], results: [] } };
 }
 
 function loadStoredState() {
@@ -246,6 +251,7 @@ function loadStoredState() {
         pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs),
         constraintsByDmc: parsed.constraintsByDmc || {},
         pathOptimizationBaselinesByDmc: parsed.pathOptimizationBaselinesByDmc || {},
+        pathSearchStatsByDmc: parsed.pathSearchStatsByDmc,
         batchPlan: parsed.batchPlan
       };
     }
@@ -270,6 +276,7 @@ function plannerDraft() {
     pathStagnationLimitMs,
     constraintsByDmc,
     batchPlan,
+    pathSearchStatsByDmc,
     pathOptimizationBaselinesByDmc
   };
 }
@@ -292,22 +299,28 @@ function savePathPlannerState() {
 
 function capturePathEdit(scope) {
   if (scope.type === "project") return plannerDraft();
-  if (scope.type === "settings") return { cutThreshold, pathOptimizationBaselinesByDmc, batchPlan };
+  if (scope.type === "settings") return { cutThreshold, pathOptimizationBaselinesByDmc, pathSearchStatsByDmc, batchPlan };
   return { path: pathsByDmc[scope.dmc] || [], constraints: constraintsByDmc[scope.dmc] || {},
-    baseline: pathOptimizationBaselinesByDmc[scope.dmc], batchPlan };
+    baseline: pathOptimizationBaselinesByDmc[scope.dmc], searchStats: pathSearchStatsByDmc[scope.dmc], batchPlan };
 }
 
-function beginPathEdit(label, scope = { type: "color", dmc: selectedDmc }) {
+function beginPathEdit(label, scope = { type: "color", dmc: selectedDmc }, preserveSearchStats = false) {
   inspectionLinks = null; pathInspection.textContent = "";
   if (scope.type === "color") comparisonPaths.delete(scope.dmc);
   else comparisonPaths.clear();
   comparisonMode = "after";
   pathEditHistory.begin(scope, label, capturePathEdit(scope));
+  pathEditPreservesSearchStats = preserveSearchStats;
 }
 
 function finishPathEdit() {
-  const scope = pathEditHistory.pending?.scope;
+  const { scope, before } = pathEditHistory.pending || {};
   if (!scope) return;
+  if (!pathEditPreservesSearchStats) {
+    if (scope.type === "settings" && before.cutThreshold !== cutThreshold) pathSearchStatsByDmc = {};
+    if (scope.type === "color" && (JSON.stringify(before.path) !== JSON.stringify(pathsByDmc[scope.dmc] || [])
+      || JSON.stringify(before.constraints) !== JSON.stringify(constraintsByDmc[scope.dmc] || {}))) delete pathSearchStatsByDmc[scope.dmc];
+  }
   if (scope.type === "color") rememberBestPath(scope.dmc, pathsByDmc[scope.dmc]);
   pathEditHistory.commit(capturePathEdit(scope));
 }
@@ -332,6 +345,7 @@ function applyPlannerDraft(state) {
   constraintsByDmc = state.constraintsByDmc || {};
   batchPlan = PathBatchPlan.normalize(state.batchPlan);
   pathOptimizationBaselinesByDmc = state.pathOptimizationBaselinesByDmc || {};
+  pathSearchStatsByDmc = PathSearchStats.normalizeAll(state.pathSearchStatsByDmc);
 }
 
 function travelPathHistory(direction) {
@@ -343,6 +357,7 @@ function travelPathHistory(direction) {
   else if (scope.type === "settings") {
     cutThreshold = before.cutThreshold;
     pathOptimizationBaselinesByDmc = before.pathOptimizationBaselinesByDmc;
+    pathSearchStatsByDmc = PathSearchStats.normalizeAll(before.pathSearchStatsByDmc);
     batchPlan = before.batchPlan;
   } else {
     selectedDmc = scope.dmc;
@@ -350,13 +365,14 @@ function travelPathHistory(direction) {
     constraintsByDmc[selectedDmc] = before.constraints;
     if (before.baseline === undefined) delete pathOptimizationBaselinesByDmc[selectedDmc];
     else pathOptimizationBaselinesByDmc[selectedDmc] = before.baseline;
+    if (before.searchStats) pathSearchStatsByDmc[selectedDmc] = PathSearchStats.normalize(before.searchStats);
+    else delete pathSearchStatsByDmc[selectedDmc];
     batchPlan = before.batchPlan;
   }
   batchRunning = false;
   pathProgress = { load: Boolean(loadedPattern), paths: Boolean(loadedPattern) && areAllColorPathsComplete(loadedPattern, pathsByDmc), export: false };
   activePathStep = loadedPattern ? "paths" : "load";
   pathConstructionSummaries = {};
-  scoreHistory = []; scoreHistoryDmc = null;
   comparisonPaths.clear(); comparisonMode = "after";
   clearPathImprovement();
   savePathPlannerState();
@@ -645,35 +661,114 @@ function selectedPathDrawingColors() {
 }
 
 function trackSearchScore(snapshot) {
-  if (!Number.isFinite(snapshot.metrics?.score) || snapshot.stage === "construction") return;
-  const score = snapshot.metrics.score, last = scoreHistory.at(-1);
-  if (last && score >= last.score - 1e-8) return;
-  scoreHistory.push({ elapsed: snapshot.elapsedMs || 0, score });
-  if (scoreHistory.length > 240) scoreHistory = scoreHistory.filter((_, i) => i === 0 || i % 2 || i === scoreHistory.length - 1);
+  const record = pathSearchStatsByDmc[activePathOptimizerDmc];
+  if (!record?.active) return;
+  const previousScore = record.score;
+  PathSearchStats.update(record, {
+    score: activePathOptimizerBestPath.length ? snapshot.metrics?.score : null,
+    initialScore: comparisonPaths.get(activePathOptimizerDmc)?.metrics.score,
+    elapsedMs: Math.max(snapshot.elapsedMs || 0, performance.now() - activeSearchStartedAt)
+  });
+  if (record.score !== previousScore) activePathOptimizerNeedsSave = true;
+}
+
+function formatSearchGain(gain) {
+  if (!gain) return "0";
+  return gain < 0.01 ? "<0,01" : `+${gain.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}`;
 }
 
 function renderScoreHistory() {
-  const context = pathScoreHistory.getContext("2d"), width = pathScoreHistory.width, height = pathScoreHistory.height;
+  const record = pathSearchStatsByDmc[selectedDmc];
+  scoreHistory = record?.history || [];
+  if (scoreChartDmc !== selectedDmc) { scoreChartHover = null; scoreChartDmc = selectedDmc; }
+  const width = Math.max(120, Math.round(pathScoreHistory.getBoundingClientRect().width)), height = 170;
+  const scale = Math.min(window.devicePixelRatio || 1, 2);
+  if (pathScoreHistory.width !== Math.round(width * scale) || pathScoreHistory.height !== Math.round(height * scale)) {
+    pathScoreHistory.width = Math.round(width * scale); pathScoreHistory.height = Math.round(height * scale);
+  }
+  const context = pathScoreHistory.getContext("2d");
+  context.setTransform(scale, 0, 0, scale, 0, 0);
   context.clearRect(0, 0, width, height);
-  const history = scoreHistoryDmc === selectedDmc ? scoreHistory : [];
+  const history = scoreHistory;
+  scoreChartPoints = [];
+  document.querySelector("#pathScoreChartLabel").textContent = record?.truncated ? "Evolution recente du score" : "Evolution du score";
   context.strokeStyle = "#dce5e3"; context.lineWidth = 1;
-  context.beginPath(); context.moveTo(3, height - 4); context.lineTo(width - 3, height - 4); context.stroke();
+  const left = 55, right = width - 8, top = 12, bottom = height - 24;
+  context.beginPath(); context.moveTo(left, top); context.lineTo(left, bottom); context.lineTo(right, bottom); context.stroke();
   pathScoreHistory.setAttribute("aria-label", "Evolution du meilleur score");
-  if (!history.length) return;
+  if (!history.length) { pathScoreReading.textContent = record?.active ? "Construction du premier parcours" : "Aucune recherche pour cette couleur"; return; }
   const max = history[0].score, min = history.at(-1).score, span = Math.max(max - min, 1e-8);
   const elapsed = Math.max(1, history.at(-1).elapsed - history[0].elapsed);
-  const points = history.map(p => ({ x: 4 + (width - 8) * (p.elapsed - history[0].elapsed) / elapsed,
-    y: max === min ? height / 2 : 4 + (height - 8) * (max - p.score) / span }));
-  context.strokeStyle = "#008b66"; context.lineWidth = 2.5; context.lineJoin = "round";
-  context.beginPath(); context.moveTo(points[0].x, points[0].y);
-  points.slice(1).forEach(point => context.lineTo(point.x, point.y)); context.stroke();
-  const last = points.at(-1); context.fillStyle = "#008b66";
-  context.beginPath(); context.arc(last.x, last.y, 3, 0, Math.PI * 2); context.fill();
+  scoreChartPoints = history.map(p => ({ x: left + (right - left) * (p.elapsed - history[0].elapsed) / elapsed,
+    y: max === min ? (top + bottom) / 2 : top + (bottom - top) * (max - p.score) / span }));
+  context.font = "11px system-ui"; context.fillStyle = "#677573"; context.textAlign = "right";
+  context.fillText(formatMetric(max), left - 7, top + 4);
+  if (max !== min) context.fillText(formatMetric(min), left - 7, bottom + 3);
+  context.textAlign = "left"; context.fillText(formatAlgorithmTime(history[0].elapsed), left, height - 5);
+  context.textAlign = "right"; context.fillText(formatAlgorithmTime(history.at(-1).elapsed), right, height - 5);
+  context.lineWidth = 2.5; context.lineJoin = "round";
+  scoreChartPoints.forEach((point, index) => {
+    if (!index) return;
+    const previous = scoreChartPoints[index - 1];
+    context.strokeStyle = PathSearchStats.modes[history[index].mode]?.color || "#677573";
+    context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(point.x, point.y); context.stroke();
+  });
+  const index = scoreChartHover === null ? history.length - 1 : Math.min(scoreChartHover, history.length - 1);
+  const point = scoreChartPoints[index], entry = history[index], mode = PathSearchStats.modes[entry.mode];
+  context.fillStyle = mode?.color || "#677573";
+  if (scoreChartHover !== null) {
+    context.strokeStyle = "#acb9b6"; context.lineWidth = 1; context.setLineDash([3, 3]);
+    context.beginPath(); context.moveTo(point.x, top); context.lineTo(point.x, bottom); context.stroke(); context.setLineDash([]);
+  }
+  context.beginPath(); context.arc(point.x, point.y, 3.5, 0, Math.PI * 2); context.fill();
+  pathScoreReading.textContent = `${mode?.label || "Debut"} - ${formatAlgorithmTime(entry.elapsed)} - score ${formatMetric(entry.score)}${entry.gain > 0 ? ` - gain ${formatSearchGain(entry.gain)}` : ""}`;
   pathScoreHistory.setAttribute("aria-label", `Meilleur score : ${formatMetric(max)} vers ${formatMetric(min)}`);
 }
 
+function renderSearchGains() {
+  const record = pathSearchStatsByDmc[selectedDmc];
+  const gain = Object.values(record?.totals || {}).reduce((sum, total) => sum + total.gain, 0);
+  document.querySelector("#pathGainTotal").textContent = record ? `${formatSearchGain(gain)} au total` : "";
+  if (!pathGainRows.children.length) {
+    for (const [mode, definition] of Object.entries(PathSearchStats.modes)) {
+      const row = document.createElement("tr"); row.dataset.mode = mode;
+      const label = document.createElement("th"); label.scope = "row";
+      const key = document.createElement("span"); key.className = "path-gain-key";
+      key.style.setProperty("--engine-color", definition.color); key.textContent = definition.short;
+      label.append(key, document.createTextNode(definition.label.replace(/^Moteur \d : |^Boucle \d : /, "").replace("Optimisation ", "")));
+      row.append(label, document.createElement("td"), document.createElement("td")); pathGainRows.append(row);
+    }
+  }
+  for (const row of pathGainRows.children) {
+    const mode = row.dataset.mode, total = record?.totals[mode], active = record?.active?.mode === mode && pathAlgorithmRunning;
+    row.classList.toggle("active", active); row.classList.toggle("unused", !total);
+    row.title = `${PathSearchStats.modes[mode].label} - ${total ? `${total.runs} passage(s)${active ? " - en cours" : ""}` : "Non lance"}`;
+    row.cells[1].textContent = total ? formatSearchGain(total.gain) : "-";
+    row.cells[2].textContent = total ? formatAlgorithmTime(total.elapsedMs) : "-";
+  }
+}
+
+pathScoreHistory.addEventListener("pointermove", event => {
+  if (!scoreChartPoints.length) return;
+  const x = event.clientX - pathScoreHistory.getBoundingClientRect().left;
+  scoreChartHover = scoreChartPoints.reduce((best, point, index) =>
+    Math.abs(point.x - x) < Math.abs(scoreChartPoints[best].x - x) ? index : best, 0);
+  renderScoreHistory();
+});
+pathScoreHistory.addEventListener("pointerleave", () => { scoreChartHover = null; renderScoreHistory(); });
+pathScoreHistory.addEventListener("keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !scoreChartPoints.length) return;
+  event.preventDefault();
+  const last = scoreChartPoints.length - 1;
+  scoreChartHover = event.key === "Home" ? 0 : event.key === "End" ? last
+    : Math.max(0, Math.min(last, (scoreChartHover ?? last) + (event.key === "ArrowLeft" ? -1 : 1)));
+  renderScoreHistory();
+});
+document.querySelector("#pathGainDetails").addEventListener("toggle", renderScoreHistory);
+
 function renderSearchVisuals() {
   renderScoreHistory();
+  renderSearchGains();
 }
 
 function captureComparison(dmc, path) {
@@ -1512,7 +1607,7 @@ patternJsonFileInput.addEventListener("change", async () => {
 
   try {
     const imported = await readSelectedPathInput(file);
-    scoreHistory = []; scoreHistoryDmc = null;
+    pathSearchStatsByDmc = {};
     loadedPattern = imported.pattern;
     pathsByDmc = imported.pathsByDmc;
     constraintsByDmc = imported.constraintsByDmc || {};
@@ -1750,9 +1845,8 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${chains ? " par reinsertion de chaines" : segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`);
+  beginPathEdit(`Optimisation${chains ? " par reinsertion de chaines" : segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`, undefined, true);
   if (!batchJob && batchPlan.current?.dmc === dmc) batchPlan.current = null;
-  scoreHistory = []; scoreHistoryDmc = dmc;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
   delete pathConstructionSummaries[dmc];
@@ -1767,7 +1861,9 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
   }
   const startingPath = bestCompletePathForColor(dmc);
   captureComparison(dmc, startingPath);
-  if (startingPath.length) trackSearchScore({ stage: "search", elapsedMs: 0, metrics: pathPerformanceMetrics(startingPath, dmc) });
+  pathSearchStatsByDmc[dmc] = PathSearchStats.start(pathSearchStatsByDmc[dmc], mode,
+    startingPath.length ? pathPerformanceMetrics(startingPath, dmc).score : null);
+  scoreChartHover = null;
   if (pathOptimizationBaselinesByDmc[dmc] === undefined && startingPath.length > 1) {
     pathOptimizationBaselinesByDmc[dmc] = pathPerformanceMetrics(startingPath, dmc).score;
   }
@@ -1781,6 +1877,7 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
   activePathOptimizerWorker = worker;
   activePathOptimizerRunId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   activePathOptimizerDmc = dmc;
+  activeSearchStartedAt = performance.now();
   activePathOptimizerBatchJob = batchJob;
   activePathOptimizerLastSavedAt = 0;
   activePathOptimizerNeedsSave = true;
@@ -1948,8 +2045,11 @@ function applyAdvancedPathSnapshot(dmc, snapshot) {
   }
   if (baselineChanged && !pathChanged) renderPathMetrics();
   if (!pathChanged) renderSearchVisuals();
-  if (activePathOptimizerNeedsSave && snapshot.elapsedMs - activePathOptimizerLastSavedAt >= 3000) {
-    activePathOptimizerLastSavedAt = snapshot.elapsedMs;
+  const elapsedMs = pathSearchStatsByDmc[dmc]?.active?.elapsedMs || snapshot.elapsedMs || 0;
+  // Clock-only updates need a sparse checkpoint, not a full project write on every preview.
+  if ((activePathOptimizerNeedsSave || elapsedMs - activePathOptimizerLastSavedAt >= 60000)
+      && elapsedMs - activePathOptimizerLastSavedAt >= 3000) {
+    activePathOptimizerLastSavedAt = elapsedMs;
     activePathOptimizerNeedsSave = false;
     savePathPlannerState();
   }
@@ -1971,6 +2071,7 @@ function finishAdvancedPathSearch(label, snapshot, completed) {
     label = "Optimisation interrompue : aucun parcours complet valide";
   }
   const progress = completed ? 100 : finalSnapshot?.progress || 0;
+  PathSearchStats.finish(pathSearchStatsByDmc[finishedDmc], Math.max(finalSnapshot?.elapsedMs || 0, performance.now() - activeSearchStartedAt));
   if (activePathOptimizerWorker) {
     activePathOptimizerWorker.terminate();
   }
@@ -2314,7 +2415,7 @@ resetPathToolButton.addEventListener("click", () => {
   if (pathAlgorithmRunning || !loadedPattern) return;
   if (!confirm("Reinitialiser l'outil 2 et fermer le projet actuel ? Cette action pourra etre annulee. Les fichiers exportes et la progression de l'outil 3 ne seront pas touches.")) return;
   beginPathEdit("Reinitialiser le projet", { type: "project" });
-  scoreHistory = []; scoreHistoryDmc = null;
+  pathSearchStatsByDmc = {};
   clearPendingOptimizerSnapshot();
   clearPathImprovement();
   if (activePathOptimizerWorker) {

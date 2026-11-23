@@ -42,6 +42,14 @@ async function run() {
     await page.locator("#pathFollowGains").check(); await frame();
     assert.deepEqual(await camera(), initialCamera, "Enabling follow without a gain does not move the camera");
     assert.ok(await page.locator(".path-view-button img").evaluateAll(images => images.every(img => img.complete && img.naturalWidth > 0)));
+    await page.evaluate(() => {
+      const create = window.createPathOptimizerWorker;
+      window.createPathOptimizerWorker = () => {
+        const worker = create(), post = worker.postMessage.bind(worker);
+        worker.postMessage = message => post({ ...message, stagnationLimitMs: 250 });
+        return worker;
+      };
+    });
     await page.locator("#optimizedPathButton").click();
     await page.waitForFunction(() => !pathAlgorithmRunning && comparisonPaths.has("310"));
     const optimized = await page.evaluate(() => currentPath());
