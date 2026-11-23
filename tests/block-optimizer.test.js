@@ -839,3 +839,15 @@ test("search no longer computes or transports orange focus regions", () => {
   assertPath(result, cells);
   close(result.metrics.score, cells.length * 2 - 1, "visual reporting preserves the known optimum");
 });
+
+test("inactivity mode continues small-block enumeration until the selected idle limit", () => {
+  const points = [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }];
+  const legacy = optimizer(1).optimizePath({ points, cutThreshold: 3, stagnationLimitMs: 1000 });
+  assert.equal(legacy.reason, "exhaustive"); assert.ok(legacy.lastImprovementMs < 1000);
+  const result = optimizer(1).optimizePath({ points, cutThreshold: 3, stagnationLimitMs: 1000, stopAfterInactivity: true });
+  assert.equal(result.reason, "inactivity");
+  assert.ok(result.lastImprovementMs >= 1000);
+  assert.ok(result.attempts > legacy.attempts);
+  assert.ok(result.metrics.score <= legacy.metrics.score + 1e-8);
+  assertPath(result, points, {}, 3);
+});

@@ -3,6 +3,10 @@
 Ce moteur ameliore un parcours complet existant. Il ne reconstruit pas les
 blocs, ne remplace aucun autre moteur et ne lance pas la recherche de relais.
 Le meilleur parcours compatible de la couleur est son point de depart.
+Il se lance seul ou comme cinquieme phase du [cycle automatique commun](../README.md#cycle-automatique)
+a la couleur actuelle et a toutes les couleurs. Les moteurs 1 a 5 sont suivis
+des boucles 1 (chaines) et 2 (relais) ; la recherche LNS approfondie de 1 heure
+reste une commande separee, jamais automatisee.
 
 ## Recherche
 
@@ -57,26 +61,41 @@ Ces essais ne sont jamais affiches comme meilleur chemin ni sauvegardes.
 ## Interface et sauvegardes
 
 Le bouton `Moteur 5 : raccordements` est disponible avec un parcours complet.
-Le budget commun des moteurs 2 a 6 est de 1 minute, 10 minutes ou 1 heure,
-preparation comprise. Une derniere passe globale sur les sens est toujours
-effectuee, meme si le budget de recherche vient de se terminer.
+Le selecteur commun aux moteurs 1 a 5, `Arret sans amelioration`, propose
+10 secondes, 30 secondes, 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes.
+Seule une baisse du meilleur score global reel superieure a `1e-8` remet ce
+delai a zero : un gain local sur le parcours de travail ou une diversification
+ne suffit pas. L'interface n'impose aucun plafond de temps total et transmet
+`stopAfterInactivity: true` et `stagnationLimitMs`, sans `totalLimitMs`.
+Une derniere passe globale sur les sens est toujours effectuee a la fin normale,
+meme si l'echeance de recherche vient d'etre atteinte.
 
-Le suivi affiche le raccordement examine, le nombre de segments mobiles, les
-diagonales concernees et les reorganisations testees. Le rang porte sur le
-parcours de travail courant et peut repartir apres un gain. Il ne represente
-pas un pourcentage de proximite avec l'optimum.
+Le mode API a budget fixe `totalLimitMs` reste disponible lorsque
+`stopAfterInactivity` est absent ou faux, notamment pour les tests et benchmarks.
+Il inclut la preparation ; la passe finale peut le depasser legerement. La
+mesure historique ci-dessous garde son budget de 60 secondes et ne decrit pas
+la nouvelle regle d'arret de l'interface.
+
+Le suivi affiche le delai sans amelioration, le raccordement examine, le nombre
+de segments mobiles, les diagonales concernees et les reorganisations testees.
+Le rang porte sur le parcours de travail courant et peut repartir apres un gain.
+Il ne represente pas un pourcentage de proximite avec l'optimum.
 
 Les gains, surbrillances, courbe, suivi automatique optionnel, comparaison,
 arret, annulation et restauration du meilleur utilisent les mecanismes communs.
 Les messages sont limites a environ un toutes les 150 ms ; le dessin reste
 regroupe toutes les 750 ms. Les formats et fichiers de sauvegarde ne changent pas.
+Dans le cycle automatique, la pause et le rechargement conservent phase, passe
+et cycle ; la phase interrompue repart du meilleur parcours compatible et reste
+annulable. La progression de l'outil 3 n'est jamais modifiee.
 
 ## Verification
 
 - `node --test tests/segment-optimizer.test.js` : oracles exhaustifs, croisements
   de dependances, segments de longueurs differentes, plateau des mouvements
   simples, contraintes, delai, validite et monotonie des meilleurs parcours.
-- `node tests/planner-segments.test.js` avec Playwright : vrai worker, gains,
+- `node tests/planner-segments.test.js` avec Playwright : vrai worker, inactivite
+  commune, requete sans budget total, gains,
   rendu desktop/mobile, arret, annulation, meilleur parcours et rechargement.
 - `BENCHMARK_ENGINES=segments` active ce moteur dans
   `tests/points-quality-benchmark.js` ; les donnees sources ne sont jamais ecrites.

@@ -93,6 +93,19 @@ test("candidate collection can be interrupted without returning a truncated neig
   const search = make(() => 10), state = search.context(model.expandCells(points, 10), 10);
   assert.equal(search.destinations(state, 400, 402, 1), null);
 });
+
+test("exhaustive chain mode ignores the old time budget and ends on a full no-gain scan", () => {
+  let time = 0;
+  const search = make(() => time++), points = fixtures.timerRecovery, initialPath = model.expandCells(points, 3);
+  const result = search.optimizePath({ points, initialPath, cutThreshold: 3, untilStable: true, totalLimitMs: 1 }, snapshot => {
+    assert.equal(snapshot.untilStable, true); assert.equal(snapshot.totalLimitMs, null);
+    assert.ok(Number.isFinite(snapshot.progress));
+  });
+  assert.ok(["exhausted", "lower-bound"].includes(result.reason));
+  assert.ok(result.elapsedMs > 1); assert.ok(result.attempts > 0);
+  const again = search.optimizePath({ points, initialPath: result.path, cutThreshold: 3, untilStable: true });
+  assert.equal(again.improvements, 0); assert.equal(model.validateRoute(result.path, points), "");
+});
 test("empty, locked, minimum-score, zero-budget and incomplete routes are handled safely", () => {
   const search = make(), points = fixtures.timerRecovery, path = model.expandCells(points, 3);
   assert.equal(search.optimizePath({ points: [], initialPath: [], totalLimitMs: 1 }).metrics.score, 0);

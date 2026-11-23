@@ -116,3 +116,97 @@ test("empty, single-cross, locked and expired inputs never replace a complete ro
   assert.equal(model.validateRoute(result.path, points), ""); assert.ok(result.metrics.score <= score(initialPath));
   assert.ok(result.elapsedMs < 1500); assert.equal(JSON.stringify(initialPath), before);
 });
+
+test("inactivity follows only accepted global gains across point search and section refinement", () => {
+  for (const totalLimitMs of [undefined, 1]) {
+    let now = 0; const orientations = [], snapshots = [], limit = 1000;
+    const tracked = { ...model, orient(...args) { orientations.push(now); return model.orient(...args); } };
+    const points = fixtures.interleaved, initialPath = model.expandCells(points, 3);
+    initialPath[10].cutBefore = true;
+    const constraints = { lockedPrefix: initialPath.slice(0, 3), start: initialPath[0], forcedCuts: [initialPath[10]] };
+    const before = JSON.stringify({ initialPath, constraints });
+    const search = createSectionOptimizer(tracked, createPointOrderSearch, createOrthogonalPathBuilder, () => ++now, seeded());
+    const result = search.optimizePath({ points, initialPath, constraints, cutThreshold: 3, stopAfterInactivity: true,
+      stagnationLimitMs: limit, ...(totalLimitMs === undefined ? {} : { totalLimitMs }) }, s => snapshots.push(s));
+    let previousScore = score(initialPath), previousGain = 0;
+    for (const s of [...snapshots, result]) {
+      assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
+      assert.equal(s.stagnationLimitMs, limit);
+      assert.equal(s.remainingMs, Math.max(0, limit - s.lastImprovementMs));
+      assert.equal(s.progress, s.stage === "complete" ? 100 : Math.min(100, s.lastImprovementMs / limit * 100));
+      const gainAt = s.elapsedMs - s.lastImprovementMs;
+      if (s.metrics.score < previousScore - 1e-8) {
+        assert.ok(gainAt > previousGain); assert.ok(s.lastImprovementMs <= 1); assert.ok(s.path);
+      } else assert.equal(gainAt, previousGain, "point-score gains and ties must not reset inactivity");
+      if (s.path) {
+        assert.equal(model.validateRoute(s.path, points), ""); assert.ok(model.satisfiesConstraints(s.path, constraints));
+        close(s.metrics.score, score(s.path)); assert.ok(s.metrics.score <= previousScore + 1e-8);
+      }
+      previousScore = s.metrics.score; previousGain = gainAt;
+    }
+    assert.ok(result.improvements > 0); assert.ok(result.sectionSearch.pointEvaluations > 0);
+    assert.ok(result.sectionSearch.refinements > 0); assert.ok(result.sectionSearch.restarts > 0);
+    assert.ok(result.elapsedMs > limit); assert.ok(result.lastImprovementMs >= limit);
+    assert.ok(result.lastImprovementMs < limit + 30); assert.equal(result.reason, "inactivity");
+    assert.ok(orientations.at(-1) - 1 >= previousGain + limit, "global orientation still runs after expiry");
+    assert.equal(JSON.stringify({ initialPath, constraints }), before);
+  }
+});
+
+test("a final orientation gain resumes inactivity search but legacy mode finishes once", () => {
+  for (const stopAfterInactivity of [false, true]) {
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }];
+    const initialPath = points.flatMap(p => ["lower", "upper"].map(diagonal => ({ ...p, diagonal, direction: 1 })));
+    initialPath[1].direction = -1;
+    let now = 0, orientations = 0, resumed = false; const snapshots = [], limit = 100;
+    const clock = () => resumed ? ++now : now;
+    const tracked = { ...model, orient(...args) {
+      orientations++;
+      return model.orient(...args);
+    } };
+    const search = createSectionOptimizer(tracked, createPointOrderSearch, createOrthogonalPathBuilder, clock, seeded());
+    const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity,
+      stagnationLimitMs: limit, totalLimitMs: limit }, s => {
+      snapshots.push(s);
+      if (s.path && !s.improvements) now = limit + 1;
+      if (s.improvements) resumed = true;
+    });
+    const gain = snapshots.find(s => s.improvements);
+    assert.ok(gain); assert.equal(gain.lastImprovementMs, 0);
+    assert.equal(gain.remainingMs, stopAfterInactivity ? limit : 0);
+    assert.equal(gain.progress, stopAfterInactivity ? 0 : 100);
+    assert.equal(gain.sectionSearch.refinements, 0, "the first gain comes only from final orientation");
+    assert.ok(result.metrics.score < score(initialPath)); assert.equal(result.stopAfterInactivity, stopAfterInactivity);
+    if (stopAfterInactivity) {
+      assert.ok(result.sectionSearch.refinements > 0, "main search resumes after the orientation gain");
+      assert.ok(orientations > 1); assert.equal(result.reason, "inactivity");
+      assert.ok(result.lastImprovementMs >= limit); assert.ok(result.elapsedMs >= 2 * limit);
+      assert.equal(result.remainingMs, 0); assert.equal(snapshots.at(-1).remainingMs, 0);
+    } else {
+      assert.equal(result.sectionSearch.refinements, 0); assert.equal(orientations, 1);
+      assert.equal(result.reason, "budget"); assert.ok(result.lastImprovementMs < limit);
+    }
+  }
+});
+
+test("stagnation options alone do not change the legacy total budget", () => {
+  let now = 0;
+  const points = fixtures.interleaved, initialPath = model.expandCells(points, 3);
+  const result = engine(() => ++now).optimizePath({ points, initialPath, cutThreshold: 3, totalLimitMs: 1000, stagnationLimitMs: 1 });
+  assert.equal(result.stopAfterInactivity, false); assert.equal(result.totalLimitMs, 1000);
+  assert.equal(result.reason, "budget"); assert.equal(result.remainingMs, 0);
+  assert.ok(result.elapsedMs >= 1000 && result.elapsedMs < 1030);
+});
+
+test("failed conversions keep the complete incumbent and retry until inactivity expires", () => {
+  let now = 0;
+  const points = fixtures.interleaved, initialPath = model.orient(model.expandCells(points, 3), 3, {}, true);
+  const noVariants = (...args) => ({ ...createOrthogonalPathBuilder(...args), orientUnitPath: () => null });
+  const noPointCandidates = () => ({ optimizePath: () => ({ route: points.map((_, i) => i) }) });
+  const search = createSectionOptimizer(model, noPointCandidates, noVariants, () => ++now, seeded());
+  const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity: true, stagnationLimitMs: 1000 });
+  assert.equal(result.sectionSearch.completed, 0); assert.ok(result.sectionSearch.refinements > 0);
+  assert.equal(result.improvements, 0); assert.deepEqual(result.path, initialPath);
+  assert.ok(result.lastImprovementMs >= 1000 && result.lastImprovementMs < 1030);
+  assert.equal(result.reason, "inactivity"); assert.equal(result.remainingMs, 0);
+});

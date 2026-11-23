@@ -24,28 +24,37 @@ async function run() {
     await page.locator("#patternJsonFile").setInputFiles({ name: "sections.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
     await page.waitForFunction(() => loadedPattern?.project.name === "Parcours par sous-sections");
     const initial = await page.evaluate(() => currentPath());
+    assert.equal(await page.locator("#adaptiveSearchBudget").count(), 0);
+    assert.equal(await page.locator("#pathStagnationLimit").inputValue(), "60000");
     await page.evaluate(() => {
-      window.sectionsReports = []; window.sectionsBudget = null;
+      window.sectionsReports = []; window.sectionsInactivity = null;
       const create = window.createSectionOptimizerWorker;
       window.createSectionOptimizerWorker = () => {
         const worker = create(), post = worker.postMessage.bind(worker);
-        worker.postMessage = message => { window.sectionsPosted = message; post({ ...message, totalLimitMs: sectionsBudget || message.totalLimitMs }); };
+        worker.postMessage = message => { window.sectionsPosted = message; post({ ...message, stagnationLimitMs: sectionsInactivity ?? message.stagnationLimitMs }); };
         worker.addEventListener("message", event => sectionsReports.push(event.data));
         return worker;
       };
     });
-    await page.locator("#adaptiveSearchBudget").selectOption("60000");
+    await page.locator("#pathStagnationLimit").selectOption("30000");
     await page.locator("#sectionsOptimizeButton").click();
     await page.waitForFunction(() => activePathOptimizerSnapshot?.sectionSearch?.connections > 0 && pathImprovement && scoreHistory.length > 1);
-    assert.equal(await page.evaluate(() => sectionsPosted.totalLimitMs), 60000);
-    for (const id of ["sectionsOptimizeButton", "pointsOptimizeButton", "adaptiveOptimizeButton", "adaptiveSearchBudget", "optimizedPathButton", "deepOptimizeButton"]) {
+    const posted = await page.evaluate(() => sectionsPosted);
+    assert.equal(posted.stopAfterInactivity, true);
+    assert.equal(posted.stagnationLimitMs, 30000);
+    assert.equal(Object.hasOwn(posted, "totalLimitMs"), false);
+    assert.deepEqual(posted.initialPath, initial);
+    assert.equal(posted.cutThreshold, 3);
+    assert.deepEqual(posted.constraints, { forcedCuts: [], lockedPrefix: [] });
+    assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
+    for (const id of ["sectionsOptimizeButton", "pointsOptimizeButton", "adaptiveOptimizeButton", "pathStagnationLimit", "optimizedPathButton", "deepOptimizeButton", "batchOptimizeButton", "currentColorOptimizeButton"]) {
       assert.ok(await page.locator(`#${id}`).isDisabled());
     }
     assert.ok(await page.locator("#pathSectionsMetrics").isVisible());
     assert.equal(await page.locator("#pathPointsMetrics").isVisible(), false);
     assert.equal(await page.locator("#pathLnsMetrics").isVisible(), false);
-    assert.equal(await page.locator("#pathAlgorithmClockLabel").textContent(), "Temps restant");
-    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "60000");
+    assert.match(await page.locator("#pathAlgorithmClockLabel").textContent(), /inactivit|sans amelioration/i);
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "30000");
     assert.ok(Number(await page.locator("#pathSectionConnections").textContent()) > 0);
     await page.screenshot({ path: path.join(output, "planner-sections-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -62,11 +71,14 @@ async function run() {
     await page.locator("#undoPathPointButton").click(); assert.deepEqual(await page.evaluate(() => currentPath()), initial);
     assert.deepEqual(await page.evaluate(() => bestPathsByDmc["310"]), stopped);
     await page.locator("#restoreBestPathButton").click(); assert.deepEqual(await page.evaluate(() => currentPath()), stopped);
-    await page.evaluate(() => { sectionsBudget = 500; sectionsReports = []; });
+    await page.evaluate(() => { sectionsInactivity = 500; sectionsReports = []; });
     await page.locator("#sectionsOptimizeButton").click();
     await page.waitForFunction(() => !pathAlgorithmRunning && sectionsReports.some(s => s.type === "complete"));
     const result = await page.evaluate(() => sectionsReports.at(-1));
-    assert.equal(result.totalLimitMs, 500); assert.ok(result.sectionSearch.refinements > 0);
+    assert.equal(result.stopAfterInactivity, true);
+    assert.equal(result.stagnationLimitMs, 500);
+    assert.notEqual(result.reason, "time-limit");
+    assert.ok(result.sectionSearch.refinements > 0);
     assert.ok(result.metrics.score <= model.metrics(stopped, 3, true).score + 1e-8);
     let previous = model.metrics(stopped, 3, true).score;
     for (const snapshot of await page.evaluate(() => sectionsReports.filter(s => s.path))) {
@@ -80,7 +92,7 @@ async function run() {
     await page.locator('[data-step="paths"]').click();
     assert.equal(model.validateRoute(await page.evaluate(() => currentPath()), points), "");
     assert.deepEqual(errors, []);
-    console.log("sections planner passed: real worker, global gains, feedback, desktop/mobile, stop, undo, recover best, completion, reload");
+    console.log("sections planner passed: real worker, inactivity, global gains, feedback, desktop/mobile, stop, undo, recover best, completion, reload");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

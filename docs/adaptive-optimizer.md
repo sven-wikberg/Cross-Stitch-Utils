@@ -4,15 +4,21 @@ Ce moteur reste independant du mode blocs et du mode approfondi existants. Il
 reutilise leur modele de couture et leurs primitives verifiees, mais recherche
 directement un ordre de diagonales : les blocs ne sont pas des contraintes
 permanentes. Il ne change aucun format de pattern, chemin ou progression.
+Il se lance seul ou comme deuxieme phase du [cycle automatique commun](../README.md#cycle-automatique),
+entre les moteurs 1 (blocs) et 3 (points puis diagonales). L'interface distingue
+trois categories : les cinq moteurs, les deux boucles et la recherche LNS
+approfondie de 1 heure ; seule cette derniere est exclue du cycle automatique.
 
 ## Les six etapes
 
 1. **Constructions initiales.** Le chemin charge est toujours candidat. Quatre
    constructions utilisent les composantes strictement orthogonales, avec des
    ordres et des entrees differents. Une courte recherche du moteur blocs fournit
-   un candidat supplementaire (budget indicatif de 10 %, plafonne a 5 secondes;
-   sa preparation peut depasser cette part, mais reste bornee par le budget
-   total). Ces departs sont compares avec le meme score; seul le meilleur est publie.
+   un candidat supplementaire (duree indicative de 10 % du delai d'inactivite
+   choisi, plafonnee a 5 secondes ; en mode API a budget fixe, cette part est
+   calculee sur le budget total). Sa preparation peut depasser cette part et
+   reste soumise a l'echeance de recherche courante. Ces departs sont compares
+   avec le meme score ; seul le meilleur est publie.
 2. **Sens optimises conjointement.** Chaque ordre evalue prend en compte les deux
    sens de toutes les diagonales, y compris celles hors du voisinage modifie.
    Des matrices de transfert 2 x 2 representent les fragments inchanges. Une
@@ -48,10 +54,19 @@ permanentes. Il ne change aucun format de pattern, chemin ou progression.
 - Score = somme des distances euclidiennes entre trous, y compris apres une
   coupe, plus `3 * seuil` par coupe. Les decimales ne sont pas arrondies pendant
   les calculs. Une coupe automatique intervient si la distance depasse le seuil.
-- Le budget de 1 minute, 10 minutes ou 1 heure est un temps total, preparation
-  comprise, pas un delai sans amelioration. De petites phases indivisibles et la
-  reorientation finale peuvent le depasser legerement. Arreter conserve le
-  dernier meilleur parcours recu par l'interface.
+- Dans l'interface, le selecteur commun aux moteurs 1 a 5, `Arret sans amelioration`,
+  propose 10 secondes, 30 secondes, 1 minute par defaut, 2 minutes,
+  5 minutes ou 10 minutes. Seul un gain strict du meilleur score global reel,
+  superieur a `1e-8`, relance ce delai ; ni une diversification ni un gain local
+  sur un parcours moins bon ne le remettent a zero. Il n'y a pas de plafond de
+  temps total. Arreter conserve le dernier meilleur parcours recu par l'interface.
+
+L'interface transmet `stopAfterInactivity: true` et `stagnationLimitMs`, sans
+`totalLimitMs`. L'API conserve le mode a budget total `totalLimitMs` lorsque
+`stopAfterInactivity` est absent ou faux, notamment pour les tests et benchmarks.
+Ce budget inclut la preparation ; des operations indivisibles et l'orientation
+finale peuvent le depasser legerement. Les mesures historiques ci-dessous
+utilisent ce mode a budget fixe, pas le delai d'inactivite de l'interface.
 
 Pour N croix, `2N - 1` est une borne inferieure : chaque transition valide entre
 trous distincts de la grille mesure au moins une unite. Atteindre cette borne
@@ -64,7 +79,8 @@ estimation du gain encore disponible, ni un pourcentage de qualite garanti.
 - `node --test tests/adaptive-optimizer.test.js` : oracle exhaustif sur petites
   fenetres, sens et frontieres libres, insertions hors emplacement, contraintes,
   interruption, conservation du meilleur, borne unitaire et 2 000 croix.
-- `node tests/planner-adaptive.test.js` (Playwright) : vrai Web Worker, budget,
+- `node tests/planner-adaptive.test.js` (Playwright) : vrai Web Worker, selecteur
+  d'inactivite commun, absence de budget total dans la requete de l'interface,
   suivi visuel, arret, annuler/retablir, conservation du meilleur, rechargement,
   ecrans PC et mobile. Le profil navigateur est isole.
 - `node tests/adaptive-quality-benchmark.js` : comparaison blocs / approfondi /

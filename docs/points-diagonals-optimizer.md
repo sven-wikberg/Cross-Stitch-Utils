@@ -5,6 +5,10 @@ de l'optimiseur par cases du commit `078f36f`, anterieur au modele a diagonales,
 dans `src/point-order-search.js`. Le nouveau worker, les compteurs et la
 conversion sont dans `src/points-diagonals-worker.js`. Aucune sauvegarde ni
 aucun format d'export ne change.
+Il se lance seul ou comme troisieme phase du [cycle automatique commun](../README.md#cycle-automatique)
+aux commandes de couleur actuelle et de toutes les couleurs. Les moteurs 1 a 5
+precedent les boucles 1 (chaines) et 2 (relais) ; la LNS approfondie de 1 heure
+reste separee et n'est pas automatisee.
 
 ## Recherche par cases
 
@@ -42,10 +46,12 @@ proposes, les ordres effectivement convertis et les parcours de fil testes.
 
 ## Affinement et protections
 
-Environ 65 % du budget total est reserve a la recherche par cases et aux
-conversions intermediaires; le reste sert aux diagonales. La derniere conversion
-peut empieter legerement sur la seconde partie, sans depasser le budget total
-hors operations finales indivisibles.
+La recherche par cases et les conversions intermediaires occupent initialement
+environ 65 % du delai d'inactivite choisi ; l'affinement des diagonales suit.
+Un vrai gain global repousse l'echeance d'inactivite, sans imposer de duree
+totale au moteur. En mode API a budget fixe, cette repartition utilise plutot
+65 % du budget total. La derniere conversion peut empieter sur la seconde
+partie ; les operations finales indivisibles peuvent depasser l'echeance.
 
 L'affinement repart du meilleur parcours reel disponible, pas obligatoirement
 d'une nouvelle conversion : reinsertions libres et reparations exactes de
@@ -53,8 +59,9 @@ petites fenetres. Ces operations peuvent casser la
 structure en pile de la conversion. Une derniere passe globale sur les sens
 est toujours faite avant de terminer.
 
-La recherche geometrique de relais est maintenant separee de ce moteur et se
-lance avec le bouton `Optimiser tous les relais`, sur le meilleur chemin obtenu.
+La recherche geometrique de relais est separee de ce moteur. Elle se lance avec
+`Boucle 2 : relais`, sur le meilleur chemin obtenu, ou a la septieme phase du
+cycle automatique.
 
 Chaque candidat doit respecter les regles communes : `/` avant `\`, aucune
 diagonale dupliquee/manquante, aucun trou de sortie identique au trou d'entree
@@ -66,20 +73,33 @@ reste donc intact, meme si la recherche par points prefere un autre ordre.
 
 ## Interface et verification
 
-Le bouton `Moteur 3 : points puis diagonales` utilise le selecteur commun
-`Budget moteurs 2 a 6` : 1 minute, 10 minutes ou 1 heure. Ce budget est total,
-preparation comprise, et non un delai sans amelioration. Le moteur est dans un
-Web Worker. Le score reel, le temps restant, les phases, les compteurs et les
+Le bouton `Moteur 3 : points puis diagonales` utilise le selecteur commun aux
+moteurs 1 a 5, `Arret sans amelioration` : 10 secondes, 30 secondes,
+1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes. Seule une baisse du
+meilleur score global reel superieure a `1e-8` remet ce delai a zero, jamais
+une amelioration du seul score par cases ou une relance. Il n'y a pas de plafond
+de temps total dans l'interface. Le Web Worker recoit `stopAfterInactivity: true`
+et `stagnationLimitMs`, sans `totalLimitMs`.
+
+Le score reel, le delai sans amelioration, les phases, les compteurs et les
 raccordements ameliores restent visibles. Arreter, annuler/retablir, restaurer
 le meilleur chemin et la comparaison avant/apres gardent leur fonctionnement.
-La file automatique des couleurs continue d'utiliser le mode blocs.
+Le cycle automatique conserve sa phase, sa passe et son cycle apres pause ou
+rechargement ; chaque phase reste annulable sans modifier les fichiers de
+sauvegarde ni la progression.
+
+Pour les tests et benchmarks, l'API accepte toujours `totalLimitMs` lorsque
+`stopAfterInactivity` est absent ou faux : ce budget est total, preparation
+comprise. Les mesures historiques ci-dessous gardent ce mode et leurs durees
+d'origine ; elles ne mesurent pas le nouveau delai d'inactivite de l'interface.
 
 Tests :
 
 - `node --test tests/points-diagonals.test.js` : comparaison du faisceau a un
   oracle exhaustif sur petits cas, longues demi-croix ouvertes, prefixes,
   coupes, budgets, permutations et score reel monotone.
-- `node tests/planner-points.test.js` (Playwright) : vrai worker, budget,
+- `node tests/planner-points.test.js` (Playwright) : vrai worker, selecteur
+  d'inactivite commun, requete sans budget total,
   suivi visuel PC/mobile, arret, meilleur chemin, annuler/retablir et reprise.
 - `node tests/points-quality-benchmark.js` : comparaison des moteurs 2 et 3
   a budget et fichier initial identiques. Les variables `BENCHMARK_MS`,

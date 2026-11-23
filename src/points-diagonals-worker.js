@@ -84,27 +84,39 @@
       const constraints = { ...(options.constraints || {}), forcedCuts: [
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
       ] };
-      const started = clock(), totalLimitMs = Math.max(1, options.totalLimitMs || 3600000), deadline = started + totalLimitMs;
-      const pointDeadline = started + totalLimitMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
+      const started = clock(), stopAfterInactivity = options.stopAfterInactivity === true;
+      const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimitMs = stopAfterInactivity ? null : Math.max(1, options.totalLimitMs || 3600000);
+      const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
+      let lastImproved = started, deadline = started + budgetMs;
+      const pointDeadline = started + budgetMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
       const editable = cells.length * 2 > Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1;
       const stats = { orders: 0, conversions: 0, diagonalTrials: 0, refinements: 0, restarts: 0, pointEvaluations: 0, refinementAttempts: 0 };
       let best = null, metrics = null, initialMetrics = null, improvements = 0, changed = false, lastReport = -Infinity;
-      let stage = "points", phase = "Points : preparation", reason = "budget", relayChange = null;
+      let stage = "points", phase = "Points : preparation", reason = stopAfterInactivity ? "inactivity" : "budget", relayChange = null;
       function valid(path) { return path && path.length === cells.length * 2 && !model.validateRoute(path, cells) && model.satisfiesConstraints(path, constraints); }
       function emit(force = false) {
         const now = clock(); if (!force && now - lastReport < 250) return;
         lastReport = now;
         report({ method: "points-diagonals", stage, phase, elapsedMs: now - started, totalLimitMs, metrics, initialMetrics,
           improvements, attempts: stats.pointEvaluations + stats.refinementAttempts, restarts: stats.restarts,
-          pointsSearch: { ...stats }, relayChange, progress: Math.min(100, (now - started) / totalLimitMs * 100), reason,
+          pointsSearch: { ...stats }, relayChange, ...timing(now), reason,
           ...(best && changed ? { path: best.map(model.copy) } : {}) });
         changed = false;
+      }
+      function timing(now) {
+        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
+          remainingMs: Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
       }
       function keep(path, change = null) {
         if (!valid(path)) return false;
         const value = measure(path, threshold); initialMetrics ||= value;
         if (best && value.score >= metrics.score - epsilon) return false;
-        if (best) improvements++;
+        if (best) {
+          improvements++; lastImproved = clock();
+          if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+        }
         best = path.map(model.copy); metrics = value; changed = true; relayChange = change; emit(true); return true;
       }
       const byKey = new Map(cells.map((p, i) => [model.cellKey(p), i])), seen = new Set();
@@ -133,7 +145,7 @@
           if (clock() >= deadline) break;
           stats.diagonalTrials++; keep(simpleDecode(order, threshold, constraints, returns));
         }
-        const decoderDeadline = Math.min(deadline, clock() + Math.max(250, Math.min(5000, totalLimitMs * 0.1)));
+        const decoderDeadline = Math.min(deadline, clock() + Math.max(250, Math.min(5000, budgetMs * 0.1)));
         const path = beamDecode(order, { cutThreshold: threshold, constraints, deadline: decoderDeadline, beamWidth: 8 }, () => emit());
         if (path) { stats.diagonalTrials++; keep(path); }
         lastConversion = clock(); phase = previousPhase; emit();
@@ -142,8 +154,8 @@
       if (editable && clock() < pointDeadline && metrics.score > lowerBound + epsilon) {
         try {
           const result = createPoints(clock, random).optimizePath({ points: cells, initialPath: initialOrder.map(i => cells[i]), cutThreshold: threshold,
-            totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: totalLimitMs,
-            shouldStop: () => metrics.score <= lowerBound + epsilon,
+            totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
+            shouldStop: () => metrics.score <= lowerBound + epsilon || (stopAfterInactivity && clock() >= deadline),
             onCandidate: route => convert(route),
             onProgress: snapshot => {
               stats.pointEvaluations = snapshot.evaluations; stats.restarts = snapshot.restarts;
@@ -155,27 +167,32 @@
       if (pending && clock() < deadline) convert(pending, true);
       stage = "diagonals"; phase = "Diagonales : reinsertion libre"; emit(true);
       let iteration = 0, state = null;
-      while (clock() < deadline && metrics.score > lowerBound + epsilon && best.length > Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1) {
-        iteration++;
-        if (clock() >= deadline || metrics.score <= lowerBound + epsilon) break;
-        if (!state || state.path !== best) state = repairs.context(best, threshold, constraints);
-        const size = Math.min(24, 6 + iteration % 10 * 2), selected = repairs.select(state, iteration % 4, size);
-        if (!selected.length) break;
-        phase = iteration % 3 ? "Diagonales : reinsertion libre" : "Diagonales : reparation exacte";
-        stats.refinements++; emit();
-        const localDeadline = Math.min(deadline, clock() + 1000);
-        const proposal = iteration % 3 ? repairs.freeRepair(state, selected, { deadline: localDeadline, regret: true, pulse: emit })
-          : repairs.exactRepair(state, Math.max(state.locked, Math.min(best.length - 12, selected[0] - 6)), 12, localDeadline, emit);
-        stats.refinementAttempts += proposal.attempts;
-        if (proposal.path) keep(proposal.path);
+      while (true) {
+        while (clock() < deadline && metrics.score > lowerBound + epsilon && best.length > Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1) {
+          iteration++;
+          if (clock() >= deadline || metrics.score <= lowerBound + epsilon) break;
+          if (!state || state.path !== best) state = repairs.context(best, threshold, constraints);
+          const size = Math.min(24, 6 + iteration % 10 * 2), selected = repairs.select(state, iteration % 4, size);
+          if (!selected.length) break;
+          phase = iteration % 3 ? "Diagonales : reinsertion libre" : "Diagonales : reparation exacte";
+          stats.refinements++; emit();
+          const localDeadline = Math.min(deadline, clock() + 1000);
+          const proposal = iteration % 3 ? repairs.freeRepair(state, selected, { deadline: localDeadline, regret: true, pulse: emit })
+            : repairs.exactRepair(state, Math.max(state.locked, Math.min(best.length - 12, selected[0] - 6)), 12, localDeadline, emit);
+          stats.refinementAttempts += proposal.attempts;
+          if (proposal.path) keep(proposal.path);
+        }
+        // A final orientation gain must receive a full new inactivity interval.
+        const improved = keep(model.orient(best, threshold, constraints, true));
+        if (!stopAfterInactivity || !improved) break;
       }
-      keep(model.orient(best, threshold, constraints, true));
       if (metrics.score <= lowerBound + epsilon) reason = "lower-bound";
       else if (best.length <= Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1) reason = "locked";
       stage = "complete"; phase = reason === "lower-bound" ? "Borne minimale atteinte" : "Points puis diagonales : recherche terminee"; changed = true; emit(true);
+      const finished = clock();
       return { method: "points-diagonals", stage, phase, path: best, metrics, initialMetrics, improvements,
         attempts: stats.pointEvaluations + stats.refinementAttempts, restarts: stats.restarts, pointsSearch: { ...stats }, relayChange,
-        elapsedMs: clock() - started, totalLimitMs, reason, progress: 100 };
+        elapsedMs: finished - started, totalLimitMs, reason, ...timing(finished) };
     }
     return { optimizePath, simpleDecode, beamDecode };
   }

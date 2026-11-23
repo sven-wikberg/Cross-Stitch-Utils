@@ -3,22 +3,24 @@
   function createPathVisuals(model, builder) {
     function searchPresentation(snapshot, running) {
       const stage = snapshot?.stage || "preparation";
-      const timed = running && ["deep-optimization", "adaptive-optimization", "points-diagonals", "point-sections", "segment-optimization", "chain-reinsertion"].includes(snapshot?.method);
-      const searching = running && stage === "search" && !timed;
+      const chaining = running && snapshot?.method === "chain-reinsertion" && snapshot.untilStable && stage !== "complete";
+      const timed = running && !snapshot?.stopAfterInactivity && !snapshot?.untilStable
+        && ["deep-optimization", "adaptive-optimization", "points-diagonals", "point-sections", "segment-optimization", "chain-reinsertion"].includes(snapshot?.method);
+      const searching = running && stage !== "complete" && (stage === "search" || snapshot?.stopAfterInactivity === true) && !timed && !chaining;
       const relaying = running && stage === "relay";
       const constructing = running && stage === "construction";
       const preparing = running && ["preparation", "construction", "configuration"].includes(stage);
-      const total = relaying ? snapshot.relay?.total : constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
-      const done = relaying ? snapshot.relay?.examined : constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
+      const total = chaining ? snapshot.chainSearch?.total : relaying ? snapshot.relay?.total : constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
+      const done = chaining ? snapshot.chainSearch?.rank : relaying ? snapshot.relay?.examined : constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
       const knownCount = Number.isFinite(total) && total > 0 && Number.isFinite(done);
       const max = timed ? snapshot.totalLimitMs || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs ?? 60000) : knownCount ? total : 1;
       const value = timed ? snapshot.elapsedMs || 0 : searching ? (snapshot.stagnationLimitMs === 0 ? max : snapshot.lastImprovementMs || 0) : knownCount ? done : null;
       return {
         phase: { preparation: "Preparation de la recherche", construction: "Construction des blocs",
           configuration: "Preparation des entrees et sorties", search: "Recherche en cours", relay: "Recherche de relais", complete: "Recherche terminee" }[stage] || "Recherche en cours",
-        active: timed || preparing || searching || relaying, searching, timed,
+        active: timed || preparing || searching || relaying || chaining, searching, timed,
         showConstruction: constructing && snapshot.zone?.status === "running",
-        label: timed ? "Temps restant" : relaying ? "Liaisons examinees" : searching ? "Sans amelioration (blocs)" : constructing ? "Blocs construits" : "Blocs prepares",
+        label: timed ? "Temps restant" : relaying || chaining ? "Liaisons examinees" : searching ? "Sans amelioration" : constructing ? "Blocs construits" : "Blocs prepares",
         count: knownCount ? `${Math.min(total, Math.max(0, done))} / ${total}` : "",
         max, value: value === null ? null : Math.max(0, Math.min(max, value))
       };

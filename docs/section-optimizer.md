@@ -2,8 +2,11 @@
 
 Ce moteur reste independant des moteurs existants. Il reutilise la recherche
 par cases de `src/point-order-search.js`, puis traduit ses ordres en parcours
-de fil dans `src/section-optimizer-worker.js`. Les formats, les sauvegardes et
-la file classique des couleurs ne changent pas.
+de fil dans `src/section-optimizer-worker.js`. Les formats et les fichiers de
+sauvegarde ne changent pas. Il se lance seul ou comme quatrieme phase du
+[cycle automatique commun](../README.md#cycle-automatique) a la couleur actuelle
+et a toutes les couleurs : moteurs 1 a 5, boucle 1 (chaines), boucle 2 (relais).
+La recherche LNS approfondie de 1 heure reste separee et manuelle.
 
 ## Decoupage
 
@@ -43,10 +46,17 @@ nulle sont interdites, meme avec coupe. Le score reste celui des autres moteurs 
 distance euclidienne entre trous, distance apres coupe comprise, plus trois fois
 le seuil par coupe.
 
-## Budget et affinement
+## Inactivite et affinement
 
-Le budget total (1 minute, 10 minutes ou 1 heure) inclut la preparation. Environ
-65 % sert a la recherche par cases avec conversions intermediaires cadencees.
+Le selecteur `Arret sans amelioration`, commun aux moteurs 1 a 5, propose
+10 secondes, 30 secondes, 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes.
+Seul un gain du meilleur score global reel superieur a `1e-8` relance ce delai :
+ni le score simplifie des cases, ni l'amelioration d'un candidat encore moins bon,
+ni une relance ne suffisent. L'interface n'impose aucun plafond de temps total.
+
+Environ 65 % du delai initial sert a la recherche par cases avec conversions
+intermediaires cadencees ; l'affinement suit et peut se prolonger apres un gain
+global. En mode API a budget total, cette part reste calculee sur ce budget.
 Les quatre ordres convertis les plus prometteurs selon leur score reel sont
 gardes pour l'affinement : nouvelles entrees/sorties et essais de coupures au
 milieu de sous-sections. Une coupure de sous-section est un changement de
@@ -63,17 +73,29 @@ dans son budget. Seuls les parcours complets, valides et strictement meilleurs
 que le meilleur score reel sont publies. Un meilleur parcours preexistant reste
 intact, meme s'il ne correspond pas au decoupage du moteur 4.
 
+L'interface transmet `stopAfterInactivity: true` et `stagnationLimitMs`, sans
+`totalLimitMs`. L'API garde `totalLimitMs` lorsque `stopAfterInactivity` est absent
+ou faux pour les tests et benchmarks ; ce budget inclut la preparation, avec
+un depassement possible pour les operations finales indivisibles. Les mesures
+initiales ci-dessous restent des essais historiques a budget fixe.
+
 ## Suivi et tests
 
 Le Web Worker publie la phase, la sous-section en cours, le nombre de variantes
-et de raccordements testes, le score total et le temps restant. Les surbrillances,
-le suivi automatique, la comparaison, l'annulation et la restauration du meilleur
-chemin utilisent le fonctionnement commun de l'outil 2.
+et de raccordements testes, le score total et le delai sans amelioration. Les
+surbrillances, le suivi automatique, la comparaison, l'annulation et la restauration
+du meilleur chemin utilisent le fonctionnement commun de l'outil 2.
+
+Dans le cycle automatique, chaque phase reprend le meilleur chemin compatible
+et reste annulable. La pause et le rechargement conservent phase, passe et cycle ;
+la reprise relance la phase interrompue depuis le meilleur, sans modifier les
+fichiers de sauvegarde ni la progression.
 
 - `node --test tests/section-optimizer.test.js` : decoupage, borne unitaire,
   comparaison exhaustive des combinaisons, prefixes ouverts, coupes, delais,
   absence de regression et immutabilite des donnees d'entree.
-- `node tests/planner-sections.test.js` : vrai worker, feedback, arret,
+- `node tests/planner-sections.test.js` : vrai worker, inactivite commune,
+  requete sans budget total, feedback, arret,
   recuperation du meilleur chemin, persistance isolee et affichage PC/mobile.
 - `BENCHMARK_ENGINES=sections` avec `tests/points-quality-benchmark.js` :
   comparaison a budget egal, sans modifier les fichiers dans `data/`.

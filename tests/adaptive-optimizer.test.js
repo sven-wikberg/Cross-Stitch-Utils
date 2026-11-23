@@ -125,3 +125,83 @@ test("construction from an unfinished locked prefix preserves open crosses and i
   assert.equal(model.validateRoute(result.path, points), ""); assert.ok(model.satisfiesConstraints(result.path, constraints));
   assert.deepEqual(result.path.slice(0, prefix.length), prefix);
 });
+
+test("inactivity follows only accepted global gains, not diversification, with no total cap", () => {
+  for (const totalLimitMs of [undefined, 1]) {
+    let now = 0; const orientations = [], snapshots = [], limit = 1000;
+    const tracked = { ...model, orient(...args) { orientations.push(now); return model.orient(...args); } };
+    const points = require("./fixtures/combined-search.js").interleaved, initialPath = model.expandCells(points, 3);
+    initialPath[10].cutBefore = true;
+    const constraints = { lockedPrefix: initialPath.slice(0, 3), start: initialPath[0], forcedCuts: [initialPath[10]] };
+    const before = JSON.stringify({ initialPath, constraints });
+    const search = createAdaptiveOptimizer(tracked, createOrthogonalPathBuilder, createRelaySearch, () => ++now, seeded());
+    const result = search.optimizePath({ points, initialPath, constraints, cutThreshold: 3, stopAfterInactivity: true,
+      stagnationLimitMs: limit, ...(totalLimitMs === undefined ? {} : { totalLimitMs }) }, s => snapshots.push(s));
+    let previousScore = score(initialPath), previousGain = 0;
+    for (const s of [...snapshots, result]) {
+      assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
+      assert.equal(s.stagnationLimitMs, limit);
+      assert.equal(s.remainingMs, Math.max(0, limit - s.lastImprovementMs));
+      assert.equal(s.progress, s.stage === "complete" ? 100 : Math.min(100, s.lastImprovementMs / limit * 100));
+      const gainAt = s.elapsedMs - s.lastImprovementMs;
+      if (s.metrics && s.metrics.score < previousScore - 1e-8) {
+        assert.ok(gainAt > previousGain); assert.ok(s.lastImprovementMs <= 1); assert.ok(s.path);
+      } else assert.equal(gainAt, previousGain, "ties and working-route changes must not reset inactivity");
+      if (s.path) {
+        assert.equal(model.validateRoute(s.path, points), ""); assert.ok(model.satisfiesConstraints(s.path, constraints));
+        close(s.metrics.score, score(s.path)); assert.ok(s.metrics.score <= previousScore + 1e-8);
+      }
+      previousScore = s.metrics?.score ?? previousScore; previousGain = gainAt;
+    }
+    assert.ok(result.improvements > 0); assert.ok(result.lns.diversifications > 0);
+    assert.ok(result.elapsedMs > limit); assert.ok(result.lastImprovementMs >= limit);
+    assert.ok(result.lastImprovementMs < limit + 30); assert.equal(result.reason, "inactivity");
+    assert.ok(orientations.at(-1) - 1 >= previousGain + limit, "global orientation still runs after expiry");
+    assert.equal(JSON.stringify({ initialPath, constraints }), before);
+  }
+});
+
+test("a final orientation gain resumes inactivity search but legacy mode finishes once", () => {
+  for (const stopAfterInactivity of [false, true]) {
+    const points = [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }];
+    const initialPath = points.flatMap(p => ["lower", "upper"].map(diagonal => ({ ...p, diagonal, direction: 1 })));
+    initialPath[1].direction = -1;
+    let now = 0, orientations = 0, resumed = false; const snapshots = [], limit = 100;
+    const clock = () => resumed ? ++now : now;
+    const tracked = { ...model, orient(...args) {
+      orientations++;
+      return orientations === 1 ? args[0].map(model.copy) : model.orient(...args);
+    } };
+    const search = createAdaptiveOptimizer(tracked, createOrthogonalPathBuilder, createRelaySearch, clock, seeded());
+    const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity,
+      stagnationLimitMs: limit, totalLimitMs: limit }, s => {
+      snapshots.push(s);
+      if (s.path && !s.improvements) now = limit + 1;
+      if (s.improvements) resumed = true;
+    });
+    const gain = snapshots.find(s => s.improvements);
+    assert.ok(gain); assert.equal(gain.lastImprovementMs, 0);
+    assert.equal(gain.remainingMs, stopAfterInactivity ? limit : 0);
+    assert.equal(gain.progress, stopAfterInactivity ? 0 : 100);
+    assert.equal(gain.lns.iterations, 0, "the first gain comes only from final orientation");
+    assert.ok(result.metrics.score < score(initialPath)); assert.equal(result.stopAfterInactivity, stopAfterInactivity);
+    if (stopAfterInactivity) {
+      assert.ok(result.lns.iterations > 0, "main search resumes after the orientation gain");
+      assert.ok(orientations > 2); assert.equal(result.reason, "inactivity");
+      assert.ok(result.lastImprovementMs >= limit); assert.ok(result.elapsedMs >= 2 * limit);
+      assert.equal(result.remainingMs, 0); assert.equal(snapshots.at(-1).remainingMs, 0);
+    } else {
+      assert.equal(result.lns.iterations, 0); assert.equal(orientations, 2);
+      assert.equal(result.reason, "budget"); assert.ok(result.lastImprovementMs < limit);
+    }
+  }
+});
+
+test("stagnation options alone do not change the legacy total budget", () => {
+  let now = 0;
+  const points = require("./fixtures/combined-search.js").interleaved, initialPath = model.expandCells(points, 3);
+  const result = engine(() => ++now).optimizePath({ points, initialPath, cutThreshold: 3, totalLimitMs: 1000, stagnationLimitMs: 1 });
+  assert.equal(result.stopAfterInactivity, false); assert.equal(result.totalLimitMs, 1000);
+  assert.equal(result.reason, "budget"); assert.equal(result.remainingMs, 0);
+  assert.ok(result.elapsedMs >= 1000 && result.elapsedMs < 1030);
+});

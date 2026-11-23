@@ -167,69 +167,86 @@
       ] };
       const valid = path => Array.isArray(path) && !model.validateRoute(path, points) && model.satisfiesConstraints(path, constraints);
       if (!valid(options.initialPath)) throw new Error("Le moteur 5 necessite un chemin complet et valide.");
-      const started = clock(), totalLimitMs = Math.max(0, options.totalLimitMs ?? 3600000), deadline = started + totalLimitMs;
+      const started = clock(), stopAfterInactivity = options.stopAfterInactivity === true;
+      const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimitMs = stopAfterInactivity ? null : Math.max(0, options.totalLimitMs ?? 3600000);
+      const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
+      let deadline = started + budgetMs;
       let best = options.initialPath.map(model.copy), metrics = measure(best, threshold), initialMetrics = metrics;
       let stage = "preparation", phase = "Preparation des segments", changed = true, lastReport = -Infinity, lastGain = 0, lastImproved = started;
       const stats = { repairs: 0, segments: 0, diagonals: 0, totalSegments: 0, rank: 0, total: 0, passes: 0, improvements: 0, diversifications: 0 };
-      let attempts = 0, reason = "time-limit";
+      let attempts = 0, reason = stopAfterInactivity ? "inactivity" : "time-limit";
       function emit(force = false) {
         const now = clock(); if (!force && now - lastReport < 150) return;
         lastReport = now;
         report({ method: "segment-optimization", stage, phase, metrics, initialMetrics, totalLimitMs, elapsedMs: now - started,
-          lastImprovementMs: now - lastImproved, lastGain, attempts, improvements: stats.improvements, restarts: stats.diversifications,
-          segmentSearch: { ...stats }, progress: totalLimitMs ? Math.min(100, 100 * (now - started) / totalLimitMs) : 100,
+          lastGain, attempts, improvements: stats.improvements, restarts: stats.diversifications,
+          segmentSearch: { ...stats }, ...timing(now), reason,
           ...(changed ? { path: best.map(model.copy) } : {}) }); changed = false;
+      }
+      function timing(now) {
+        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
+          remainingMs: Math.max(0, deadline - now),
+          progress: stage === "complete" || !budgetMs ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
       }
       function keep(path) {
         if (!valid(path)) return false;
         const next = measure(path, threshold);
         if (next.score >= metrics.score - epsilon) return false;
         lastGain = metrics.score - next.score; best = path.map(model.copy); metrics = next;
-        stats.improvements++; lastImproved = clock(); changed = true; emit(true); return true;
+        stats.improvements++; lastImproved = clock();
+        if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+        changed = true; emit(true); return true;
       }
       emit(true);
       try { keep(model.orient(best, threshold, constraints, true)); } catch { /* Preserve the valid incumbent. */ }
       let working = best, workScore = metrics.score, state = null, misses = 0, rank = 0, round = 0;
       const weights = [1, 1, 1], names = ["Segments entiers", "Portions de segments", "Segments et diagonales liees"];
       stage = "search";
-      while (clock() < deadline) {
-        if (metrics.score <= Math.max(0, best.length - 1) + epsilon) { reason = "lower-bound"; break; }
-        if (!state) { state = context(working, threshold, constraints); stats.totalSegments = state.segments.length; }
-        if (!state.links.length || working.length - state.locked < 2) { reason = "locked"; break; }
-        if (rank >= state.links.length) { rank = 0; round++; }
-        const link = state.links[rank++]; stats.rank = rank; stats.total = state.links.length; stats.passes = round + 1;
-        const choice = random() * weights.reduce((a, b) => a + b, 0);
-        let kind = 0, weight = weights[0]; while (kind < 2 && choice >= weight) weight += weights[++kind];
-        const ranges = selectRanges(state, link, kind, round + Math.floor(misses / 20), 6 + 2 * (Math.floor(misses / 12) % 3));
-        stats.segments = ranges.length; stats.diagonals = ranges.reduce((sum, r) => sum + r.end - r.start, 0);
-        phase = `${names[kind]} : raccordement ${rank} / ${state.links.length}`; emit();
-        const before = clock(), noisy = misses >= 8 && stats.repairs % 5 === 4;
-        const proposal = repair(state, ranges, { deadline: Math.min(deadline, before + 1500), pulse: emit, noise: noisy ? 1.5 : 0 });
-        attempts += proposal.attempts; stats.repairs++;
-        let reward = 0.2, accepted = false;
-        if (proposal.pieces && (proposal.score < workScore - epsilon || (noisy && proposal.score < workScore + 3))) {
-          const path = materialize(state, proposal.pieces);
-          if (valid(path)) {
-            const value = measure(path, threshold), gain = workScore - value.score, improved = keep(path);
-            const temperature = Math.max(0.1, 1 - (clock() - started) / Math.max(1, totalLimitMs));
-            accepted = improved || gain > epsilon || (noisy && gain < -epsilon && random() < Math.exp(gain / temperature));
-            if (accepted) {
-              if (gain < -epsilon) stats.diversifications++;
-              working = path; workScore = value.score; state = null;
-            }
-            if (improved) { reward = 8 + Math.min(20, lastGain); misses = 0; rank = 0; }
-            else misses++;
+      while (true) {
+        while (clock() < deadline) {
+          if (metrics.score <= Math.max(0, best.length - 1) + epsilon) { reason = "lower-bound"; break; }
+          if (!state) { state = context(working, threshold, constraints); stats.totalSegments = state.segments.length; }
+          if (!state.links.length || working.length - state.locked < 2) { reason = "locked"; break; }
+          if (rank >= state.links.length) { rank = 0; round++; }
+          const link = state.links[rank++]; stats.rank = rank; stats.total = state.links.length; stats.passes = round + 1;
+          const choice = random() * weights.reduce((a, b) => a + b, 0);
+          let kind = 0, weight = weights[0]; while (kind < 2 && choice >= weight) weight += weights[++kind];
+          const ranges = selectRanges(state, link, kind, round + Math.floor(misses / 20), 6 + 2 * (Math.floor(misses / 12) % 3));
+          stats.segments = ranges.length; stats.diagonals = ranges.reduce((sum, r) => sum + r.end - r.start, 0);
+          phase = `${names[kind]} : raccordement ${rank} / ${state.links.length}`; emit();
+          const before = clock(), noisy = misses >= 8 && stats.repairs % 5 === 4;
+          const proposal = repair(state, ranges, { deadline: Math.min(deadline, before + 1500), pulse: emit, noise: noisy ? 1.5 : 0 });
+          attempts += proposal.attempts; stats.repairs++;
+          let reward = 0.2, accepted = false;
+          if (proposal.pieces && (proposal.score < workScore - epsilon || (noisy && proposal.score < workScore + 3))) {
+            const path = materialize(state, proposal.pieces);
+            if (valid(path)) {
+              const value = measure(path, threshold), gain = workScore - value.score, improved = keep(path);
+              const temperature = Math.max(0.1, 1 - (clock() - (stopAfterInactivity ? lastImproved : started)) / Math.max(1, budgetMs));
+              accepted = improved || gain > epsilon || (noisy && gain < -epsilon && random() < Math.exp(gain / temperature));
+              if (accepted) {
+                if (gain < -epsilon) stats.diversifications++;
+                working = path; workScore = value.score; state = null;
+              }
+              if (improved) { reward = 8 + Math.min(20, lastGain); misses = 0; rank = 0; }
+              else misses++;
+            } else misses++;
           } else misses++;
-        } else misses++;
-        weights[kind] = Math.max(0.3, 0.9 * weights[kind] + 0.1 * reward / Math.max(1, (clock() - before) / 100));
-        if (misses > 0 && misses % 40 === 0 && working !== best) { working = best; workScore = metrics.score; state = null; }
-        emit();
+          weights[kind] = Math.max(0.3, 0.9 * weights[kind] + 0.1 * reward / Math.max(1, (clock() - before) / 100));
+          if (misses > 0 && misses % 40 === 0 && working !== best) { working = best; workScore = metrics.score; state = null; }
+          emit();
+        }
+        // Always orient globally at expiry; a strict gain starts another inactivity interval.
+        let improved = false;
+        try { improved = keep(model.orient(best, threshold, constraints, true)); } catch { /* Preserve the valid incumbent. */ }
+        if (!stopAfterInactivity || !improved) break;
+        working = best; workScore = metrics.score; state = null; misses = 0; rank = 0;
       }
-      // Direction optimization is mandatory even when the search deadline has just expired.
-      try { keep(model.orient(best, threshold, constraints, true)); } catch { /* Preserve the valid incumbent. */ }
       stage = "complete"; phase = reason === "lower-bound" ? "Borne minimale atteinte" : "Optimisation des raccordements terminee"; changed = true; emit(true);
-      return { method: "segment-optimization", stage, phase, path: best, metrics, initialMetrics, totalLimitMs, elapsedMs: clock() - started,
-        lastGain, attempts, improvements: stats.improvements, restarts: stats.diversifications, segmentSearch: { ...stats }, reason, progress: 100 };
+      const finished = clock();
+      return { method: "segment-optimization", stage, phase, path: best, metrics, initialMetrics, totalLimitMs, elapsedMs: finished - started,
+        lastGain, attempts, improvements: stats.improvements, restarts: stats.diversifications, segmentSearch: { ...stats }, reason, ...timing(finished) };
     }
     return { context, selectRanges, normalizeRanges, repair, piecesFor, materialize, optimizePath };
   }

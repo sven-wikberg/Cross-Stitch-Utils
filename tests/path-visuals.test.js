@@ -18,7 +18,7 @@ test("search presentation distinguishes preparation counts from inactivity, neve
   assert.equal(b.showConstruction, false); assert.equal(b.count, "5 / 20");
   assert.equal(b.value, 5); assert.equal(b.max, 20);
   const c = visuals.searchPresentation(search, true);
-  assert.equal(c.label, "Sans amelioration (blocs)"); assert.equal(c.value, 12000); assert.equal(c.max, 60000);
+  assert.equal(c.label, "Sans amelioration"); assert.equal(c.value, 12000); assert.equal(c.max, 60000);
   const shortened = visuals.searchPresentation({ ...search, stagnationLimitMs: 8100 }, true);
   assert.equal(shortened.max, 8100); assert.equal(shortened.value, 8100);
   const immediate = visuals.searchPresentation({ ...search, stagnationLimitMs: 0, lastImprovementMs: 0 }, true);
@@ -40,6 +40,20 @@ test("search presentation distinguishes preparation counts from inactivity, neve
   assert.equal(chains.timed, true); assert.equal(chains.searching, false);
   assert.equal(chains.max, 60000); assert.equal(chains.value, 8900);
   assert.deepEqual([construction, config, search], before);
+});
+
+test("inactivity engines and exhaustive loops show the right progress instead of a total budget", () => {
+  for (const method of ["adaptive-optimization", "points-diagonals", "point-sections", "segment-optimization"]) {
+    const view = visuals.searchPresentation({ method, stage: "sections", stopAfterInactivity: true,
+      stagnationLimitMs: 60000, lastImprovementMs: 2300, elapsedMs: 400000 }, true);
+    assert.equal(view.timed, false); assert.equal(view.searching, true);
+    assert.equal(view.value, 2300); assert.equal(view.max, 60000); assert.equal(view.label, "Sans amelioration");
+  }
+  const loop = visuals.searchPresentation({ method: "chain-reinsertion", untilStable: true, stage: "search",
+    chainSearch: { total: 50, rank: 17 } }, true);
+  assert.equal(loop.timed, false); assert.equal(loop.searching, false);
+  assert.equal(loop.label, "Liaisons examinees"); assert.equal(loop.count, "17 / 50");
+  assert.equal(loop.value, 17); assert.equal(loop.max, 50);
 });
 
 test("a work palette is independent of DMC colors and keeps light fills with dark thread strokes", () => {
