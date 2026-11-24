@@ -2,7 +2,7 @@
 
 Anciennement nommee moteur 6, cette boucle reprend le meilleur parcours complet
 compatible de la couleur. Elle deplace une suite de diagonales ailleurs dans
-l'ordre du parcours, sans changer son ordre interne. Contrairement au moteur 5,
+l'ordre du parcours, sans changer son ordre interne. Contrairement au moteur 2,
 la chaine n'a pas a prendre la place d'un autre segment selectionne.
 L'interface distingue les moteurs 1 a 5,
 les boucles 1 (chaines) et 2 (relais), et la recherche LNS approfondie de 1 heure.
@@ -33,9 +33,9 @@ coupes ne consomment pas ce quota. Cette selection reste heuristique.
 
 Les bornes de reinsertion sont calculees avec les diagonales correspondantes
 situees hors de la chaine. Le prefixe verrouille ne bouge pas. Les matrices de
-transfert du moteur 5 evaluent le score global, en optimisant conjointement
+transfert du moteur 2 evaluent le score global, en optimisant conjointement
 les sens dans la chaine, le trou laisse a son ancien emplacement et le reste
-du parcours. Le moteur ne lance pas la recherche du moteur 5 : il reutilise
+du parcours. Le moteur ne lance pas la recherche du moteur 2 : il reutilise
 seulement son contexte et ses fonctions de calcul.
 
 Le meilleur emplacement teste est retenu pour chaque chaine. Un gain strict

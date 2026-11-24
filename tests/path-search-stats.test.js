@@ -85,3 +85,16 @@ test("old and malformed drafts do not prevent loading a pattern", () => {
   assert.deepEqual(normalized.totals, {}); assert.deepEqual(normalized.history, []);
   assert.throws(() => stats.start(null, "other", 1), /inconnu/);
 });
+
+test("renumbering engines keeps historical gains and colors tied to the algorithm", () => {
+  let record = stats.start(null, "adaptive", 100);
+  stats.update(record, { score: 90, elapsedMs: 1000 }); stats.finish(record, 1000);
+  record = stats.start(record, "segments", 90);
+  stats.update(record, { score: 85, elapsedMs: 2000 }); stats.finish(record, 2000);
+  const restored = stats.normalize(record);
+  assert.equal(stats.modes.segments.short, "M2"); assert.equal(restored.totals.segments.gain, 5);
+  assert.equal(stats.modes.adaptive.short, "M5"); assert.equal(restored.totals.adaptive.gain, 10);
+  assert.equal(stats.modes.deep.short, "M6");
+  assert.deepEqual(Object.values(stats.modes).map(mode => mode.short), ["M1", "M2", "M3", "M4", "M5", "M6", "B1", "B2"]);
+  assert.equal(restored.history.find(point => point.gain === 10).mode, "adaptive");
+});

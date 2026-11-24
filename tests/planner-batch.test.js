@@ -77,33 +77,37 @@ async function run() {
   };
   try {
     await load(page); await installHarness(page);
+    assert.deepEqual(await page.locator("#optimizedPathButton").evaluate(button =>
+      [...button.parentElement.querySelectorAll("button")].map(item => item.id)),
+      ["optimizedPathButton", "segmentsOptimizeButton", "pointsOptimizeButton", "sectionsOptimizeButton", "adaptiveOptimizeButton"]);
+    assert.match(await page.locator("#deepOptimizeButton").textContent(), /Moteur 6.*1 h/);
     await page.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["310", "321", "BLANC"], results: [] }, null); });
     await page.locator("#batchOptimizeButton").click(); await phase("normal");
-    await deliver(worst); await phase("adaptive");
+    await deliver(worst); await phase("segments");
     assert.deepEqual(await page.evaluate(() => batchRuns.at(-1).message.initialPath), worst);
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.stopAfterInactivity), true);
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.totalLimitMs), undefined);
     await page.evaluate(route => deliverBatch(route, "progress"), middle);
     await page.locator("#stopPathAlgorithmButton").click();
-    assert.equal(await page.evaluate(() => batchPlan.current.phase), "adaptive");
+    assert.equal(await page.evaluate(() => batchPlan.current.phase), "segments");
     assert.equal(await page.evaluate(() => batchPlan.results.length), 0);
     await page.evaluate(() => plannerSaveQueue); await page.reload();
     await page.waitForFunction(() => !document.querySelector("main").inert);
     await page.locator('[data-step="paths"]').click();
     assert.deepEqual(await page.evaluate(() => currentPath()), middle);
-    assert.ok(await page.evaluate(() => pathSearchStatsByDmc["310"].totals.adaptive.gain > 0), "Accepted gains survive stop and reload");
+    assert.ok(await page.evaluate(() => pathSearchStatsByDmc["310"].totals.segments.gain > 0), "Accepted gains survive stop and reload");
     assert.match(await page.locator("#batchStatus").textContent(), /Moteur 2.*en pause/);
     await installHarness(page);
-    await page.locator("#batchOptimizeButton").click(); await phase("adaptive");
+    await page.locator("#batchOptimizeButton").click(); await phase("segments");
     assert.deepEqual(await page.evaluate(() => batchRuns.at(-1).message.initialPath), middle);
     await page.evaluate(() => batchRuns.at(-1).worker.dispatchEvent(new ErrorEvent("error", { message: "Test interruption" })));
     assert.equal(await page.evaluate(() => batchRunning), false);
-    assert.equal(await page.evaluate(() => batchPlan.current.phase), "adaptive");
-    await page.locator("#batchOptimizeButton").click(); await phase("adaptive");
+    assert.equal(await page.evaluate(() => batchPlan.current.phase), "segments");
+    await page.locator("#batchOptimizeButton").click(); await phase("segments");
     await deliver(worst); await phase("points");
     assert.deepEqual(await page.evaluate(() => batchRuns.at(-1).message.initialPath), middle, "A worse phase result is rejected");
     await deliver(middle); await phase("sections");
-    await deliver(middle); await phase("segments");
+    await deliver(middle); await phase("adaptive");
     await deliver(middle); await phase("chains");
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.untilStable), true);
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.totalLimitMs), undefined);
@@ -112,16 +116,19 @@ async function run() {
     assert.match(await page.locator("#batchStatus").textContent(), /Couleur 1 \/ 3.*cycle 1.*Boucle 1/);
     assert.match(await page.locator("#batchCycleGain").textContent(), /Gain du cycle : \+/);
     const gains = await page.evaluate(() => pathSearchStatsByDmc["310"]);
-    assert.ok(Math.abs(gains.totals.adaptive.gain - (model.metrics(worst, 10, true).score - model.metrics(middle, 10, true).score)) < 1e-8);
+    assert.ok(Math.abs(gains.totals.segments.gain - (model.metrics(worst, 10, true).score - model.metrics(middle, 10, true).score)) < 1e-8);
     assert.ok(Math.abs(gains.totals.chains.gain - (model.metrics(middle, 10, true).score - model.metrics(best, 10, true).score)) < 1e-8);
-    assert.equal(gains.totals.segments.gain, 0, "A no-gain engine is measured too");
+    assert.equal(gains.totals.adaptive.gain, 0, "A no-gain engine is measured too");
     assert.equal(gains.totals.relay, undefined, "A not-yet-run loop stays distinct from a zero-gain loop");
-    assert.equal(await page.locator('#pathGainRows [data-mode="segments"] td').first().textContent(), "0");
+    assert.equal(await page.locator('#pathGainRows [data-mode="adaptive"] td').first().textContent(), "0");
+    assert.match(await page.locator('#pathGainRows [data-mode="segments"] th').textContent(), /M2.*raccordements/);
+    assert.match(await page.locator('#pathGainRows [data-mode="adaptive"] th').textContent(), /M5.*adaptatif/);
+    assert.match(await page.locator('#pathGainRows [data-mode="deep"] th').textContent(), /M6.*approfondie/);
     assert.equal(await page.locator('#pathGainRows [data-mode="relay"] td').first().textContent(), "-");
     assert.equal(await page.locator('#pathGainRows [data-mode="chains"]').evaluate(row => row.classList.contains("active")), true);
     assert.ok(await page.evaluate(() => {
       const data = pathScoreHistory.getContext("2d").getImageData(0, 0, pathScoreHistory.width, pathScoreHistory.height).data;
-      return ["adaptive", "chains"].every(mode => {
+      return ["segments", "chains"].every(mode => {
         const rgb = PathSearchStats.modes[mode].color.match(/\w\w/g).map(value => parseInt(value, 16));
         for (let i = 0; i < data.length; i += 4) if (rgb.every((value, c) => Math.abs(data[i + c] - value) < 4) && data[i + 3] > 200) return true;
         return false;
@@ -143,13 +150,13 @@ async function run() {
     assert.match(await page.locator("#batchStatus").textContent(), /cycle 1.*duo 2.*Boucle 1/);
     await deliver(best); await phase("relay"); await deliver(best); await phase("normal");
     assert.equal(await page.evaluate(() => batchPlan.current.cycle), 2);
-    for (const next of ["adaptive", "points", "sections", "segments", "chains", "relay", "normal"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay", "normal"]) {
       await deliver(best); await phase(next);
     }
     assert.equal(await page.evaluate(() => selectedDmc), "321");
     assert.equal(await page.locator('#pathGainRows [data-mode="adaptive"] td').first().textContent(), "-", "Color statistics never leak to the next color");
     assert.deepEqual(await page.evaluate(() => bestPathsByDmc["310"]), best);
-    for (const next of ["adaptive", "points", "sections", "segments", "chains", "relay"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay"]) {
       await deliver(second); await phase(next);
     }
     await deliver(second);
@@ -158,10 +165,10 @@ async function run() {
     assert.deepEqual(errors, []);
     assert.match(await page.locator("#batchStatus").textContent(), /3 couleurs terminees/);
     assert.deepEqual(await page.evaluate(() => batchRuns.map(r => r.mode)),
-      ["adaptive", "adaptive", "points", "sections", "segments", "chains", "chains", "relay",
+      ["segments", "segments", "points", "sections", "adaptive", "chains", "chains", "relay",
         "chains", "relay",
-        "normal", "adaptive", "points", "sections", "segments", "chains", "relay",
-        "normal", "adaptive", "points", "sections", "segments", "chains", "relay"]);
+        "normal", "segments", "points", "sections", "adaptive", "chains", "relay",
+        "normal", "segments", "points", "sections", "adaptive", "chains", "relay"]);
     const completedStats = await page.evaluate(() => pathSearchStatsByDmc);
     await page.locator("#undoPathPointButton").click();
     assert.equal(await page.evaluate(() => batchPlan.current.phase), "relay");
@@ -177,7 +184,7 @@ async function run() {
     await page.locator("#currentColorOptimizeButton").click(); await phase("normal");
     assert.equal(await page.evaluate(() => batchPlan.scope), "color");
     assert.deepEqual(await page.evaluate(() => batchPlan.pending), ["321"]);
-    for (const next of ["adaptive", "points", "sections", "segments", "chains", "relay"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay"]) {
       await deliver(second); await phase(next);
     }
     await deliver(second);
@@ -214,7 +221,8 @@ async function run() {
     const realRuns = await realPage.evaluate(() => batchRuns.map(r => ({ mode: r.mode, dmc: r.dmc, message: r.message, reports: r.reports })));
     for (const [dmc, cells] of [["310", points], ["321", other]]) {
       const runs = realRuns.filter(r => r.dmc === dmc);
-      assert.deepEqual(runs.slice(0, 6).map(r => r.mode), ["normal", "adaptive", "points", "sections", "segments", "chains"]);
+      assert.deepEqual(runs.slice(0, 6).map(r => r.mode), ["normal", "segments", "points", "sections", "adaptive", "chains"]);
+      assert.ok(runs.every(r => r.mode !== "deep"), "M6 remains a separate one-hour command");
       assert.equal(runs.at(-1).mode, "relay");
       let previous = Infinity;
       for (const r of runs) {

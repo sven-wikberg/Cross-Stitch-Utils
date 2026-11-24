@@ -101,7 +101,7 @@ Tests :
 - `node tests/planner-points.test.js` (Playwright) : vrai worker, selecteur
   d'inactivite commun, requete sans budget total,
   suivi visuel PC/mobile, arret, meilleur chemin, annuler/retablir et reprise.
-- `node tests/points-quality-benchmark.js` : comparaison des moteurs 2 et 3
+- `node tests/points-quality-benchmark.js` : comparaison des moteurs adaptatif et par points
   a budget et fichier initial identiques. Les variables `BENCHMARK_MS`,
   `BENCHMARK_SEEDS`, `BENCHMARK_ENGINES`, `BENCHMARK_LARGE`, `BENCHMARK_COLOR`
   reglent les essais. `BENCHMARK_PATTERN_REF` permet de lire un fichier via
