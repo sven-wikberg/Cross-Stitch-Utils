@@ -3,13 +3,13 @@
   const EPSILON = 1e-8, MAX_POINTS = 400;
   const modes = {
     normal: { short: "M1", label: "Moteur 1 : blocs", color: "#167d9a" },
-    adaptive: { short: "M2", label: "Moteur 2 : adaptatif", color: "#ba4c22" },
+    segments: { short: "M2", label: "Moteur 2 : raccordements", color: "#3465bd" },
     points: { short: "M3", label: "Moteur 3 : points", color: "#607d24" },
     sections: { short: "M4", label: "Moteur 4 : sous-sections", color: "#975299" },
-    segments: { short: "M5", label: "Moteur 5 : raccordements", color: "#3465bd" },
+    adaptive: { short: "M5", label: "Moteur 5 : adaptatif", color: "#ba4c22" },
+    deep: { short: "M6", label: "Moteur 6 : approfondie", color: "#776328" },
     chains: { short: "B1", label: "Boucle 1 : chaines", color: "#b42f60" },
-    relay: { short: "B2", label: "Boucle 2 : relais", color: "#008565" },
-    deep: { short: "LNS", label: "Optimisation approfondie", color: "#776328" }
+    relay: { short: "B2", label: "Boucle 2 : relais", color: "#008565" }
   };
   const finite = value => Number.isFinite(value) && value >= 0;
   const empty = () => ({ version: 1, baseline: null, score: null, elapsedMs: 0, totals: {}, history: [], truncated: false, active: null });

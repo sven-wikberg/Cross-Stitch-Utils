@@ -1,13 +1,13 @@
-# Moteur 2 : recherche adaptative
+# Moteur 5 : recherche adaptative
 
 Ce moteur reste independant du mode blocs et du mode approfondi existants. Il
 reutilise leur modele de couture et leurs primitives verifiees, mais recherche
 directement un ordre de diagonales : les blocs ne sont pas des contraintes
 permanentes. Il ne change aucun format de pattern, chemin ou progression.
-Il se lance seul ou comme deuxieme phase du [cycle automatique commun](../README.md#cycle-automatique),
-entre les moteurs 1 (blocs) et 3 (points puis diagonales). L'interface distingue
+Il se lance seul ou comme cinquieme phase du [cycle automatique commun](../README.md#cycle-automatique),
+apres le moteur 4 (sous-sections) et avant les boucles. L'interface distingue
 trois categories : les cinq moteurs, les deux boucles et la recherche LNS
-approfondie de 1 heure ; seule cette derniere est exclue du cycle automatique.
+approfondie de 1 heure (moteur 6) ; seule cette derniere est exclue du cycle automatique.
 
 ## Les six etapes
 
