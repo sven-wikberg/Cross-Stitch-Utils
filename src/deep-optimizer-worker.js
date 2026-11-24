@@ -134,8 +134,12 @@
   function createDeepOptimizer(model, createBuilder, createBlock, createRelay, createLns, clock = () => performance.now(), random = Math.random) {
     const epsilon = 1e-8, builder = createBuilder(model, clock), lns = createLns(model, clock, random);
     function optimizePath(options, report = () => {}) {
-      const started = clock(), totalLimitMs = Math.min(3600000, Math.max(1, Number(options.totalLimitMs) || 3600000));
-      const deadline = started + totalLimitMs, threshold = options.cutThreshold || 10, cells = options.points || [];
+      const started = clock(), stopAfterInactivity = options.stopAfterInactivity === true;
+      const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimitMs = stopAfterInactivity ? null : Math.min(3600000, Math.max(1, Number(options.totalLimitMs) || 3600000));
+      const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
+      let deadline = started + budgetMs;
+      const threshold = options.cutThreshold || 10, cells = options.points || [];
       const constraints = { ...(options.constraints || {}), forcedCuts: [
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
       ] };
@@ -145,24 +149,33 @@
       let metrics = best ? measure(best) : null, initialMetrics = metrics;
       let partialPath = null, partialMetrics = null;
       let lastReport = -Infinity, lastImprovement = started, changed = Boolean(best), improvements = 0, attempts = 0;
-      let warm = {}, stage = "preparation", phase = "Preparation du parcours", reason = "time-limit";
+      let warm = {}, stage = "preparation", phase = "Preparation du parcours", reason = stopAfterInactivity ? "inactivity" : "time-limit";
       const stats = { iterations: 0, repairs: 0, improvements: 0, diversifications: 0, size: 0, kind: "", attempts: 0 };
+      function timing(now) {
+        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImprovement,
+          remainingMs: Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImprovement : started)) / budgetMs * 100) };
+      }
+      function markGain() {
+        lastImprovement = clock();
+        if (stopAfterInactivity) deadline = lastImprovement + stagnationLimitMs;
+      }
       function emit(force = false) {
         const now = clock();
         if (!force && now - lastReport < 250) return;
         lastReport = now;
         report({ ...warm, method: "deep-optimization", stage, phase, totalLimitMs, elapsedMs: now - started,
-          lastImprovementMs: now - lastImprovement, metrics: metrics || partialMetrics, initialMetrics,
+          ...timing(now), metrics: metrics || partialMetrics, initialMetrics,
           ...(best && (force || changed) ? { path: best.map(model.copy) } : {}),
           ...(!best && partialPath && stage === "construction" ? { path: partialPath.map(model.copy) } : {}),
           relayChange: stage === "lns" || stage === "complete" ? null : warm.relayChange,
-          improvements, attempts, lns: { ...stats }, progress: Math.min(100, (now - started) / totalLimitMs * 100), reason });
+          improvements, attempts, lns: { ...stats }, reason });
         changed = false;
       }
       emit(true);
-      const warmup = Math.min(options.warmupMs ?? 60000, totalLimitMs * 0.1);
+      const warmup = Math.min(options.warmupMs ?? 60000, budgetMs * 0.1);
       if (!best || warmup > 0) {
-        const result = createBlock(model, createBuilder, clock, random).optimizePath({ ...options, constraints,
+        const result = createBlock(model, createBuilder, clock, random).optimizePath({ ...options, constraints, stopAfterInactivity: false,
           maxDurationMs: Math.max(1, Math.min(warmup, deadline - clock())) }, snapshot => {
           const { path, unitLinks, ...details } = snapshot; warm = details;
           stage = snapshot.stage === "complete" ? "lns" : snapshot.stage; phase = snapshot.phase;
@@ -174,64 +187,78 @@
             if (!best || value.score < metrics.score - epsilon) {
               best = path.map(model.copy); metrics = value; initialMetrics ||= snapshot.initialMetrics || value;
               partialPath = null; partialMetrics = null;
-              changed = true; lastImprovement = clock();
+              changed = true; markGain();
             }
           }
           improvements = snapshot.improvements || 0; attempts = snapshot.attempts || 0;
           emit();
         });
-        if (!best) { best = result.path.map(model.copy); metrics = measure(best); initialMetrics ||= metrics; changed = true; }
+        if (!best) { best = result.path.map(model.copy); metrics = measure(best); initialMetrics ||= metrics; changed = true; markGain(); }
       }
       let working = best, state = lns.context(working, constraints, threshold), misses = 0, size = 6;
       const elite = [best], baseImprovements = improvements, baseAttempts = attempts;
+      function keep(path, value) {
+        if (value.score >= metrics.score - epsilon) return false;
+        best = path; metrics = measure(best); stats.improvements++; improvements = baseImprovements + stats.improvements;
+        markGain(); changed = true; misses = 0; size = Math.max(6, size - 2);
+        elite.push(best); if (elite.length > 4) elite.shift();
+        working = best; state = lns.context(working, constraints, threshold); emit(true);
+        return true;
+      }
       stage = "lns"; phase = "Reconstruction LNS"; emit(true);
-      while (clock() < deadline) {
-        if (metrics.score <= Math.max(0, best.length - 1) + epsilon) { reason = "lower-bound"; break; }
-        if (working.length <= state.locked) { reason = "locked"; break; }
-        const diversify = misses >= 8 && stats.iterations % 5 === 0;
-        if (diversify) {
-          working = elite[stats.diversifications % elite.length];
-          state = lns.context(working, constraints, threshold); stats.diversifications++;
-        }
-        const neighborhood = lns.selectNeighborhood(state, stats.iterations, size);
-        stats.iterations++; stats.size = neighborhood.indices.length; stats.kind = neighborhood.kind;
-        phase = `LNS : ${neighborhood.kind.toLowerCase()} (${stats.size} diagonales)`; emit();
-        if (!stats.size) { reason = "locked"; break; }
-        const proposal = lns.repairNeighborhood(working, neighborhood.indices, {
-          constraints, cutThreshold: threshold, context: state, deadline: Math.min(deadline, clock() + 3000),
-          noise: diversify ? Math.max(0.5, threshold / 3) : 0
-        }, partial => { attempts = baseAttempts + stats.attempts + partial.attempts; emit(); });
-        stats.attempts += proposal.attempts; attempts = baseAttempts + stats.attempts;
-        if (proposal.path) {
-          stats.repairs++;
-          if (!model.validateRoute(proposal.path, cells) && model.satisfiesConstraints(proposal.path, constraints)) {
-            // Reorient the whole route after a promising reconstruction; the fixed prefix remains fixed.
-            let candidate = proposal.path, value = proposal.metrics;
-            if (value.score < metrics.score - epsilon) {
-              const oriented = builder.orientUnitPath(candidate, [], constraints, threshold);
-              if (oriented && !model.validateRoute(oriented.path, cells) && model.satisfiesConstraints(oriented.path, constraints)
-                  && oriented.score <= value.score + epsilon) { candidate = oriented.path; value = measure(candidate); }
-            }
-            if (value.score < metrics.score - epsilon) {
-              best = candidate; metrics = measure(best); stats.improvements++; improvements = baseImprovements + stats.improvements;
-              lastImprovement = clock(); changed = true; misses = 0; size = Math.max(6, size - 2);
-              elite.push(best); if (elite.length > 4) elite.shift();
-              working = best; state = lns.context(working, constraints, threshold); emit(true); continue;
-            }
-            const workScore = model.metrics(working, threshold, true).score;
-            if (value.score < workScore - epsilon || (diversify && value.score <= metrics.score + Math.max(4, threshold * 2))) {
-              working = candidate; state = lns.context(working, constraints, threshold);
+      while (true) {
+        while (clock() < deadline) {
+          if (metrics.score <= Math.max(0, best.length - 1) + epsilon) { reason = "lower-bound"; break; }
+          if (working.length <= state.locked) { reason = "locked"; break; }
+          const diversify = misses >= 8 && stats.iterations % 5 === 0;
+          if (diversify) {
+            working = elite[stats.diversifications % elite.length];
+            state = lns.context(working, constraints, threshold); stats.diversifications++;
+          }
+          const neighborhood = lns.selectNeighborhood(state, stats.iterations, size);
+          stats.iterations++; stats.size = neighborhood.indices.length; stats.kind = neighborhood.kind;
+          phase = `LNS : ${neighborhood.kind.toLowerCase()} (${stats.size} diagonales)`; emit();
+          if (!stats.size) { reason = "locked"; break; }
+          const proposal = lns.repairNeighborhood(working, neighborhood.indices, {
+            constraints, cutThreshold: threshold, context: state, deadline: Math.min(deadline, clock() + 3000),
+            noise: diversify ? Math.max(0.5, threshold / 3) : 0
+          }, partial => { attempts = baseAttempts + stats.attempts + partial.attempts; emit(); });
+          stats.attempts += proposal.attempts; attempts = baseAttempts + stats.attempts;
+          if (proposal.path) {
+            stats.repairs++;
+            if (!model.validateRoute(proposal.path, cells) && model.satisfiesConstraints(proposal.path, constraints)) {
+              // Reorient the whole route after a promising reconstruction; the fixed prefix remains fixed.
+              let candidate = proposal.path, value = proposal.metrics;
+              if (value.score < metrics.score - epsilon) {
+                const oriented = builder.orientUnitPath(candidate, [], constraints, threshold);
+                if (oriented && !model.validateRoute(oriented.path, cells) && model.satisfiesConstraints(oriented.path, constraints)
+                    && oriented.score <= value.score + epsilon) { candidate = oriented.path; value = measure(candidate); }
+              }
+              if (keep(candidate, value)) continue;
+              const workScore = model.metrics(working, threshold, true).score;
+              if (value.score < workScore - epsilon || (diversify && value.score <= metrics.score + Math.max(4, threshold * 2))) {
+                working = candidate; state = lns.context(working, constraints, threshold);
+              }
             }
           }
+          misses++;
+          if (misses % 4 === 0) size = Math.min(lns.maximumSize, size + 2);
+          emit();
         }
-        misses++;
-        if (misses % 4 === 0) size = Math.min(lns.maximumSize, size + 2);
-        emit();
+        if (!stopAfterInactivity) break;
+        // Match the other engines: always check directions at expiry, then resume only on a strict global gain.
+        phase = "Derniere passe sur les sens";
+        const oriented = builder.orientUnitPath(best, [], constraints, threshold);
+        if (!oriented || model.validateRoute(oriented.path, cells) || !model.satisfiesConstraints(oriented.path, constraints)
+          || !keep(oriented.path, measure(oriented.path))) break;
+        reason = "inactivity";
       }
       stage = "complete"; phase = "Optimisation approfondie terminee"; changed = true;
       emit(true);
+      const finished = clock();
       return { ...warm, method: "deep-optimization", stage, phase, path: best, metrics, initialMetrics,
-        totalLimitMs, elapsedMs: clock() - started, improvements, attempts, lns: { ...stats }, relayChange: null, reason, progress: 100 };
+        totalLimitMs, elapsedMs: finished - started, ...timing(finished), improvements, attempts,
+        lns: { ...stats }, relayChange: null, reason, progress: 100 };
     }
     return { optimizePath };
   }

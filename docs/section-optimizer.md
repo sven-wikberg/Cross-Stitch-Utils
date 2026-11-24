@@ -5,7 +5,7 @@ par cases de `src/point-order-search.js`, puis traduit ses ordres en parcours
 de fil dans `src/section-optimizer-worker.js`. Les formats et les fichiers de
 sauvegarde ne changent pas. Il se lance seul ou comme quatrieme phase du
 [cycle automatique commun](../README.md#cycle-automatique) a la couleur actuelle
-et a toutes les couleurs : moteurs 1 a 5, boucle 1 (chaines), boucle 2 (relais).
+et a toutes les couleurs : moteurs 1 a 6, boucle 1 (chaines), boucle 2 (relais).
 La recherche LNS approfondie de 1 heure reste separee et manuelle.
 
 ## Decoupage
@@ -48,7 +48,7 @@ le seuil par coupe.
 
 ## Inactivite et affinement
 
-Le selecteur `Arret sans amelioration`, commun aux moteurs 1 a 5, propose
+Le selecteur `Arret sans amelioration`, commun aux moteurs 1 a 6, propose
 10 secondes, 30 secondes, 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes.
 Seul un gain du meilleur score global reel superieur a `1e-8` relance ce delai :
 ni le score simplifie des cases, ni l'amelioration d'un candidat encore moins bon,

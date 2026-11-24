@@ -9,7 +9,7 @@ async function installHarness(page, real = false) {
     window.batchRuns = [];
     for (const [mode, name] of Object.entries({ normal: "createPathOptimizerWorker", adaptive: "createAdaptivePathOptimizerWorker",
       points: "createPointsDiagonalWorker", sections: "createSectionOptimizerWorker", segments: "createSegmentOptimizerWorker",
-      chains: "createChainOptimizerWorker", relay: "createRelayOptimizerWorker" })) {
+      deep: "createDeepPathOptimizerWorker", chains: "createChainOptimizerWorker", relay: "createRelayOptimizerWorker" })) {
       const create = window[name];
       window[name] = () => {
         const worker = real ? create() : new EventTarget();
@@ -28,7 +28,7 @@ async function installHarness(page, real = false) {
     window.deliverBatch = (route, type = "complete") => {
       const run = batchRuns.at(-1), metrics = StitchModel.metrics(route, cutThreshold, true);
       const method = { normal: "block-optimization", adaptive: "adaptive-optimization", points: "points-diagonals",
-        sections: "point-sections", segments: "segment-optimization", chains: "chain-reinsertion", relay: "relay-optimization" }[run.mode];
+        sections: "point-sections", segments: "segment-optimization", deep: "deep-optimization", chains: "chain-reinsertion", relay: "relay-optimization" }[run.mode];
       run.worker.dispatchEvent(new MessageEvent("message", { data: { type, runId: run.message.runId, path: route,
         method, stage: type === "complete" ? "complete" : "search", phase: "Verification du lot", metrics,
         initialMetrics: metrics, elapsedMs: 100, progress: type === "complete" ? 100 : 50,
@@ -79,7 +79,7 @@ async function run() {
     await load(page); await installHarness(page);
     assert.deepEqual(await page.locator("#optimizedPathButton").evaluate(button =>
       [...button.parentElement.querySelectorAll("button")].map(item => item.id)),
-      ["optimizedPathButton", "segmentsOptimizeButton", "pointsOptimizeButton", "sectionsOptimizeButton", "adaptiveOptimizeButton"]);
+      ["optimizedPathButton", "segmentsOptimizeButton", "pointsOptimizeButton", "sectionsOptimizeButton", "adaptiveOptimizeButton", "lnsOptimizeButton"]);
     assert.match(await page.locator("#deepOptimizeButton").textContent(), /Moteur 6.*1 h/);
     await page.evaluate(() => { batchPlan = PathBatchPlan.prepare({ pending: ["310", "321", "BLANC"], results: [] }, null); });
     await page.locator("#batchOptimizeButton").click(); await phase("normal");
@@ -108,6 +108,10 @@ async function run() {
     assert.deepEqual(await page.evaluate(() => batchRuns.at(-1).message.initialPath), middle, "A worse phase result is rejected");
     await deliver(middle); await phase("sections");
     await deliver(middle); await phase("adaptive");
+    await deliver(middle); await phase("deep");
+    assert.equal(await page.evaluate(() => batchRuns.at(-1).message.stopAfterInactivity), true);
+    assert.equal(await page.evaluate(() => batchRuns.at(-1).message.totalLimitMs), undefined);
+    assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
     await deliver(middle); await phase("chains");
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.untilStable), true);
     assert.equal(await page.evaluate(() => batchRuns.at(-1).message.totalLimitMs), undefined);
@@ -119,6 +123,7 @@ async function run() {
     assert.ok(Math.abs(gains.totals.segments.gain - (model.metrics(worst, 10, true).score - model.metrics(middle, 10, true).score)) < 1e-8);
     assert.ok(Math.abs(gains.totals.chains.gain - (model.metrics(middle, 10, true).score - model.metrics(best, 10, true).score)) < 1e-8);
     assert.equal(gains.totals.adaptive.gain, 0, "A no-gain engine is measured too");
+    assert.equal(gains.totals.deep.gain, 0, "Automatic M6 contributes its own measurements");
     assert.equal(gains.totals.relay, undefined, "A not-yet-run loop stays distinct from a zero-gain loop");
     assert.equal(await page.locator('#pathGainRows [data-mode="adaptive"] td').first().textContent(), "0");
     assert.match(await page.locator('#pathGainRows [data-mode="segments"] th').textContent(), /M2.*raccordements/);
@@ -150,13 +155,13 @@ async function run() {
     assert.match(await page.locator("#batchStatus").textContent(), /cycle 1.*duo 2.*Boucle 1/);
     await deliver(best); await phase("relay"); await deliver(best); await phase("normal");
     assert.equal(await page.evaluate(() => batchPlan.current.cycle), 2);
-    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay", "normal"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "deep", "chains", "relay", "normal"]) {
       await deliver(best); await phase(next);
     }
     assert.equal(await page.evaluate(() => selectedDmc), "321");
     assert.equal(await page.locator('#pathGainRows [data-mode="adaptive"] td').first().textContent(), "-", "Color statistics never leak to the next color");
     assert.deepEqual(await page.evaluate(() => bestPathsByDmc["310"]), best);
-    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "deep", "chains", "relay"]) {
       await deliver(second); await phase(next);
     }
     await deliver(second);
@@ -165,10 +170,10 @@ async function run() {
     assert.deepEqual(errors, []);
     assert.match(await page.locator("#batchStatus").textContent(), /3 couleurs terminees/);
     assert.deepEqual(await page.evaluate(() => batchRuns.map(r => r.mode)),
-      ["segments", "segments", "points", "sections", "adaptive", "chains", "chains", "relay",
+      ["segments", "segments", "points", "sections", "adaptive", "deep", "chains", "chains", "relay",
         "chains", "relay",
-        "normal", "segments", "points", "sections", "adaptive", "chains", "relay",
-        "normal", "segments", "points", "sections", "adaptive", "chains", "relay"]);
+        "normal", "segments", "points", "sections", "adaptive", "deep", "chains", "relay",
+        "normal", "segments", "points", "sections", "adaptive", "deep", "chains", "relay"]);
     const completedStats = await page.evaluate(() => pathSearchStatsByDmc);
     await page.locator("#undoPathPointButton").click();
     assert.equal(await page.evaluate(() => batchPlan.current.phase), "relay");
@@ -184,7 +189,7 @@ async function run() {
     await page.locator("#currentColorOptimizeButton").click(); await phase("normal");
     assert.equal(await page.evaluate(() => batchPlan.scope), "color");
     assert.deepEqual(await page.evaluate(() => batchPlan.pending), ["321"]);
-    for (const next of ["segments", "points", "sections", "adaptive", "chains", "relay"]) {
+    for (const next of ["segments", "points", "sections", "adaptive", "deep", "chains", "relay"]) {
       await deliver(second); await phase(next);
     }
     await deliver(second);
@@ -221,8 +226,8 @@ async function run() {
     const realRuns = await realPage.evaluate(() => batchRuns.map(r => ({ mode: r.mode, dmc: r.dmc, message: r.message, reports: r.reports })));
     for (const [dmc, cells] of [["310", points], ["321", other]]) {
       const runs = realRuns.filter(r => r.dmc === dmc);
-      assert.deepEqual(runs.slice(0, 6).map(r => r.mode), ["normal", "segments", "points", "sections", "adaptive", "chains"]);
-      assert.ok(runs.every(r => r.mode !== "deep"), "M6 remains a separate one-hour command");
+      assert.deepEqual(runs.slice(0, 7).map(r => r.mode), ["normal", "segments", "points", "sections", "adaptive", "deep", "chains"]);
+      assert.ok(runs.filter(r => r.mode === "deep").every(r => r.message.stopAfterInactivity === true && r.message.totalLimitMs === undefined), "Automatic M6 uses inactivity, not the one-hour command");
       assert.equal(runs.at(-1).mode, "relay");
       let previous = Infinity;
       for (const r of runs) {
@@ -235,7 +240,7 @@ async function run() {
       assert.equal(model.validateRoute(await realPage.evaluate(dmc => pathsByDmc[dmc], dmc), cells), "");
     }
     assert.deepEqual(errors, []);
-    console.log("batch planner passed: all seven phases, per-loop and paired-loop stabilization, full cycles, one/all colors, real workers, best protection, feedback, stop/reload, errors, undo/redo, manual isolation, unused colors");
+    console.log("batch planner passed: all eight phases, per-loop and paired-loop stabilization, full cycles, one/all colors, real workers, best protection, feedback, stop/reload, errors, undo/redo, manual isolation, unused colors");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

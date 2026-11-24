@@ -6,7 +6,7 @@ dans `src/point-order-search.js`. Le nouveau worker, les compteurs et la
 conversion sont dans `src/points-diagonals-worker.js`. Aucune sauvegarde ni
 aucun format d'export ne change.
 Il se lance seul ou comme troisieme phase du [cycle automatique commun](../README.md#cycle-automatique)
-aux commandes de couleur actuelle et de toutes les couleurs. Les moteurs 1 a 5
+aux commandes de couleur actuelle et de toutes les couleurs. Les moteurs 1 a 6
 precedent les boucles 1 (chaines) et 2 (relais) ; la LNS approfondie de 1 heure
 reste separee et n'est pas automatisee.
 
@@ -74,7 +74,7 @@ reste donc intact, meme si la recherche par points prefere un autre ordre.
 ## Interface et verification
 
 Le bouton `Moteur 3 : points puis diagonales` utilise le selecteur commun aux
-moteurs 1 a 5, `Arret sans amelioration` : 10 secondes, 30 secondes,
+moteurs 1 a 6, `Arret sans amelioration` : 10 secondes, 30 secondes,
 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes. Seule une baisse du
 meilleur score global reel superieure a `1e-8` remet ce delai a zero, jamais
 une amelioration du seul score par cases ou une relance. Il n'y a pas de plafond

@@ -163,3 +163,56 @@ test("coordinated LNS repair improves a real block-and-relay plateau", () => {
   assert.ok(result.lns.improvements >= 1 && result.lns.diversifications > 0);
   assert.equal(model.validateRoute(result.path, points), "");
 });
+
+test("M6 inactivity restarts only for accepted global gains, not repairs or diversifications", () => {
+  const points = require("./fixtures/combined-search.js").timerRecovery;
+  const initialPath = model.expandCells(points, 3), reports = []; let now = 0;
+  const result = engine(() => ++now).optimizePath({ points, initialPath, cutThreshold: 3, warmupMs: 0,
+    stopAfterInactivity: true, stagnationLimitMs: 1000, totalLimitMs: 1 }, s => reports.push(s));
+  let score = model.metrics(initialPath, 3, true).score, lastGainAt = 0, gains = 0;
+  for (const s of reports) {
+    assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
+    assert.equal(s.stagnationLimitMs, 1000);
+    const gainAt = s.elapsedMs - s.lastImprovementMs;
+    if (s.metrics.score < score - 1e-8) {
+      assert.ok(gainAt > lastGainAt); assert.ok(s.lastImprovementMs < 10); gains++;
+    } else assert.equal(gainAt, lastGainAt, "No reset without a strict improvement in the published best");
+    lastGainAt = gainAt; score = s.metrics.score;
+    if (s.path) assert.equal(model.validateRoute(s.path, points), "");
+  }
+  assert.ok(gains > 1 && result.lns.diversifications > 0);
+  assert.ok(result.elapsedMs > 1000 && result.lastImprovementMs >= 1000);
+  assert.equal(result.reason, "inactivity"); assert.equal(result.progress, 100);
+  assert.ok(result.elapsedMs - lastGainAt < 1020);
+});
+
+test("M6 always checks directions at inactivity expiry and resumes when that final pass improves", () => {
+  const points = [{ x: 0, y: 0 }, { x: 7, y: 3 }], optimal = model.expandCells(points, 10);
+  const optimalScore = model.metrics(optimal, 10, true).score;
+  const initialPath = optimal.map((_, index) => optimal.map((action, i) => ({ ...action,
+    direction: i === index ? -action.direction : action.direction })))
+    .find(path => !model.validateRoute(path, points) && model.metrics(path, 10, true).score > optimalScore + 1e-8);
+  assert.ok(initialPath);
+  let now = 0, orientationCalls = 0; const reports = [];
+  const builder = m => {
+    const real = createOrthogonalPathBuilder(m);
+    return { ...real, orientUnitPath(...args) { orientationCalls++; return real.orientUnitPath(...args); } };
+  };
+  const idleLns = () => ({ maximumSize: 14, context: () => ({ locked: 0 }),
+    selectNeighborhood: () => ({ indices: [0], kind: "Test" }), repairNeighborhood: () => ({ attempts: 0 }) });
+  const result = createDeepOptimizer(model, builder, createBlockOptimizer, createRelaySearch, idleLns, () => ++now)
+    .optimizePath({ points, initialPath, warmupMs: 0, stopAfterInactivity: true, stagnationLimitMs: 100 }, s => reports.push(s));
+  assert.equal(orientationCalls, 2, "Expiry checks directions again after the resumed search");
+  assert.ok(result.elapsedMs >= 200); assert.ok(result.lastImprovementMs >= 100);
+  close(result.metrics.score, optimalScore);
+  assert.equal(model.validateRoute(result.path, points), "");
+  assert.ok(reports.some(s => s.phase === "Derniere passe sur les sens" && s.lastImprovementMs < 10));
+});
+
+test("M6 inactivity feedback uses the shared timer instead of the one-hour countdown", () => {
+  const visuals = createPathVisuals(model, createOrthogonalPathBuilder(model));
+  const view = visuals.searchPresentation({ method: "deep-optimization", stage: "lns", stopAfterInactivity: true,
+    totalLimitMs: null, elapsedMs: 120000, lastImprovementMs: 20000, stagnationLimitMs: 60000 }, true);
+  assert.ok(view.searching && view.active && !view.timed);
+  assert.equal(view.max, 60000); assert.equal(view.value, 20000);
+});
