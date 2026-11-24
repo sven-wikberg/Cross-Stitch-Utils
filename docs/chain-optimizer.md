@@ -4,7 +4,7 @@ Anciennement nommee moteur 6, cette boucle reprend le meilleur parcours complet
 compatible de la couleur. Elle deplace une suite de diagonales ailleurs dans
 l'ordre du parcours, sans changer son ordre interne. Contrairement au moteur 2,
 la chaine n'a pas a prendre la place d'un autre segment selectionne.
-L'interface distingue les moteurs 1 a 5,
+L'interface distingue les moteurs 1 a 6,
 les boucles 1 (chaines) et 2 (relais), et la recherche LNS approfondie de 1 heure.
 Cette derniere reste separee et n'est jamais automatisee.
 
@@ -58,7 +58,7 @@ et apres coupe, plus trois fois le seuil par coupe. Les decimales sont conservee
 Le bouton `Boucle 1 : reinsertion de chaines` necessite un parcours complet.
 L'interface transmet `untilStable: true`, sans `totalLimitMs` : aucun minuteur
 fixe ni delai d'inactivite n'arrete la recherche. Le selecteur commun aux moteurs
-1 a 5 ne limite donc pas cette boucle. Les balayages se repetent jusqu'a un tour
+1 a 6 ne limite donc pas cette boucle. Les balayages se repetent jusqu'a un tour
 complet sans gain strict du score global reel (epsilon `1e-8`) dans les voisinages
 examines ; une orientation qui apporte encore un gain relance la recherche.
 Un arret pendant l'examen des positions abandonne le meilleur candidat

@@ -5,8 +5,8 @@ reutilise leur modele de couture et leurs primitives verifiees, mais recherche
 directement un ordre de diagonales : les blocs ne sont pas des contraintes
 permanentes. Il ne change aucun format de pattern, chemin ou progression.
 Il se lance seul ou comme cinquieme phase du [cycle automatique commun](../README.md#cycle-automatique),
-apres le moteur 4 (sous-sections) et avant les boucles. L'interface distingue
-trois categories : les cinq moteurs, les deux boucles et la recherche LNS
+apres le moteur 4 (sous-sections) et avant le moteur 6 (LNS). L'interface distingue
+trois categories : les six moteurs, les deux boucles et la recherche LNS
 approfondie de 1 heure (moteur 6) ; seule cette derniere est exclue du cycle automatique.
 
 ## Les six etapes
@@ -54,7 +54,7 @@ approfondie de 1 heure (moteur 6) ; seule cette derniere est exclue du cycle aut
 - Score = somme des distances euclidiennes entre trous, y compris apres une
   coupe, plus `3 * seuil` par coupe. Les decimales ne sont pas arrondies pendant
   les calculs. Une coupe automatique intervient si la distance depasse le seuil.
-- Dans l'interface, le selecteur commun aux moteurs 1 a 5, `Arret sans amelioration`,
+- Dans l'interface, le selecteur commun aux moteurs 1 a 6, `Arret sans amelioration`,
   propose 10 secondes, 30 secondes, 1 minute par defaut, 2 minutes,
   5 minutes ou 10 minutes. Seul un gain strict du meilleur score global reel,
   superieur a `1e-8`, relance ce delai ; ni une diversification ni un gain local

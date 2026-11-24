@@ -26,7 +26,7 @@ async function observePathWorkers(page, holdMessages = false, stagnationLimitMs 
     const createWorker = window.pathWorkerHarness?.createWorker || window.createPathOptimizerWorker;
     const harness = window.pathWorkerHarness = { createWorker, holdMessages: hold, messages: [], workers: [], stagnationLimitMs: limit };
     window.batchTestFactories ||= Object.fromEntries(["createAdaptivePathOptimizerWorker", "createPointsDiagonalWorker",
-      "createSectionOptimizerWorker", "createSegmentOptimizerWorker", "createChainOptimizerWorker"].map(name => [name, window[name]]));
+      "createSectionOptimizerWorker", "createSegmentOptimizerWorker", "createDeepPathOptimizerWorker", "createChainOptimizerWorker"].map(name => [name, window[name]]));
     for (const [name, create] of Object.entries(window.batchTestFactories)) {
       window[name] = () => {
         const worker = create(), post = worker.postMessage.bind(worker);

@@ -22,10 +22,12 @@ async function run() {
     const create = window.createDeepPathOptimizerWorker;
     window.createDeepPathOptimizerWorker = () => {
       const worker = create(), post = worker.postMessage.bind(worker);
-      worker.postMessage = message => { deepPosted.push(message); post({ ...message, totalLimitMs: deepTestBudget, warmupMs: 0 }); };
+      worker.postMessage = message => { deepPosted.push(message); post({ ...message, totalLimitMs: deepTestBudget,
+        ...(message.stopAfterInactivity ? { stagnationLimitMs: 1000 } : {}), warmupMs: 0 }); };
       worker.addEventListener("message", event => {
         const s = event.data;
-        deepReports.push({ type: s.type, stage: s.stage, metrics: s.metrics, lns: s.lns, totalLimitMs: s.totalLimitMs, elapsedMs: s.elapsedMs });
+        deepReports.push({ type: s.type, stage: s.stage, metrics: s.metrics, lns: s.lns, totalLimitMs: s.totalLimitMs,
+          elapsedMs: s.elapsedMs, stopAfterInactivity: s.stopAfterInactivity, lastImprovementMs: s.lastImprovementMs });
       });
       return worker;
     };
@@ -44,6 +46,7 @@ async function run() {
     assert.equal(await page.evaluate(() => deepPosted[0].totalLimitMs), 3600000);
     assert.ok(await page.locator("#optimizedPathButton").isDisabled());
     assert.ok(await page.locator("#deepOptimizeButton").isDisabled());
+    assert.ok(await page.locator("#lnsOptimizeButton").isDisabled());
     assert.ok(await page.locator("#pathLnsMetrics").isVisible());
     assert.equal(await page.locator("#pathAlgorithmClockLabel").textContent(), "Temps restant");
     assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "3600000");
@@ -78,6 +81,21 @@ async function run() {
     assert.ok(model.metrics(await page.evaluate(() => currentPath()), 3, true).score <= model.metrics(stopped, 3, true).score + 1e-8);
     assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
     assert.ok(await page.locator("#optimizedPathButton").isEnabled());
+    const beforeM6 = await page.evaluate(() => pathPerformanceMetrics(currentPath()).score);
+    await page.locator("#lnsOptimizeButton").click();
+    await page.waitForFunction(() => pathAlgorithmRunning && activePathOptimizerSnapshot?.stopAfterInactivity === true);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).stopAfterInactivity), true);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).totalLimitMs), undefined);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).stagnationLimitMs), 60000);
+    assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
+    assert.notEqual(await page.locator("#pathAlgorithmClockLabel").textContent(), "Temps restant");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "1000");
+    assert.ok(await page.locator("#deepOptimizeButton").isDisabled());
+    await page.waitForFunction(() => !pathAlgorithmRunning && deepReports.at(-1)?.stopAfterInactivity === true);
+    assert.equal(await page.evaluate(() => deepReports.at(-1).totalLimitMs), null);
+    assert.ok(await page.evaluate(() => deepReports.at(-1).lastImprovementMs >= 1000));
+    assert.ok(model.metrics(await page.evaluate(() => currentPath()), 3, true).score <= beforeM6 + 1e-8);
+    assert.equal(await page.evaluate(() => pathSearchStatsByDmc["310"].totals.deep.runs), 3);
     await page.evaluate(() => {
       const create = window.createPathOptimizerWorker;
       window.createPathOptimizerWorker = () => {
@@ -91,7 +109,7 @@ async function run() {
     assert.equal(await page.evaluate(() => normalPosted.totalLimitMs), undefined);
     assert.equal(await page.locator("#pathLnsMetrics").isVisible(), false);
     assert.deepEqual(errors, []);
-    console.log("deep planner passed: one-hour request, real LNS gains, visible highlights, countdown, stop, best retention, undo/redo, reload, completion and normal-mode isolation");
+    console.log("deep planner passed: separate one-hour and inactivity M6, real LNS gains, highlights, timers, stop, best retention, undo/redo, reload and shared attribution");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

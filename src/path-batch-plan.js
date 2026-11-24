@@ -2,7 +2,8 @@
   "use strict";
   const phases = { normal: "Moteur 1 : blocs", segments: "Moteur 2 : raccordements",
     points: "Moteur 3 : points puis diagonales", sections: "Moteur 4 : sous-sections",
-    adaptive: "Moteur 5 : recherche adaptative", chains: "Boucle 1 : chaines", relay: "Boucle 2 : relais" };
+    adaptive: "Moteur 5 : recherche adaptative", deep: "Moteur 6 : approfondie",
+    chains: "Boucle 1 : chaines", relay: "Boucle 2 : relais" };
   const order = Object.keys(phases);
   const EPSILON = 1e-8;
   const isLoop = phase => phase === "chains" || phase === "relay";
@@ -15,7 +16,7 @@
       && Number.isInteger(current.cycle) && current.cycle > 0 && Number.isInteger(current.pass) && current.pass > 0
       && [current.initial, current.cycleStartScore, current.phaseStartScore].every(score => score === null || Number.isFinite(score));
     let normalizedCurrent = null;
-    if (valid && [2, 3, 4].includes(saved.version)) {
+    if (valid && [2, 3, 4, 5].includes(saved.version)) {
       const candidate = { ...current };
       if (saved.version === 2) {
         candidate.loopRound = isLoop(candidate.phase) ? 1 : 0;
@@ -29,12 +30,16 @@
         candidate.loopRound = 0; candidate.loopStartScore = null;
         candidate.phaseStartScore = candidate.cycleStartScore;
       }
+      if (saved.version < 5 && isLoop(candidate.phase)) {
+        candidate.phase = "deep"; candidate.pass = 1;
+        candidate.loopRound = 0; candidate.loopStartScore = null;
+      }
       if (isLoop(candidate.phase)
         ? Number.isInteger(candidate.loopRound) && candidate.loopRound > 0
           && (candidate.loopStartScore === null || Number.isFinite(candidate.loopStartScore))
         : candidate.loopRound === 0 && candidate.loopStartScore === null) normalizedCurrent = candidate;
     }
-    return { version: 4, scope: saved?.scope === "color" ? "color" : "all", pending, results, current: normalizedCurrent };
+    return { version: 5, scope: saved?.scope === "color" ? "color" : "all", pending, results, current: normalizedCurrent };
   }
 
   function prepare(saved, score) {

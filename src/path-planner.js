@@ -31,6 +31,7 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
+const lnsOptimizeButton = document.querySelector("#lnsOptimizeButton");
 const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton");
 const pointsOptimizeButton = document.querySelector("#pointsOptimizeButton");
 const sectionsOptimizeButton = document.querySelector("#sectionsOptimizeButton");
@@ -888,6 +889,7 @@ function renderPathBuilder() {
     pathBuildStatus.textContent = "Selectionne une couleur pour construire son chemin.";
     optimizedPathButton.disabled = true;
     deepOptimizeButton.disabled = true;
+    lnsOptimizeButton.disabled = true;
     adaptiveOptimizeButton.disabled = true;
     pointsOptimizeButton.disabled = true;
     sectionsOptimizeButton.disabled = true;
@@ -908,6 +910,7 @@ function renderPathBuilder() {
     : `Chemin en cours: ${path.length} / ${expected} diagonales.`;
   optimizedPathButton.disabled = expected === 0 || pathAlgorithmRunning;
   deepOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
+  lnsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   adaptiveOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   pointsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
   sectionsOptimizeButton.disabled = expected === 0 || pathAlgorithmRunning;
@@ -1813,7 +1816,7 @@ pathColorLegend.addEventListener("click", (event) => {
   renderPathTool();
 });
 
-function startAdvancedPathSearch(mode = "normal", batchJob = null) {
+function startAdvancedPathSearch(mode = "normal", batchJob = null, searchOptions = {}) {
   if (!loadedPattern || !selectedDmc || pathAlgorithmRunning) {
     return;
   }
@@ -1830,7 +1833,8 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
     showAlgorithmFeedback("Ce moteur necessite un chemin complet et valide.");
     return;
   }
-  const inactivityEngine = !deep && !chains && !relayOnly;
+  const deepTimed = deep && !batchJob && searchOptions.stopAfterInactivity !== true;
+  const inactivityEngine = !deepTimed && !chains && !relayOnly;
   const budget = 3600000;
   try {
     worker = chains ? window.createChainOptimizerWorker?.() : segments ? window.createSegmentOptimizerWorker?.() : relayOnly ? window.createRelayOptimizerWorker?.() : sections ? window.createSectionOptimizerWorker?.() : points ? window.createPointsDiagonalWorker?.() : adaptive ? window.createAdaptivePathOptimizerWorker?.()
@@ -1939,12 +1943,12 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null) {
     initialPath: startingPath.map(copyPoint),
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
-    ...(deep ? { totalLimitMs: budget } : {}),
+    ...(deepTimed ? { totalLimitMs: budget } : {}),
     ...(inactivityEngine ? { stopAfterInactivity: true } : {}),
     ...(chains ? { untilStable: true } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
-  if (deep) {
+  if (deepTimed) {
     activePathOptimizerDeadlineTimer = setTimeout(() => {
       if (worker !== activePathOptimizerWorker) return;
       flushAdvancedPathSnapshot();
@@ -2252,6 +2256,10 @@ optimizedPathButton.addEventListener("click", () => {
 deepOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
   startAdvancedPathSearch("deep");
+});
+lnsOptimizeButton.addEventListener("click", () => {
+  batchRunning = false;
+  startAdvancedPathSearch("deep", null, { stopAfterInactivity: true });
 });
 adaptiveOptimizeButton.addEventListener("click", () => {
   batchRunning = false;

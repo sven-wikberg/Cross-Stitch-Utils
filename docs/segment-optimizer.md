@@ -4,7 +4,7 @@ Ce moteur ameliore un parcours complet existant. Il ne reconstruit pas les
 blocs, ne remplace aucun autre moteur et ne lance pas la recherche de relais.
 Le meilleur parcours compatible de la couleur est son point de depart.
 Il se lance seul ou comme deuxieme phase du [cycle automatique commun](../README.md#cycle-automatique)
-a la couleur actuelle et a toutes les couleurs. Les moteurs 1 a 5 sont suivis
+a la couleur actuelle et a toutes les couleurs. Les moteurs 1 a 6 sont suivis
 des boucles 1 (chaines) et 2 (relais) ; la recherche LNS approfondie de 1 heure
 reste une commande separee, jamais automatisee.
 
@@ -61,7 +61,7 @@ Ces essais ne sont jamais affiches comme meilleur chemin ni sauvegardes.
 ## Interface et sauvegardes
 
 Le bouton `Moteur 2 : raccordements` est disponible avec un parcours complet.
-Le selecteur commun aux moteurs 1 a 5, `Arret sans amelioration`, propose
+Le selecteur commun aux moteurs 1 a 6, `Arret sans amelioration`, propose
 10 secondes, 30 secondes, 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes.
 Seule une baisse du meilleur score global reel superieure a `1e-8` remet ce
 delai a zero : un gain local sur le parcours de travail ou une diversification

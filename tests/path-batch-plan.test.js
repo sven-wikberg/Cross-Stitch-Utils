@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const batch = require("../src/path-batch-plan.js");
 const done = (plan, score) => batch.complete(plan, { ...plan.current }, { score, cuts: 1, initial: 150 });
-const engines = ["normal", "segments", "points", "sections", "adaptive"];
+const engines = ["normal", "segments", "points", "sections", "adaptive", "deep"];
 function runEngines(plan, scores) {
   engines.forEach((phase, i) => { assert.equal(plan.current.phase, phase); plan = done(plan, scores[i]); });
   assert.equal(plan.current.phase, "chains");
@@ -12,7 +12,7 @@ function runEngines(plan, scores) {
 test("engines run in order, each loop stabilizes, then the pair repeats before engines restart", () => {
   let plan = batch.prepare({ pending: ["310", "321"], results: [] }, 160);
   assert.equal(plan.current.cycle, 1);
-  plan = runEngines(plan, [150, 140, 130, 120, 110]);
+  plan = runEngines(plan, [150, 140, 130, 120, 115, 110]);
   assert.equal(plan.current.cycleStartScore, 160);
   assert.equal(plan.current.loopStartScore, 110);
   plan = done(plan, 100);
@@ -27,7 +27,7 @@ test("engines run in order, each loop stabilizes, then the pair repeats before e
   assert.equal(plan.current.phase, "normal"); assert.equal(plan.current.cycle, 2);
   assert.equal(plan.current.cycleStartScore, 90);
   assert.equal(plan.current.loopRound, 0); assert.equal(plan.current.loopStartScore, null);
-  plan = runEngines(plan, [90, 90, 90, 90, 90]);
+  plan = runEngines(plan, engines.map(() => 90));
   plan = done(done(plan, 90), 90);
   assert.equal(plan.current, null);
   assert.deepEqual(plan.pending, ["321"]);
@@ -50,7 +50,7 @@ test("a gain in any engine restarts the entire cycle, not only chains and relays
 });
 
 test("a stable worker skips its own extra scan but still repeats the improved pair", () => {
-  let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), [100, 100, 100, 100, 100]);
+  let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), engines.map(() => 100));
   plan = batch.complete(plan, plan.current, { score: 90, stable: true });
   assert.equal(plan.current.phase, "relay");
   plan = batch.complete(plan, plan.current, { score: 80, stable: true });
@@ -64,7 +64,7 @@ test("a stable worker skips its own extra scan but still repeats the improved pa
 
 test("a gain in either loop restarts the pair, including gains in later pairs", () => {
   for (const winner of ["chains", "relay"]) {
-    let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), [100, 100, 100, 100, 100]);
+    let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), engines.map(() => 100));
     const stable = score => { plan = batch.complete(plan, plan.current, { score, stable: true }); };
     for (let round = 1; round <= 3; round++) {
       assert.equal(plan.current.phase, "chains"); assert.equal(plan.current.loopRound, round);
@@ -84,7 +84,7 @@ test("a gain in either loop restarts the pair, including gains in later pairs", 
 test("one-color and all-color plans share exactly the same phase transitions", () => {
   let single = batch.prepare({ scope: "color", pending: ["310"] }, 100);
   let all = batch.prepare({ pending: ["310", "321"] }, 100);
-  for (const score of [99, 98, 97, 96, 95, 94, 94, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93]) {
+  for (const score of [99, 98, 97, 96, 95, 95, 94, 94, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93, 93]) {
     assert.deepEqual(single.current, all.current);
     single = done(single, score); all = done(all, score);
   }
@@ -94,7 +94,7 @@ test("one-color and all-color plans share exactly the same phase transitions", (
 
 test("pause/reload retains phase, loop pass, pair round and both baselines", () => {
   let plan = batch.prepare({ pending: ["310"] }, 150);
-  plan = runEngines(plan, [140, 130, 120, 110, 100]);
+  plan = runEngines(plan, [140, 130, 120, 110, 105, 100]);
   plan = done(plan, 90);
   const reloaded = batch.prepare(JSON.parse(JSON.stringify(plan)), 80);
   assert.deepEqual(reloaded, plan);
@@ -123,7 +123,7 @@ test("manual, stale and invalid completions cannot advance the plan or mutate un
 });
 
 test("late completions from the same phase in an earlier pair cannot advance the plan", () => {
-  let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), [100, 100, 100, 100, 100]);
+  let plan = runEngines(batch.prepare({ pending: ["310"] }, 100), engines.map(() => 100));
   const oldChains = { ...plan.current };
   plan = batch.complete(plan, plan.current, { score: 90, stable: true });
   const oldRelay = { ...plan.current };
@@ -135,7 +135,7 @@ test("late completions from the same phase in an earlier pair cannot advance the
 
 test("float noise is not a gain and a complete no-gain cycle stops", () => {
   let plan = batch.prepare({ pending: ["310"] }, 100);
-  plan = runEngines(plan, [100, 100, 100, 100, 100]);
+  plan = runEngines(plan, engines.map(() => 100));
   plan = done(done(plan, 100), 100 - 1e-10);
   assert.equal(plan.pending.length, 0);
   assert.match(batch.status(plan, false), /cycle complet sans gain/);
@@ -153,17 +153,17 @@ test("legacy scheduling restarts at engine 1 without losing queued colors or res
   assert.equal(batch.normalize({ ...plan, pending: ["310"], current: { dmc: "321", phase: "relay" } }).current, null);
 });
 
-test("version 2 plans restart the reordered engines or a full pair without losing the cycle baseline", () => {
+test("version 2 plans restart reordered engines or insert M6 before loops without losing the baseline", () => {
   for (const phase of [...engines, "chains", "relay"]) {
     const old = { version: 2, scope: "color", pending: ["310"], results: [{ dmc: "321", score: 50 }],
       current: { dmc: "310", phase, cycle: 3, pass: 2, initial: 150, cycleStartScore: 100, phaseStartScore: 90 } };
     const before = structuredClone(old), plan = batch.prepare(old, 80);
     const loop = phase === "chains" || phase === "relay";
-    assert.equal(plan.version, 4); assert.equal(plan.scope, "color");
-    assert.equal(plan.current.phase, loop ? "chains" : "normal");
+    assert.equal(plan.version, 5); assert.equal(plan.scope, "color");
+    assert.equal(plan.current.phase, loop ? "deep" : "normal");
     assert.equal(plan.current.pass, 1);
-    assert.equal(plan.current.loopRound, loop ? 1 : 0);
-    assert.equal(plan.current.loopStartScore, loop ? 90 : null);
+    assert.equal(plan.current.loopRound, 0);
+    assert.equal(plan.current.loopStartScore, null);
     assert.equal(plan.current.cycle, 3); assert.equal(plan.current.cycleStartScore, 100);
     assert.deepEqual(plan.results, old.results); assert.deepEqual(old, before);
     assert.deepEqual(batch.normalize(plan), plan, "Migration is only applied once");
@@ -171,18 +171,39 @@ test("version 2 plans restart the reordered engines or a full pair without losin
   }
 });
 
-test("version 3 resumes loop pairs exactly, but cannot skip the newly reordered engines", () => {
+test("version 3 cannot skip reordered engines or the added M6", () => {
   for (const phase of [...engines, "chains", "relay"]) {
     const loop = phase === "chains" || phase === "relay";
     const old = { version: 3, pending: ["310"], results: [], current: { dmc: "310", phase,
       cycle: 2, pass: loop ? 3 : 1, initial: 150, cycleStartScore: 100, phaseStartScore: 90,
       loopRound: loop ? 2 : 0, loopStartScore: loop ? 95 : null } };
     const before = structuredClone(old), plan = batch.prepare(old, 85);
-    assert.equal(plan.version, 4); assert.equal(plan.current.phase, loop ? phase : "normal");
+    assert.equal(plan.version, 5); assert.equal(plan.current.phase, loop ? "deep" : "normal");
     assert.equal(plan.current.cycleStartScore, 100); assert.equal(plan.current.initial, 150);
-    if (loop) assert.deepEqual(plan.current, old.current);
-    else assert.equal(plan.current.phaseStartScore, 100);
+    assert.equal(plan.current.phaseStartScore, loop ? 90 : 100);
+    assert.equal(plan.current.pass, 1); assert.equal(plan.current.loopRound, 0);
+    assert.equal(plan.current.loopStartScore, null);
     assert.deepEqual(old, before);
     assert.deepEqual(batch.normalize(plan), plan);
+  }
+});
+
+test("version 4 resumes engines and inserts M6 once before paused loops, preserving all results", () => {
+  for (const phase of [...engines, "chains", "relay"]) {
+    const loop = phase === "chains" || phase === "relay";
+    const old = { version: 4, pending: ["310", "321"], results: [{ dmc: "500", score: 50 }],
+      current: { dmc: "310", phase, cycle: 3, pass: loop ? 2 : 1, initial: 150,
+        cycleStartScore: 100, phaseStartScore: 90, loopRound: loop ? 3 : 0, loopStartScore: loop ? 95 : null } };
+    const before = structuredClone(old), plan = batch.prepare(old, 85);
+    assert.equal(plan.version, 5); assert.equal(plan.current.phase, loop ? "deep" : phase);
+    assert.deepEqual(plan.pending, old.pending); assert.deepEqual(plan.results, old.results);
+    assert.equal(plan.current.cycleStartScore, 100); assert.equal(plan.current.initial, 150);
+    if (loop) {
+      assert.equal(plan.current.pass, 1); assert.equal(plan.current.loopRound, 0);
+      assert.equal(plan.current.loopStartScore, null);
+      const next = done(plan, 80);
+      assert.equal(next.current.phase, "chains"); assert.equal(next.current.loopStartScore, 80);
+    } else assert.deepEqual(plan.current, old.current);
+    assert.deepEqual(old, before); assert.deepEqual(batch.normalize(plan), plan);
   }
 });
