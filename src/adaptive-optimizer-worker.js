@@ -179,7 +179,8 @@
       const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimitMs = stopAfterInactivity ? null : Math.max(1, options.totalLimitMs || 3600000);
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
-      let lastImproved = started, deadline = started + budgetMs;
+      let lastImproved = started, deadline = stopAfterInactivity ? Infinity : started + budgetMs;
+      let preparing = stopAfterInactivity, searchStarted = null;
       const lowerBound = Math.max(0, cells.length * 2 - 1), weights = [1, 1, 1, 1], repairs = [1, 1, 1];
       const stats = { iterations: 0, repairs: 0, improvements: 0, diversifications: 0, size: 0, seeds: 0, exactRepairs: 0 };
       let best = null, metrics = null, initialMetrics = null, changed = false, attempts = 0, lastReport = -Infinity;
@@ -197,9 +198,10 @@
         changed = false;
       }
       function timing(now) {
-        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
-          remainingMs: Math.max(0, deadline - now),
-          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+          stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImproved,
+          remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
       }
       function keep(path) {
         if (!valid(path)) return false;
@@ -209,7 +211,7 @@
           lastGain = best ? metrics.score - value.score : 0;
           if (best) {
             stats.improvements++; lastImproved = clock();
-            if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+            if (stopAfterInactivity && !preparing) deadline = lastImproved + stagnationLimitMs;
           }
           best = path.map(model.copy); metrics = value; changed = true; emit(true); return true;
         }
@@ -243,7 +245,7 @@
         phase = "Construction initiale par blocs"; emit(true);
         try {
           const candidate = createBlock(model, createBuilder, clock, random).optimizePath({
-            ...options, initialPath: best, constraints, maxDurationMs: warmup
+            ...options, initialPath: best, constraints, stopAfterInactivity: false, maxDurationMs: warmup
           }, snapshot => {
             if (snapshot.path) keep(snapshot.path);
             emit();
@@ -255,7 +257,9 @@
       }
       let working = best, workScore = metrics.score, state = context(working, threshold, constraints), misses = 0;
       const elite = [best];
-      stage = "lns";
+      searchStarted = clock(); preparing = false;
+      if (stopAfterInactivity) { lastImproved = searchStarted; deadline = searchStarted + stagnationLimitMs; }
+      stage = "lns"; phase = "Recherche adaptative"; emit(true);
       while (true) {
         while (clock() < deadline) {
           if (metrics.score <= lowerBound + epsilon) { reason = "lower-bound"; break; }

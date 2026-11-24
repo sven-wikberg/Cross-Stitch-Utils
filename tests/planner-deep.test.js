@@ -83,7 +83,7 @@ async function run() {
     assert.ok(await page.locator("#optimizedPathButton").isEnabled());
     const beforeM6 = await page.evaluate(() => pathPerformanceMetrics(currentPath()).score);
     await page.locator("#lnsOptimizeButton").click();
-    await page.waitForFunction(() => pathAlgorithmRunning && activePathOptimizerSnapshot?.stopAfterInactivity === true);
+    await page.waitForFunction(() => pathAlgorithmRunning && activePathOptimizerSnapshot?.stopAfterInactivity === true && !activePathOptimizerSnapshot.preparing);
     assert.equal(await page.evaluate(() => deepPosted.at(-1).stopAfterInactivity), true);
     assert.equal(await page.evaluate(() => deepPosted.at(-1).totalLimitMs), undefined);
     assert.equal(await page.evaluate(() => deepPosted.at(-1).stagnationLimitMs), 60000);

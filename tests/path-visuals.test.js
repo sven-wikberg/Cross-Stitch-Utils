@@ -56,6 +56,23 @@ test("inactivity engines and exhaustive loops show the right progress instead of
   assert.equal(loop.value, 17); assert.equal(loop.max, 50);
 });
 
+test("initial setup shows preparation, not an expiring inactivity timer, in every engine", () => {
+  for (const method of ["block-optimization", "segment-optimization", "points-diagonals", "point-sections", "adaptive-optimization", "deep-optimization"]) {
+    for (const stage of ["preparation", "points", "sections", "lns", "configuration"]) {
+      const snapshot = { method, stage, preparing: true, stopAfterInactivity: true,
+        elapsedMs: 120000, lastImprovementMs: 0, stagnationLimitMs: 10000 };
+      const view = visuals.searchPresentation(snapshot, true);
+      assert.ok(view.active && view.preparing && !view.searching && !view.timed);
+      assert.equal(view.label, "Preparation"); assert.equal(view.value, null);
+      assert.equal(visuals.searchPresentation(snapshot, false).active, false);
+      const ready = visuals.searchPresentation({ ...snapshot, preparing: false, stage: "search" }, true);
+      assert.equal(ready.searching, true); assert.equal(ready.value, 0); assert.equal(ready.max, 10000);
+    }
+  }
+  const timed = visuals.searchPresentation({ method: "deep-optimization", stage: "preparation", totalLimitMs: 3600000, elapsedMs: 120000 }, true);
+  assert.equal(timed.timed, true); assert.equal(timed.value, 120000);
+});
+
 test("a work palette is independent of DMC colors and keeps light fills with dark thread strokes", () => {
   assert.equal(visuals.workPalette("invalid").color, "#157f83");
   assert.equal(visuals.workPalette("#AABBCC").color, "#aabbcc");

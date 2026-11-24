@@ -130,14 +130,16 @@ test("inactivity follows only real diagonal-score gains across point search and 
       createRelaySearch, createAdaptiveOptimizer, () => ++now, seeded());
     const result = search.optimizePath({ points, initialPath, constraints, cutThreshold: 3, stopAfterInactivity: true,
       stagnationLimitMs: limit, ...(totalLimitMs === undefined ? {} : { totalLimitMs }) }, s => snapshots.push(s));
-    let previousScore = score(initialPath), previousGain = 0;
+    let previousScore = score(initialPath), previousGain = 0, searchReady = false;
     for (const s of [...snapshots, result]) {
       assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
       assert.equal(s.stagnationLimitMs, limit);
       assert.equal(s.remainingMs, Math.max(0, limit - s.lastImprovementMs));
       assert.equal(s.progress, s.stage === "complete" ? 100 : Math.min(100, s.lastImprovementMs / limit * 100));
       const gainAt = s.elapsedMs - s.lastImprovementMs;
-      if (s.metrics && s.metrics.score < previousScore - 1e-8) {
+      if (s.preparing) assert.equal(s.lastImprovementMs, 0);
+      else if (!searchReady) { assert.equal(gainAt, s.preparationMs); searchReady = true; }
+      else if (s.metrics && s.metrics.score < previousScore - 1e-8) {
         assert.ok(gainAt > previousGain); assert.ok(s.lastImprovementMs <= 1); assert.ok(s.path);
       } else assert.equal(gainAt, previousGain, "point-score gains and ties must not reset inactivity");
       if (s.path) {

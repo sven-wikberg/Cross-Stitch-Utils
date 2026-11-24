@@ -46,6 +46,12 @@ proposes, les ordres effectivement convertis et les parcours de fil testes.
 
 ## Affinement et protections
 
+En mode sans amelioration, la creation des index, la premiere conversion et
+la preparation du moteur par points (distances, voisinages, chemins de depart)
+sont hors minuteur. `onReady` arme le delai une seule fois apres ces etapes.
+Le suivi affiche `Preparation` jusque-la. Les conversions suivantes comptent
+normalement dans la recherche et ne suspendent pas ce delai.
+
 La recherche par cases et les conversions intermediaires occupent initialement
 environ 65 % du delai d'inactivite choisi ; l'affinement des diagonales suit.
 Un vrai gain global repousse l'echeance d'inactivite, sans imposer de duree

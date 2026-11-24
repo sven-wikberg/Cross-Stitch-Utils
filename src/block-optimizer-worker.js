@@ -488,7 +488,7 @@
         lastReport = now;
         report({ ...snapshot, method: "block-optimization", metrics: bestMetrics || snapshot.metrics, initialMetrics,
           ...(best ? { path: best.path, unitLinks: best.unitLinks } : {}), elapsedMs: now - started,
-          lastImprovementMs: 0, stagnationLimitMs: limit, improvements, restarts, attempts: snapshot.attempts || 0, blocks });
+          preparing: true, lastImprovementMs: 0, stagnationLimitMs: limit, improvements, restarts, attempts: snapshot.attempts || 0, blocks });
       });
       const zones = model.createZones(problem.cells);
       best ||= { path: problem.incumbent.path, unitLinks: problem.incumbent.unitLinks };
@@ -522,7 +522,8 @@
         lastReport = now;
         report({ method: "block-optimization", stage, phase, blocks, metrics: bestMetrics, initialMetrics,
           ...(changed || force ? { path: best.path.map(model.copy), unitLinks: best.unitLinks.slice() } : {}),
-          elapsedMs: now - started, lastImprovementMs: Math.max(0, now - lastImprovement), stagnationLimitMs: limit,
+          preparing: stage !== "search" && stage !== "complete",
+          elapsedMs: now - started, lastImprovementMs: stage === "search" || stage === "complete" ? Math.max(0, now - lastImprovement) : 0, stagnationLimitMs: limit,
           attempts, improvements, restarts, unitAttempts, unitConnections: problem.unitEdges.length, insertionAttempts, insertions,
           refinedOrders, intermediateImprovements, interleavedRestarts,
           progress: stage === "complete" ? 100 : stage === "search" ? Math.min(99, (now - lastImprovement) / limit * 100) : progress });

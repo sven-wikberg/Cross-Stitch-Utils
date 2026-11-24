@@ -54,6 +54,11 @@ Seul un gain du meilleur score global reel superieur a `1e-8` relance ce delai :
 ni le score simplifie des cases, ni l'amelioration d'un candidat encore moins bon,
 ni une relance ne suffisent. L'interface n'impose aucun plafond de temps total.
 
+La premiere conversion complete et la preparation des distances, voisinages
+et chemins de depart par points sont hors minuteur. Le suivi reste en
+`Preparation`, puis le delai complet demarre une seule fois au signal `onReady`.
+Les conversions suivantes et les essais d'entrees/sorties restent chronometres.
+
 Environ 65 % du delai initial sert a la recherche par cases avec conversions
 intermediaires cadencees ; l'affinement suit et peut se prolonger apres un gain
 global. En mode API a budget total, cette part reste calculee sur ce budget.
@@ -68,8 +73,8 @@ a pas de phase de permutations libres des diagonales dans ce moteur. Une passe
 globale finale optimise encore leurs sens. La qualite du parcours par points
 reste un guide, jamais un critere pour remplacer un meilleur parcours de fil.
 
-Chaque conversion est bornee et abandonnee si elle ne peut pas etre achevee
-dans son budget. Seuls les parcours complets, valides et strictement meilleurs
+Apres la conversion initiale de preparation, chaque conversion est bornee et
+abandonnee si elle ne peut pas etre achevee dans son budget. Seuls les parcours complets, valides et strictement meilleurs
 que le meilleur score reel sont publies. Un meilleur parcours preexistant reste
 intact, meme s'il ne correspond pas au decoupage du moteur 4.
 

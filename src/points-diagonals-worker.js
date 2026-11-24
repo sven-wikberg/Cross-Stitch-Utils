@@ -88,7 +88,8 @@
       const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimitMs = stopAfterInactivity ? null : Math.max(1, options.totalLimitMs || 3600000);
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
-      let lastImproved = started, deadline = started + budgetMs;
+      let lastImproved = started, deadline = stopAfterInactivity ? Infinity : started + budgetMs;
+      let preparing = stopAfterInactivity, searchStarted = null;
       const pointDeadline = started + budgetMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
       const editable = cells.length * 2 > Math.max(constraints.lockedPrefix?.length || 0, Number(Boolean(constraints.start))) + 1;
       const stats = { orders: 0, conversions: 0, diagonalTrials: 0, refinements: 0, restarts: 0, pointEvaluations: 0, refinementAttempts: 0 };
@@ -105,9 +106,16 @@
         changed = false;
       }
       function timing(now) {
-        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
-          remainingMs: Math.max(0, deadline - now),
-          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+          stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImproved,
+          remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+      }
+      function beginSearch() {
+        if (searchStarted !== null) return;
+        searchStarted = clock(); preparing = false;
+        if (stopAfterInactivity) { lastImproved = searchStarted; deadline = searchStarted + stagnationLimitMs; }
+        phase = "Points : recherche"; emit(true);
       }
       function keep(path, change = null) {
         if (!valid(path)) return false;
@@ -115,7 +123,7 @@
         if (best && value.score >= metrics.score - epsilon) return false;
         if (best) {
           improvements++; lastImproved = clock();
-          if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+          if (stopAfterInactivity && !preparing) deadline = lastImproved + stagnationLimitMs;
         }
         best = path.map(model.copy); metrics = value; changed = true; relayChange = change; emit(true); return true;
       }
@@ -145,16 +153,18 @@
           if (clock() >= deadline) break;
           stats.diagonalTrials++; keep(simpleDecode(order, threshold, constraints, returns));
         }
-        const decoderDeadline = Math.min(deadline, clock() + Math.max(250, Math.min(5000, budgetMs * 0.1)));
+        const decoderDeadline = preparing ? Infinity : Math.min(deadline, clock() + Math.max(250, Math.min(5000, budgetMs * 0.1)));
         const path = beamDecode(order, { cutThreshold: threshold, constraints, deadline: decoderDeadline, beamWidth: 8 }, () => emit());
         if (path) { stats.diagonalTrials++; keep(path); }
         lastConversion = clock(); phase = previousPhase; emit();
       }
       convert(initialOrder, true);
-      if (editable && clock() < pointDeadline && metrics.score > lowerBound + epsilon) {
+      if (editable && (stopAfterInactivity || clock() < pointDeadline) && metrics.score > lowerBound + epsilon) {
         try {
           const result = createPoints(clock, random).optimizePath({ points: cells, initialPath: initialOrder.map(i => cells[i]), cutThreshold: threshold,
-            totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
+            totalLimitMs: stopAfterInactivity ? budgetMs * 0.65 : Math.max(1, pointDeadline - clock()),
+            excludeSetupTime: stopAfterInactivity, onReady: beginSearch,
+            stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
             shouldStop: () => metrics.score <= lowerBound + epsilon || (stopAfterInactivity && clock() >= deadline),
             onCandidate: route => convert(route),
             onProgress: snapshot => {
@@ -164,6 +174,7 @@
           pending = result.route;
         } catch (error) { if (error.message !== "POINT_SEARCH_TIMEOUT") throw error; }
       }
+      beginSearch();
       if (pending && clock() < deadline) convert(pending, true);
       stage = "diagonals"; phase = "Diagonales : reinsertion libre"; emit(true);
       let iteration = 0, state = null;

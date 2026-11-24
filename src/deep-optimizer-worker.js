@@ -138,7 +138,7 @@
       const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimitMs = stopAfterInactivity ? null : Math.min(3600000, Math.max(1, Number(options.totalLimitMs) || 3600000));
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
-      let deadline = started + budgetMs;
+      let deadline = stopAfterInactivity ? Infinity : started + budgetMs, preparing = stopAfterInactivity, searchStarted = null;
       const threshold = options.cutThreshold || 10, cells = options.points || [];
       const constraints = { ...(options.constraints || {}), forcedCuts: [
         ...(options.constraints?.forcedCuts || []), ...(options.initialPath || []).filter(p => p.cutBefore)
@@ -152,13 +152,14 @@
       let warm = {}, stage = "preparation", phase = "Preparation du parcours", reason = stopAfterInactivity ? "inactivity" : "time-limit";
       const stats = { iterations: 0, repairs: 0, improvements: 0, diversifications: 0, size: 0, kind: "", attempts: 0 };
       function timing(now) {
-        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImprovement,
-          remainingMs: Math.max(0, deadline - now),
-          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImprovement : started)) / budgetMs * 100) };
+        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+          stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImprovement,
+          remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImprovement : started)) / budgetMs * 100) };
       }
       function markGain() {
         lastImprovement = clock();
-        if (stopAfterInactivity) deadline = lastImprovement + stagnationLimitMs;
+        if (stopAfterInactivity && !preparing) deadline = lastImprovement + stagnationLimitMs;
       }
       function emit(force = false) {
         const now = clock();
@@ -205,6 +206,8 @@
         working = best; state = lns.context(working, constraints, threshold); emit(true);
         return true;
       }
+      searchStarted = clock(); preparing = false;
+      if (stopAfterInactivity) { lastImprovement = searchStarted; deadline = searchStarted + stagnationLimitMs; }
       stage = "lns"; phase = "Reconstruction LNS"; emit(true);
       while (true) {
         while (clock() < deadline) {

@@ -39,6 +39,7 @@ async function run() {
     await page.locator("#pathStagnationLimit").selectOption("30000");
     await page.locator("#sectionsOptimizeButton").click();
     await page.waitForFunction(() => activePathOptimizerSnapshot?.sectionSearch?.connections > 0 && pathImprovement && scoreHistory.length > 1);
+    assert.ok(await page.evaluate(() => sectionsReports.some(s => s.preparing && s.lastImprovementMs === 0)));
     const posted = await page.evaluate(() => sectionsPosted);
     assert.equal(posted.stopAfterInactivity, true);
     assert.equal(posted.stagnationLimitMs, 30000);
