@@ -15,7 +15,7 @@ const seeded = () => { let s = 31; return () => ((s = (Math.imul(s, 1664525) + 1
 const factories = {
   M2: clock => segments(model, builder, relay, clock, seeded()),
   M3: clock => diagonals(model, points, builder, relay, adaptive, clock, seeded()),
-  M4: clock => sections(model, points, builder, clock, seeded()),
+  M4: clock => sections(model, builder, clock),
   M5: clock => adaptive(model, builder, relay, clock, seeded(), blocks),
   M6: clock => deep(model, builder, blocks, relay, lns, clock, seeded())
 };
@@ -66,26 +66,23 @@ test("the point-order engine excludes distances, neighbors and seeds before call
   }
 });
 
-for (const [name, create] of [["M3", diagonals], ["M4", sections]]) {
-  test(`${name} waits for point-order setup before arming its own deadline`, () => {
-    let now = 0, setupSeen = false; const reports = [];
-    const slowPoints = () => ({ optimizePath(options) {
-      assert.equal(options.excludeSetupTime, true); now += 20000;
-      options.onProgress({ phase: "Voisinages", preparing: true, evaluations: 0, restarts: 0 });
-      setupSeen = true; options.onReady();
-      return { route: cells.map((_, i) => i) };
-    } });
-    const clock = () => ++now;
-    const search = name === "M3" ? create(model, slowPoints, builder, relay, adaptive, clock, seeded())
-      : create(model, slowPoints, builder, clock, seeded());
-    const result = search.optimizePath({ points: cells, initialPath: model.expandCells(cells, 3), cutThreshold: 3,
-      stopAfterInactivity: true, stagnationLimitMs: 300 }, s => reports.push(s));
-    assert.ok(setupSeen);
-    const neighbors = reports.find(s => s.phase === "Points : voisinages");
-    assert.ok(neighbors.preparing); assert.equal(neighbors.lastImprovementMs, 0);
-    const ready = reports.find(s => !s.preparing);
-    assert.ok(ready.preparationMs >= 20000 && ready.lastImprovementMs < 3);
-    assert.ok(result.elapsedMs - result.preparationMs >= 300);
-    assert.ok((result.pointsSearch || result.sectionSearch).refinements > 0);
-  });
-}
+test("M3 waits for point-order setup before arming its own deadline", () => {
+  let now = 0, setupSeen = false; const reports = [];
+  const slowPoints = () => ({ optimizePath(options) {
+    assert.equal(options.excludeSetupTime, true); now += 20000;
+    options.onProgress({ phase: "Voisinages", preparing: true, evaluations: 0, restarts: 0 });
+    setupSeen = true; options.onReady();
+    return { route: cells.map((_, i) => i) };
+  } });
+  const clock = () => ++now;
+  const search = diagonals(model, slowPoints, builder, relay, adaptive, clock, seeded());
+  const result = search.optimizePath({ points: cells, initialPath: model.expandCells(cells, 3), cutThreshold: 3,
+    stopAfterInactivity: true, stagnationLimitMs: 300 }, s => reports.push(s));
+  assert.ok(setupSeen);
+  const neighbors = reports.find(s => s.phase === "Points : voisinages");
+  assert.ok(neighbors.preparing); assert.equal(neighbors.lastImprovementMs, 0);
+  const ready = reports.find(s => !s.preparing);
+  assert.ok(ready.preparationMs >= 20000 && ready.lastImprovementMs < 3);
+  assert.ok(result.elapsedMs - result.preparationMs >= 300);
+  assert.ok(result.pointsSearch.refinements > 0);
+});

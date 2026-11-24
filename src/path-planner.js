@@ -54,6 +54,7 @@ const pathRelayCandidates = document.querySelector("#pathRelayCandidates");
 const pathSectionsMetrics = document.querySelector("#pathSectionsMetrics");
 const pathSectionOrders = document.querySelector("#pathSectionOrders");
 const pathSectionProgress = document.querySelector("#pathSectionProgress");
+const pathSectionWindow = document.querySelector("#pathSectionWindow");
 const pathSectionVariants = document.querySelector("#pathSectionVariants");
 const pathSectionConnections = document.querySelector("#pathSectionConnections");
 const pathPointsMetrics = document.querySelector("#pathPointsMetrics");
@@ -1849,7 +1850,7 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null, searchOptions
   }
 
   const dmc = selectedDmc;
-  beginPathEdit(`Optimisation${chains ? " par reinsertion de chaines" : segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par sous-sections" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`, undefined, true);
+  beginPathEdit(`Optimisation${chains ? " par reinsertion de chaines" : segments ? " des raccordements" : relayOnly ? " des relais" : sections ? " par retouches locales" : points ? " points puis diagonales" : adaptive ? " adaptative" : deep ? " approfondie" : ""} DMC ${dmc}`, undefined, true);
   if (!batchJob && batchPlan.current?.dmc === dmc) batchPlan.current = null;
   clearPathImprovement();
   optimizerLastRenderedAt = -Infinity;
@@ -2131,7 +2132,7 @@ function optimizerPhaseLabel(snapshot) {
   if (snapshot?.method === "chain-reinsertion") return snapshot.phase || "Reinsertion de chaines";
   if (snapshot?.method === "segment-optimization") return snapshot.phase || "Optimisation des raccordements";
   if (snapshot?.method === "relay-optimization") return snapshot.phase || "Recherche de relais";
-  if (snapshot?.method === "point-sections") return snapshot.phase || "Parcours par sous-sections";
+  if (snapshot?.method === "point-sections") return snapshot.phase || "Retouches locales";
   if (snapshot?.method === "points-diagonals") return snapshot.phase || "Points puis diagonales";
   if (snapshot?.method === "adaptive-optimization") return snapshot.phase || "Recherche adaptative";
   if (snapshot?.method === "deep-optimization") {
@@ -2170,8 +2171,10 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathRelayCandidates.textContent = snapshot?.relay?.candidateCount
     ? `${snapshot.relay.candidatesExamined} / ${snapshot.relay.candidateCount}` : "-";
   pathSectionOrders.textContent = String(snapshot?.sectionSearch?.completed || 0);
-  pathSectionProgress.textContent = snapshot?.sectionSearch?.sections
-    ? `${snapshot.sectionSearch.prepared} / ${snapshot.sectionSearch.sections}` : "-";
+  pathSectionProgress.textContent = snapshot?.sectionSearch?.linkTotal
+    ? `${snapshot.sectionSearch.linkIndex} / ${snapshot.sectionSearch.linkTotal}` : "-";
+  pathSectionWindow.textContent = snapshot?.sectionSearch?.windowSize
+    ? `${snapshot.sectionSearch.windowSize} diagonales` : "-";
   pathSectionVariants.textContent = String(snapshot?.sectionSearch?.variants || 0);
   pathSectionConnections.textContent = String(snapshot?.sectionSearch?.connections || 0);
   pathPointOrders.textContent = String(snapshot?.pointsSearch?.orders || 0);

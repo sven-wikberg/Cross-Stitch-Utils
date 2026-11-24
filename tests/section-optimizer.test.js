@@ -1,12 +1,10 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const model = require("../src/stitch-model.js");
-const { createPointOrderSearch } = require("../src/point-order-search.js");
 const { createOrthogonalPathBuilder } = require("../src/orthogonal-path-worker.js");
 const { createSectionOptimizer } = require("../src/section-optimizer-worker.js");
 const fixtures = require("./fixtures/combined-search.js");
-const seeded = (seed = 31) => () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
-const engine = (clock = () => performance.now()) => createSectionOptimizer(model, createPointOrderSearch, createOrthogonalPathBuilder, clock, seeded());
+const engine = (clock = () => performance.now()) => createSectionOptimizer(model, createOrthogonalPathBuilder, clock);
 const cell = (x, y = 0) => ({ x, y });
 const score = path => model.metrics(path, 3, true).score;
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-7, `${a} != ${b}`);
@@ -93,7 +91,7 @@ test("engine publishes only complete real-score improvements and keeps an existi
       close(s.metrics.score, score(s.path)); assert.ok(s.metrics.score <= previous + 1e-8); previous = s.metrics.score;
       assert.deepEqual(s.path.slice(0, 3), initialPath.slice(0, 3));
     }
-    assert.ok(result.sectionSearch.completed > 0); assert.ok(result.sectionSearch.pointEvaluations > 0);
+    assert.ok(result.sectionSearch.completed > 0); assert.ok(result.sectionSearch.windows > 0);
     assert.ok(result.sectionSearch.refinements > 0); assert.ok(result.sectionSearch.connections > 0);
     assert.equal(JSON.stringify({ points, initialPath, constraints }), before);
     assert.ok(result.elapsedMs < 1500);
@@ -107,7 +105,7 @@ test("empty, single-cross, locked and expired inputs never replace a complete ro
   for (const points of [[], [cell(0)], [cell(0), cell(20, 20)]]) {
     const initialPath = model.expandCells(points, 3);
     const result = search.optimizePath({ points, initialPath, constraints: { lockedPrefix: initialPath }, cutThreshold: 3, totalLimitMs: 1000 });
-    assert.deepEqual(result.path, initialPath); assert.equal(result.sectionSearch.pointEvaluations, 0); assert.ok(result.elapsedMs < 100);
+    assert.deepEqual(result.path, initialPath); assert.equal(result.sectionSearch.windows, 0); assert.ok(result.elapsedMs < 100);
   }
   const points = Array.from({ length: 2000 }, (_, i) => cell(i % 50 * 2, Math.floor(i / 50) * 2));
   const initialPath = model.expandCells(points, 3), before = JSON.stringify(initialPath);
@@ -117,15 +115,15 @@ test("empty, single-cross, locked and expired inputs never replace a complete ro
   assert.ok(result.elapsedMs < 1500); assert.equal(JSON.stringify(initialPath), before);
 });
 
-test("inactivity follows only accepted global gains across point search and section refinement", () => {
+test("inactivity follows only accepted global gains across local windows and passes", () => {
   for (const totalLimitMs of [undefined, 1]) {
-    let now = 0; const orientations = [], snapshots = [], limit = 1000;
+    let now = 0; const orientations = [], snapshots = [], limit = 5000;
     const tracked = { ...model, orient(...args) { orientations.push(now); return model.orient(...args); } };
     const points = fixtures.interleaved, initialPath = model.expandCells(points, 3);
     initialPath[10].cutBefore = true;
     const constraints = { lockedPrefix: initialPath.slice(0, 3), start: initialPath[0], forcedCuts: [initialPath[10]] };
     const before = JSON.stringify({ initialPath, constraints });
-    const search = createSectionOptimizer(tracked, createPointOrderSearch, createOrthogonalPathBuilder, () => ++now, seeded());
+    const search = createSectionOptimizer(tracked, createOrthogonalPathBuilder, () => ++now);
     const result = search.optimizePath({ points, initialPath, constraints, cutThreshold: 3, stopAfterInactivity: true,
       stagnationLimitMs: limit, ...(totalLimitMs === undefined ? {} : { totalLimitMs }) }, s => snapshots.push(s));
     let previousScore = score(initialPath), previousGain = 0, searchReady = false;
@@ -144,10 +142,10 @@ test("inactivity follows only accepted global gains across point search and sect
         assert.equal(model.validateRoute(s.path, points), ""); assert.ok(model.satisfiesConstraints(s.path, constraints));
         close(s.metrics.score, score(s.path)); assert.ok(s.metrics.score <= previousScore + 1e-8);
       }
-      previousScore = s.metrics.score; previousGain = gainAt;
+      previousScore = s.metrics?.score ?? previousScore; previousGain = gainAt;
     }
-    assert.ok(result.improvements > 0); assert.ok(result.sectionSearch.pointEvaluations > 0);
-    assert.ok(result.sectionSearch.refinements > 0); assert.ok(result.sectionSearch.restarts > 0);
+    assert.ok(result.improvements > 0); assert.ok(result.sectionSearch.windows > 0);
+    assert.ok(result.sectionSearch.refinements > 0); assert.ok(result.sectionSearch.passes > 0);
     assert.ok(result.elapsedMs > limit); assert.ok(result.lastImprovementMs >= limit);
     assert.ok(result.lastImprovementMs < limit + 30); assert.equal(result.reason, "inactivity");
     assert.ok(orientations.at(-1) - 1 >= previousGain + limit, "global orientation still runs after expiry");
@@ -167,8 +165,7 @@ test("a final orientation gain resumes inactivity search but legacy mode finishe
       return model.orient(...args);
     } };
     const noVariants = (...args) => ({ ...createOrthogonalPathBuilder(...args), orientUnitPath: () => null });
-    const readyPoints = () => ({ optimizePath(options) { options.onReady?.(); return { route: points.map((_, i) => i) }; } });
-    const search = createSectionOptimizer(tracked, readyPoints, noVariants, clock, seeded());
+    const search = createSectionOptimizer(tracked, noVariants, clock);
     const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity,
       stagnationLimitMs: limit, totalLimitMs: limit }, s => {
       snapshots.push(s);
@@ -202,15 +199,116 @@ test("stagnation options alone do not change the legacy total budget", () => {
   assert.ok(result.elapsedMs >= 1000 && result.elapsedMs < 1030);
 });
 
-test("failed conversions keep the complete incumbent and retry until inactivity expires", () => {
+test("failed local windows keep the complete incumbent and retry until inactivity expires", () => {
   let now = 0;
   const points = fixtures.interleaved, initialPath = model.orient(model.expandCells(points, 3), 3, {}, true);
   const noVariants = (...args) => ({ ...createOrthogonalPathBuilder(...args), orientUnitPath: () => null });
-  const noPointCandidates = () => ({ optimizePath: () => ({ route: points.map((_, i) => i) }) });
-  const search = createSectionOptimizer(model, noPointCandidates, noVariants, () => ++now, seeded());
+  const search = createSectionOptimizer(model, noVariants, () => ++now);
   const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity: true, stagnationLimitMs: 1000 });
   assert.equal(result.sectionSearch.completed, 0); assert.ok(result.sectionSearch.refinements > 0);
   assert.equal(result.improvements, 0); assert.deepEqual(result.path, initialPath);
   assert.ok(result.lastImprovementMs >= 1000 && result.lastImprovementMs < 1030);
   assert.equal(result.reason, "inactivity"); assert.equal(result.remainingMs, 0);
+});
+
+test("local decoding preserves the exact outside path, partial crosses, locks and cuts", () => {
+  const search = engine(), points = fixtures.interleaved;
+  const initial = search.decode(points, { cutThreshold: 3 }).path;
+  initial[8].cutBefore = true; initial[20].cutBefore = true;
+  const constraints = { lockedPrefix: initial.slice(0, 3), start: initial[0], forcedCuts: [initial[8]] };
+  const before = JSON.stringify({ initial, constraints });
+  let checked = 0, partial = false;
+  for (const [from, to] of [[3, 12], [5, 20], [6, 29], [20, initial.length]]) for (const reverse of [false, true]) {
+    const window = initial.slice(from, to), keys = window.map(model.key).sort();
+    if (new Set(window.map(model.cellKey)).size * 2 > window.length) partial = true;
+    const result = search.decodeWindow(initial, from, to, { constraints, cutThreshold: 3, reverse });
+    if (!result) continue;
+    checked++;
+    assert.deepEqual(result.path.map(model.key).sort(), keys);
+    const candidate = initial.slice(0, from).concat(result.path, initial.slice(to));
+    assert.equal(model.validateRoute(candidate, points), "");
+    assert.ok(model.satisfiesConstraints(candidate, constraints));
+    assert.deepEqual(candidate.slice(0, from), initial.slice(0, from));
+    assert.deepEqual(candidate.slice(to), initial.slice(to));
+    assert.deepEqual(candidate.filter(p => p.cutBefore).map(model.key).sort(), initial.filter(p => p.cutBefore).map(model.key).sort());
+    close(score(initial) - score(candidate), result.gain);
+  }
+  assert.ok(checked >= 4); assert.ok(partial);
+  assert.equal(JSON.stringify({ initial, constraints }), before);
+  assert.equal(search.decodeWindow(initial, 0, 12, { constraints }), null);
+  assert.equal(search.decodeWindow(initial, 3, initial.length + 1), null);
+  assert.equal(search.decodeWindow(initial, 5, 5), null);
+  assert.equal(search.decodeWindow(initial, 5, 20, { deadline: 0 }), null);
+});
+
+test("local DP scores both fixed outside actions including an automatic or forced cut", () => {
+  const search = engine(), cells = [cell(0), cell(1), cell(4, 2), cell(5, 2)];
+  const previous = { ...cell(0, 5), diagonal: "lower", direction: -1 };
+  const next = { ...cell(20, 8), diagonal: "upper", direction: 1, cutBefore: true };
+  const layers = search.splitSections(cells).sections.map(s => search.sectionVariants(s, { cutThreshold: 3 }).variants);
+  let optimum = Infinity;
+  function visit(at, path) {
+    if (at === layers.length) { optimum = Math.min(optimum, score([previous, ...path, next])); return; }
+    for (const variant of layers[at]) visit(at + 1, path.concat(search.unpack(variant)));
+  }
+  visit(0, []);
+  const result = search.combineSections(layers, [previous], 3, { next });
+  close(result.score, optimum); close(score([...result.path, next]), optimum);
+  assert.deepEqual(result.path[0], previous);
+});
+
+test("a zero-length outgoing junction is forbidden even with a forced cut", () => {
+  const search = engine(), point = { ...cell(0), diagonal: "lower", direction: 1 };
+  const next = { ...cell(1), diagonal: "upper", direction: 1, cutBefore: true };
+  const variant = { sequence: [point], directions: Int8Array.of(1), first: point, last: point, score: 0 };
+  assert.equal(model.distance(point, next), 0);
+  assert.equal(search.combineSections([[variant]], [], 3, { next }), null);
+});
+
+test("a local splice can improve an already oriented path without rebuilding its other sections", () => {
+  const search = engine(), points = fixtures.timerRecovery;
+  const original = model.orient(model.expandCells(points, 3), 3, {}, true);
+  let improved = false;
+  for (let from = 1; from < original.length - 3 && !improved; from++) {
+    const to = Math.min(original.length - 1, from + 16);
+    for (const reverse of [false, true]) {
+      const result = search.decodeWindow(original, from, to, { cutThreshold: 3, reverse });
+      if (!result || result.gain <= 1e-8) continue;
+      const candidate = original.slice(0, from).concat(result.path, original.slice(to));
+      assert.equal(model.validateRoute(candidate, points), ""); assert.ok(score(candidate) < score(original));
+      assert.deepEqual(candidate.slice(0, from), original.slice(0, from));
+      assert.deepEqual(candidate.slice(to), original.slice(to)); improved = true;
+    }
+  }
+  assert.ok(improved);
+});
+
+test("random local windows keep external half-crosses and their complete global cost", () => {
+  let state = 73;
+  const random = n => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) % n);
+  const shuffle = values => {
+    const result = values.slice();
+    for (let i = result.length - 1; i > 0; i--) { const j = random(i + 1); [result[i], result[j]] = [result[j], result[i]]; }
+    return result;
+  };
+  const search = engine(); let checked = 0;
+  for (let trial = 0; trial < 80; trial++) {
+    const points = shuffle(Array.from({ length: 64 }, (_, i) => cell(i % 8, Math.floor(i / 8)))).slice(0, 12);
+    const actions = shuffle(points).map(p => ({ ...p, diagonal: "lower", direction: 1 }))
+      .concat(shuffle(points).map(p => ({ ...p, diagonal: "upper", direction: 1 })));
+    actions[7].cutBefore = true; actions[16].cutBefore = true;
+    const original = model.orient(actions, 3, {}, true);
+    const constraints = { start: original[0], lockedPrefix: original.slice(0, 3), forcedCuts: [original[7]] };
+    const before = JSON.stringify({ original, constraints });
+    const from = 3 + random(original.length - 3), to = from + 1 + random(original.length - from);
+    const result = search.decodeWindow(original, from, to, { cutThreshold: 3, constraints, reverse: Boolean(trial % 2) });
+    if (!result) continue;
+    const candidate = original.slice(0, from).concat(result.path, original.slice(to)); checked++;
+    assert.equal(model.validateRoute(candidate, points), ""); assert.ok(model.satisfiesConstraints(candidate, constraints));
+    assert.deepEqual(candidate.slice(0, from), original.slice(0, from)); assert.deepEqual(candidate.slice(to), original.slice(to));
+    assert.deepEqual(candidate.filter(p => p.cutBefore).map(model.key).sort(), original.filter(p => p.cutBefore).map(model.key).sort());
+    close(score(original) - score(candidate), result.gain);
+    assert.equal(JSON.stringify({ original, constraints }), before);
+  }
+  assert.ok(checked >= 60);
 });

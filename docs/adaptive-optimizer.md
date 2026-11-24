@@ -5,7 +5,7 @@ reutilise leur modele de couture et leurs primitives verifiees, mais recherche
 directement un ordre de diagonales : les blocs ne sont pas des contraintes
 permanentes. Il ne change aucun format de pattern, chemin ou progression.
 Il se lance seul ou comme cinquieme phase du [cycle automatique commun](../README.md#cycle-automatique),
-apres le moteur 4 (sous-sections) et avant le moteur 6 (LNS). L'interface distingue
+apres le moteur 4 (retouches locales) et avant le moteur 6 (LNS). L'interface distingue
 trois categories : les six moteurs, les deux boucles et la recherche LNS
 approfondie de 1 heure (moteur 6) ; seule cette derniere est exclue du cycle automatique.
 

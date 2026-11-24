@@ -32,7 +32,7 @@ for (const fixture of cases) for (const seed of seeds) {
     const search = name === "adaptive" ? adaptive(model, builder, relay, clock, random, blocks)
       : name === "chains" ? chainsEngine(model, builder, relay, segmentsEngine, clock)
       : name === "segments" ? segmentsEngine(model, builder, relay, clock, random)
-      : name === "sections" ? sectionsEngine(model, pointSearch, builder, clock, random)
+      : name === "sections" ? sectionsEngine(model, builder, clock)
       : pointsEngine(model, pointSearch, builder, relay, adaptive, clock, random);
     let previous = model.metrics(initialPath, fixture.threshold, true).score;
     const started = performance.now(), result = search.optimizePath({ points: fixture.points, initialPath,

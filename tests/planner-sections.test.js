@@ -52,11 +52,16 @@ async function run() {
       assert.ok(await page.locator(`#${id}`).isDisabled());
     }
     assert.ok(await page.locator("#pathSectionsMetrics").isVisible());
+    assert.equal(await page.locator("#sectionsOptimizeButton").textContent(), "Moteur 4 : retouches locales");
     assert.equal(await page.locator("#pathPointsMetrics").isVisible(), false);
     assert.equal(await page.locator("#pathLnsMetrics").isVisible(), false);
     assert.match(await page.locator("#pathAlgorithmClockLabel").textContent(), /inactivit|sans amelioration/i);
     assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "30000");
     assert.ok(Number(await page.locator("#pathSectionConnections").textContent()) > 0);
+    assert.match(await page.locator("#pathSectionProgress").textContent(), /\d+ \/ \d+/);
+    assert.match(await page.locator("#pathSectionWindow").textContent(), /\d+ diagonales/);
+    assert.ok(await page.evaluate(() => sectionsReports.some(s => s.sectionSearch?.windows > 0)));
+    assert.equal(await page.evaluate(() => sectionsReports.some(s => s.phase?.startsWith("Points :"))), false);
     await page.screenshot({ path: path.join(output, "planner-sections-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => new Promise(requestAnimationFrame));

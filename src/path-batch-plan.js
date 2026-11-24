@@ -1,7 +1,7 @@
 (function (root) {
   "use strict";
   const phases = { normal: "Moteur 1 : blocs", segments: "Moteur 2 : raccordements",
-    points: "Moteur 3 : points puis diagonales", sections: "Moteur 4 : sous-sections",
+    points: "Moteur 3 : points puis diagonales", sections: "Moteur 4 : retouches locales",
     adaptive: "Moteur 5 : recherche adaptative", deep: "Moteur 6 : approfondie",
     chains: "Boucle 1 : chaines", relay: "Boucle 2 : relais" };
   const order = Object.keys(phases);

@@ -1,116 +1,95 @@
-# Moteur 4 : parcours par sous-sections
+# Moteur 4 : retouches locales
 
-Ce moteur reste independant des moteurs existants. Il reutilise la recherche
-par cases de `src/point-order-search.js`, puis traduit ses ordres en parcours
-de fil dans `src/section-optimizer-worker.js`. Les formats et les fichiers de
-sauvegarde ne changent pas. Il se lance seul ou comme quatrieme phase du
-[cycle automatique commun](../README.md#cycle-automatique) a la couleur actuelle
-et a toutes les couleurs : moteurs 1 a 6, boucle 1 (chaines), boucle 2 (relais).
-La recherche LNS approfondie de 1 heure reste separee et manuelle.
+M4 ameliore le meilleur chemin existant sans reconstruire toute la couleur.
+Il conserve sa place dans le cycle automatique, apres M3 et avant M5, et reste
+disponible seul. Les formats, la progression et les fichiers de sauvegarde ne
+changent pas. Sa cle interne `sections` et le message worker `point-sections`
+restent stables pour la reprise des lots, l'annulation et le suivi des gains.
 
-## Decoupage
+## Principe
 
-Une sous-section est une suite consecutive du chemin par points dont chaque
-pas est orthogonal et adjacent. Un saut ou une liaison diagonale commence une
-autre sous-section. Les sous-sections ne sont donc pas des composantes
-geographiques : une meme composante du dessin peut etre visitee en plusieurs
-morceaux, dans l'ordre du parcours par cases.
+Les raccordements dont le cout reel depasse 1 sont classes du plus couteux au
+moins couteux, coupes comprises. Autour de chacun, M4 examine des portions
+consecutives de 16, 32, 64 et 128 diagonales, sans entrer dans le prefixe
+verrouille. Une portion peut contenir des croix entieres et des demi-croix dont
+l'autre diagonale se trouve ailleurs dans le parcours.
 
-Les croix deja terminees dans le prefixe verrouille sont exclues. Une croix
-partiellement brodee devient une sous-section d'une seule diagonale superieure.
-Le prefixe conserve exactement ses diagonales, directions et coupes.
+Les cases de la portion sont ordonnees par leur premiere apparition, puis cet
+ordre est aussi essaye a l'envers. Les suites orthogonales consecutives forment
+les sous-sections locales. Pour chacune, le constructeur propose des croix
+consecutives, des demi-croix avec retour et plusieurs entrees/sorties. Les
+diagonales absentes de la portion sont retirees avant evaluation : aucune
+demi-croix exterieure ne peut etre ajoutee, supprimee ou deplacee.
 
-## Traversees et raccordements
+Pour chaque ordre interne, une programmation dynamique optimise les sens en
+conservant toutes les orientations d'extremites realisables. Une seconde choisit
+conjointement les variantes des sous-sections. Elle inclut le raccordement depuis
+l'action precedente et vers la suivante, avec leurs directions et leurs coupes
+exactement fixes. Le choix est exact parmi les variantes produites, pas parmi
+tous les parcours possibles.
 
-Chaque sous-section propose des croix consecutives, des demi-croix avec retour
-et plusieurs traversees du constructeur orthogonal existant. Les entrees et
-sorties candidates incluent les extremites du parcours par cases, des cases
-proches des sous-sections voisines et des points echantillonnes au fil des
-passes. On en conserve au plus trois de chaque cote au debut, puis quatre.
-Une paire que le constructeur ne sait pas realiser est ignoree, jamais supposee
-resolue. Les parcours orthogonaux marques unitaires doivent effectivement
-avoir une distance de 1 entre trous pour chaque liaison interne.
+Le cout compare comprend les distances entre trous, les deplacements apres
+coupe et la penalite de trois fois le seuil par coupe. Les distances nulles
+restent interdites, meme avec coupe. Les drapeaux `cutBefore`, le depart impose
+et le prefixe verrouille sont conserves. Les demi-croix inferieures precedent
+toujours les superieures, y compris quand une croix traverse une frontiere de
+portion.
 
-Pour chaque ordre interne, les deux sens de chaque diagonale sont optimises
-avec toutes les combinaisons possibles de sens d'entree et de sortie. Deux
-variantes aux memes diagonales et sens d'extremites sont interchangeables pour
-la suite : seule celle dont le cout interne est le plus bas est conservee.
-Les directions sont stockees dans des tableaux compacts, sans recopier toutes
-les diagonales pour chaque variante.
+## Acceptation et passes
 
-Une programmation dynamique choisit ensuite une variante par sous-section,
-dans l'ordre impose, en comptant les couts internes, le raccordement depuis le
-prefixe et toutes les liaisons suivantes. Le choix est exact parmi les variantes
-generees, pas parmi tous les parcours possibles. Les transitions de longueur
-nulle sont interdites, meme avec coupe. Le score reste celui des autres moteurs :
-distance euclidienne entre trous, distance apres coupe comprise, plus trois fois
-le seuil par coupe.
+Une portion n'est proposee que si son cout, raccordements compris, baisse.
+Avant acceptation, le parcours complet est reconstruit, valide puis mesure.
+Seul un gain global strict superieur a `1e-8` remplace le meilleur chemin. Les
+autres actions restent identiques pendant cette retouche. Les candidats
+incomplets, invalides, egaux ou moins bons ne sont jamais publies.
 
-## Inactivite et affinement
+Chaque passe reexamine le meilleur chemin courant. Les raccordements sont
+reclasses entre les passes ; les portions sont successivement centrees puis
+decalees vers un tiers et deux tiers de leur longueur. Les passes suivantes
+elargissent les variantes d'entree/sortie. Une passe finale globale sur les sens,
+commune au fonctionnement precedent, peut encore ameliorer les directions sans
+changer l'ordre des diagonales ni les contraintes.
 
-Le selecteur `Arret sans amelioration`, commun aux moteurs 1 a 6, propose
-10 secondes, 30 secondes, 1 minute par defaut, 2 minutes, 5 minutes ou 10 minutes.
-Seul un gain du meilleur score global reel superieur a `1e-8` relance ce delai :
-ni le score simplifie des cases, ni l'amelioration d'un candidat encore moins bon,
-ni une relance ne suffisent. L'interface n'impose aucun plafond de temps total.
+Le delai commun sans amelioration commence apres la validation, la construction
+d'un premier chemin si necessaire et le classement initial des raccordements.
+Les retouches suivantes font partie du calcul chronometre. Seule une amelioration
+globale relance le delai, y compris une amelioration de la passe finale sur les
+sens. La borne minimale, un parcours entierement verrouille ou l'absence de
+raccordement editable permettent un arret anticipe. L'API conserve aussi
+`totalLimitMs`, preparation comprise, pour les tests et benchmarks.
 
-La premiere conversion complete et la preparation des distances, voisinages
-et chemins de depart par points sont hors minuteur. Le suivi reste en
-`Preparation`, puis le delai complet demarre une seule fois au signal `onReady`.
-Les conversions suivantes et les essais d'entrees/sorties restent chronometres.
+## Suivi et protection
 
-Environ 65 % du delai initial sert a la recherche par cases avec conversions
-intermediaires cadencees ; l'affinement suit et peut se prolonger apres un gain
-global. En mode API a budget total, cette part reste calculee sur ce budget.
-Les quatre ordres convertis les plus prometteurs selon leur score reel sont
-gardes pour l'affinement : nouvelles entrees/sorties et essais de coupures au
-milieu de sous-sections. Une coupure de sous-section est un changement de
-decoupage de calcul, pas une coupe de fil imposee. Une frontiere supplementaire
-ne rejoint la base de travail que si le score de cet ordre s'ameliore.
+Le worker transmet toutes les 250 ms environ la liaison courante, la taille de
+la portion, les portions analysees, les variantes et les raccordements testes.
+Les gains publies utilisent la courbe M4, les surbrillances, le suivi automatique
+du zoom, l'annulation et la restauration du meilleur chemin existants. Aucun
+rectangle de zone ni deplacement de vue supplementaire n'est ajoute.
 
-L'ordre des sous-sections reste fixe pour chaque ordre de cases essaye. Il n'y
-a pas de phase de permutations libres des diagonales dans ce moteur. Une passe
-globale finale optimise encore leurs sens. La qualite du parcours par points
-reste un guide, jamais un critere pour remplacer un meilleur parcours de fil.
+Arreter conserve le dernier meilleur chemin publie. Le cycle automatique et
+les brouillons existants reprennent M4 depuis ce meilleur chemin. Les anciennes
+mesures M4 restent conservees ; le remplacement n'efface pas leur historique.
+Aucun fichier de progression n'est lu ou ecrit par le moteur.
 
-Apres la conversion initiale de preparation, chaque conversion est bornee et
-abandonnee si elle ne peut pas etre achevee dans son budget. Seuls les parcours complets, valides et strictement meilleurs
-que le meilleur score reel sont publies. Un meilleur parcours preexistant reste
-intact, meme s'il ne correspond pas au decoupage du moteur 4.
+## Pourquoi remplacer l'ancien M4
 
-L'interface transmet `stopAfterInactivity: true` et `stagnationLimitMs`, sans
-`totalLimitMs`. L'API garde `totalLimitMs` lorsque `stopAfterInactivity` est absent
-ou faux pour les tests et benchmarks ; ce budget inclut la preparation, avec
-un depassement possible pour les operations finales indivisibles. Les mesures
-initiales ci-dessous restent des essais historiques a budget fixe.
+L'ancien moteur reprojetait toute la couleur en cases, puis terminait chaque
+sous-section avant de passer a la suivante. Il pouvait perdre les entrelacements
+utiles du chemin courant. Sur le fichier `42905.json`, DMC 3810 (20 801 croix),
+un essai de 60 secondes a acheve 38 reconstructions : la meilleure valait
+46 282,52, contre 42 905,82 pour le chemin conserve. Le moteur calculait bien,
+mais son espace de solutions etait trop restrictif sur ce parcours.
 
-## Suivi et tests
+Le remplacement local atteint 42 902,57 en 60 secondes sur le meme fichier,
+soit un gain de 3,25. Ce resultat ponctuel ne prouve pas une superiorite generale
+ni l'optimalite du resultat. Le fichier source et la progression restent intacts.
 
-Le Web Worker publie la phase, la sous-section en cours, le nombre de variantes
-et de raccordements testes, le score total et le delai sans amelioration. Les
-surbrillances, le suivi automatique, la comparaison, l'annulation et la restauration
-du meilleur chemin utilisent le fonctionnement commun de l'outil 2.
+## Verification
 
-Dans le cycle automatique, chaque phase reprend le meilleur chemin compatible
-et reste annulable. La pause et le rechargement conservent phase, passe et cycle ;
-la reprise relance la phase interrompue depuis le meilleur, sans modifier les
-fichiers de sauvegarde ni la progression.
-
-- `node --test tests/section-optimizer.test.js` : decoupage, borne unitaire,
-  comparaison exhaustive des combinaisons, prefixes ouverts, coupes, delais,
-  absence de regression et immutabilite des donnees d'entree.
-- `node tests/planner-sections.test.js` : vrai worker, inactivite commune,
-  requete sans budget total, feedback, arret,
-  recuperation du meilleur chemin, persistance isolee et affichage PC/mobile.
+- `node --test tests/section-optimizer.test.js tests/optimizer-setup.test.js` :
+  raccordements fixes, comparaison exhaustive de la programmation dynamique,
+  demi-croix ouvertes, coupes, prefixe, gains globaux, delais et immutabilite.
+- `node tests/planner-sections.test.js` : vrai worker, suivi et courbe,
+  arret, annulation, restauration du meilleur, rechargement et vues PC/mobile.
 - `BENCHMARK_ENGINES=sections` avec `tests/points-quality-benchmark.js` :
-  comparaison a budget egal, sans modifier les fichiers dans `data/`.
-
-## Mesures initiales
-
-Essais d'une minute le 21 novembre 2026, DMC 3810 de Marine Cryptids,
-20 801 croix, graine 31 : depuis le parcours a 49 830,33, le moteur atteint
-45 269,53 (31 conversions completes, 4 ameliorations publiees, environ 60,15 s).
-Depuis le parcours deja optimise a 43 696,03, un autre essai conserve ce score
-sans amelioration. Les fichiers source et la progression restent inchanges.
-Ces essais ne prouvent pas une superiorite generale; aucun calcul d'une heure
-n'a ete effectue pour cette premiere validation.
+  mesure sur fichiers reels sans modifier les patterns ni la progression.

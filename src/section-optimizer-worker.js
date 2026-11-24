@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  function createSectionOptimizer(model, createPoints, createBuilder, clock = () => performance.now(), random = Math.random) {
+  function createSectionOptimizer(model, createBuilder, clock = () => performance.now()) {
     const builder = createBuilder(model, clock), epsilon = 1e-8;
     const orthogonal = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
     const measure = (path, threshold) => model.metrics(path, threshold, true);
@@ -50,6 +50,13 @@
         ...(cuts.has(`${model.cellKey(cell)}:${diagonal}`) ? { cutBefore: true } : {}) });
       function add(sequence, unit) {
         if (!sequence || clock() >= deadline) return;
+        // A local window may contain only one half of a cross. Never recreate the other half.
+        if (options.allowedActions) {
+          sequence = sequence.filter(p => options.allowedActions.has(model.key(p)))
+            .map(p => model.copy(options.allowedActions.get(model.key(p))));
+          unit = false;
+        }
+        if (!sequence.length) return;
         const signature = sequence.map(model.key).join(";") + Number(unit);
         if (sequences.has(signature)) return;
         sequences.add(signature);
@@ -107,6 +114,7 @@
         options.pulse?.({ prepared: layer + 1, total: layers.length, connections });
       }
       if (!layers.length) return { path: prefix.map(model.copy), score: measure(prefix, threshold).score, connections: 0, selected: [] };
+      if (options.next) scores = scores.map((score, i) => score + model.cost(previous[i].last, options.next, threshold, true));
       let last = -1;
       for (let i = 0; i < scores.length; i++) if (last < 0 || scores[i] < scores[last]) last = i;
       if (last < 0 || !Number.isFinite(scores[last])) return null;
@@ -134,6 +142,33 @@
       if (!result || clock() >= deadline) return null;
       return { ...result, sections, tested, variants };
     }
+    function decodeWindow(path, from, to, options = {}, pulse = () => {}) {
+      const locked = prefixFor(options.constraints || {}).length;
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < locked || to > path.length || from >= to) return null;
+      const original = path.slice(from, to), allowedActions = new Map(original.map(p => [model.key(p), p]));
+      const seen = new Set(), order = [];
+      for (const p of original) if (!seen.has(model.cellKey(p))) { seen.add(model.cellKey(p)); order.push(p); }
+      if (options.reverse) order.reverse();
+      const { sections } = splitSections(order), layers = [], deadline = options.deadline ?? Infinity;
+      const threshold = options.cutThreshold || 10, prefix = from ? [path[from - 1]] : [], next = path[to];
+      let tested = 0, variants = 0;
+      for (let i = 0; i < sections.length; i++) {
+        if (clock() >= deadline) return null;
+        const nearby = section => section ? [section.cells[0], section.cells.at(-1)] : [];
+        const result = sectionVariants(sections[i], { ...options, allowedActions,
+          previous: i ? nearby(sections[i - 1]) : prefix, next: i + 1 < sections.length ? nearby(sections[i + 1]) : next ? [next] : [] });
+        if (!result.complete || !result.variants.length) return null;
+        layers.push(result.variants); tested += result.tested; variants += result.variants.length;
+        pulse({ prepared: i + 1, total: sections.length, tested, variants, connections: 0 });
+      }
+      // Both outside actions keep their exact directions and cut flags.
+      const result = combineSections(layers, prefix, threshold, { deadline, next,
+        pulse: s => pulse({ ...s, tested, variants }) });
+      if (!result || clock() >= deadline) return null;
+      const oldScore = measure(path.slice(Math.max(0, from - 1), Math.min(path.length, to + 1)), threshold).score;
+      return { ...result, path: result.path.slice(prefix.length), from, to, oldScore, gain: oldScore - result.score,
+        sections: sections.length, tested, variants };
+    }
     function optimizePath(options, report = () => {}) {
       const cells = options.points || [], threshold = options.cutThreshold || 10;
       const constraints = { ...(options.constraints || {}), forcedCuts: [
@@ -145,17 +180,17 @@
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
       let lastImproved = started, deadline = stopAfterInactivity ? Infinity : started + budgetMs;
       let preparing = stopAfterInactivity, searchStarted = null;
-      const pointDeadline = started + budgetMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
-      const stats = { orders: 0, conversions: 0, completed: 0, bestConversionScore: null, sections: 0, prepared: 0, crosses: 0, variants: 0,
-        connections: 0, trials: 0, refinements: 0, pointEvaluations: 0, restarts: 0 };
+      const lowerBound = Math.max(0, cells.length * 2 - 1);
+      const stats = { completed: 0, sections: 0, prepared: 0, variants: 0, connections: 0, trials: 0,
+        refinements: 0, windows: 0, windowSize: 0, from: 0, to: 0, linkIndex: 0, linkTotal: 0, passes: 0, accepted: 0 };
       let best = null, metrics = null, initialMetrics = null, improvements = 0, changed = false;
-      let stage = "points", phase = "Points : preparation", lastReport = -Infinity, reason = stopAfterInactivity ? "inactivity" : "budget";
+      let stage = "prepare", phase = "Retouches locales : preparation", lastReport = -Infinity, reason = stopAfterInactivity ? "inactivity" : "budget";
       const valid = path => path && path.length === cells.length * 2 && !model.validateRoute(path, cells) && model.satisfiesConstraints(path, constraints);
       function emit(force = false) {
         const now = clock(); if (!force && now - lastReport < 250) return;
         lastReport = now;
         report({ method: "point-sections", stage, phase, elapsedMs: now - started, totalLimitMs, metrics, initialMetrics,
-          improvements, attempts: stats.pointEvaluations + stats.trials + stats.connections, restarts: stats.restarts,
+          improvements, attempts: stats.trials + stats.connections, restarts: Math.max(0, stats.passes - 1),
           sectionSearch: { ...stats }, ...timing(now), reason,
           ...(best && changed ? { path: best.map(model.copy) } : {}) });
         changed = false;
@@ -170,7 +205,7 @@
         if (searchStarted !== null) return;
         searchStarted = clock(); preparing = false;
         if (stopAfterInactivity) { lastImproved = searchStarted; deadline = searchStarted + stagnationLimitMs; }
-        phase = "Points : recherche"; emit(true);
+        stage = "sections"; phase = "Retouches locales : recherche"; emit(true);
       }
       function keep(path) {
         if (!valid(path)) return false;
@@ -184,6 +219,7 @@
       }
       const ids = new Map(cells.map((p, i) => [model.cellKey(p), i])), seen = new Set(), initialOrder = [];
       if (ids.size !== cells.length) throw new Error("Cases dupliquees.");
+      emit(true);
       for (const point of options.initialPath || []) {
         const id = ids.get(model.cellKey(point));
         if (id !== undefined && !seen.has(id)) { seen.add(id); initialOrder.push(id); }
@@ -198,98 +234,85 @@
         keep(model.orient(sequence, threshold, constraints, true));
       }
       if (!best) throw new Error("Impossible de construire un parcours compatible.");
-      const editable = prefix.length < cells.length * 2 - 1, elite = [], converted = new Set();
-      let pending = initialOrder, lastConversion = -Infinity;
-      function convert(route, force = false, round = 0, boundaries = new Set()) {
-        if (!editable || clock() >= deadline || metrics.score <= lowerBound + epsilon) return null;
-        if (!force && clock() - lastConversion < Math.max(500, cells.length / 2)) return null;
-        const key = route.join(","), signature = `${key}|${round}|${[...boundaries].join(",")}`;
-        if (converted.has(signature)) return null;
-        if (route.length !== cells.length || new Set(route).size !== cells.length || route.some(i => !Number.isInteger(i) || !cells[i])) throw new Error("Ordre de cases invalide.");
-        converted.add(signature); if (converted.size > 24) converted.delete(converted.values().next().value);
-        const previousStage = stage, previousPhase = phase; stage = "sections";
-        stats.conversions++; stats.sections = 0; stats.prepared = 0;
-        const trialsBefore = stats.trials, connectionsBefore = stats.connections;
-        const result = decode(route.map(i => cells[i]), { constraints, cutThreshold: threshold, round, boundaries,
-          breadth: round ? 4 : 3, deadline: preparing ? Infinity : Math.min(deadline, clock() + Math.max(1000, Math.min(15000, budgetMs * 0.15))) }, s => {
-          stage = s.phase; stats.sections = s.total;
-          stats.prepared = s.phase === "sections" ? s.prepared : s.total; stats.crosses = s.crosses || 0;
-          stats.variants = s.variants; stats.trials = trialsBefore + s.tested;
-          stats.connections = connectionsBefore + (s.connections || 0);
-          phase = s.phase === "sections" ? `Sous-sections : ${Math.min(s.total, s.prepared + 1)} / ${s.total}`
-            : `Raccordements : ${s.prepared} / ${s.total}`;
-          emit();
-        });
-        lastConversion = clock();
-        if (result) {
-          stats.completed++;
-          stats.bestConversionScore = Math.min(stats.bestConversionScore ?? Infinity, result.score);
-          keep(result.path);
-          const previous = elite.findIndex(e => e.key === key);
-          if (previous < 0 || result.score < elite[previous].score) {
-            if (previous >= 0) elite.splice(previous, 1);
-            elite.push({ key, route: route.slice(), score: result.score, sections: result.sections, boundaries: new Set(boundaries) });
-            elite.sort((a, b) => a.score - b.score); if (elite.length > 4) elite.pop();
-          }
+      const editable = prefix.length < best.length;
+      function rankLinks() {
+        const links = [];
+        for (let at = Math.max(1, prefix.length); at < best.length; at++) {
+          const cost = model.cost(best[at - 1], best[at], threshold, true);
+          if (cost > 1 + epsilon) links.push({ at, cost });
         }
-        stage = previousStage; phase = previousPhase; emit(); return result;
+        return links.sort((a, b) => b.cost - a.cost || a.at - b.at);
       }
-      stats.orders++; convert(initialOrder, true);
-      if (editable && metrics.score > lowerBound + epsilon && (stopAfterInactivity || clock() < pointDeadline)) {
-        try {
-          const result = createPoints(clock, random).optimizePath({ points: cells, initialPath: initialOrder.map(id => cells[id]),
-            cutThreshold: threshold, totalLimitMs: stopAfterInactivity ? budgetMs * 0.65 : Math.max(1, pointDeadline - clock()),
-            excludeSetupTime: stopAfterInactivity, onReady: beginSearch,
-            stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
-            shouldStop: () => metrics.score <= lowerBound + epsilon || (stopAfterInactivity && clock() >= deadline),
-            onCandidate: route => { pending = route.slice(); stats.orders++; convert(route); },
-            onProgress: s => { stats.pointEvaluations = s.evaluations; stats.restarts = s.restarts;
-              phase = `Points : ${s.phase.toLowerCase()}`; emit(); } });
-          pending = result.route;
-        } catch (error) { if (error.message !== "POINT_SEARCH_TIMEOUT") throw error; }
-      }
+      let links = rankLinks();
       beginSearch();
-      convert(pending, true);
-      // Refine the section interfaces without returning to unrestricted diagonal permutations.
-      let round = 0;
       while (true) {
-        while ((elite.length || stopAfterInactivity) && clock() < deadline && metrics.score > lowerBound + epsilon && editable) {
-          const entry = elite[round % elite.length] || { route: pending, boundaries: [], sections: [] }, boundaries = new Set(entry.boundaries);
-          if (round % 2) {
-            const splittable = entry.sections.filter(s => !s.upperOnly && s.cells.length > 1).sort((a, b) => b.cells.length - a.cells.length);
-            const section = splittable[Math.floor(round / 2) % Math.max(1, splittable.length)];
-            if (section) boundaries.add(section.start + Math.floor(section.cells.length / 2));
+        while (clock() < deadline && metrics.score > lowerBound + epsilon && editable && links.length) {
+          const round = stats.passes++;
+          stats.linkTotal = links.length;
+          for (const size of [16, 32, 64, 128]) {
+            const visited = new Set();
+            for (let link = 0; link < links.length && clock() < deadline && metrics.score > lowerBound + epsilon; link++) {
+              const offset = [0.5, 1 / 3, 2 / 3][round % 3];
+              const from = Math.max(prefix.length, links[link].at - Math.floor(size * offset));
+              const to = Math.min(best.length, from + size), key = `${from}:${to}`;
+              if (visited.has(key)) continue;
+              visited.add(key); stats.linkIndex = link + 1;
+              stats.windowSize = to - from; stats.from = from; stats.to = to;
+              for (const reverse of [false, true]) {
+                if (clock() >= deadline || metrics.score <= lowerBound + epsilon) break;
+                stats.windows++; stats.refinements++; stats.sections = 0; stats.prepared = 0;
+                stage = "sections";
+                phase = `Retouches locales : liaison ${link + 1} / ${links.length} - ${to - from} diagonales`;
+                const trialsBefore = stats.trials, connectionsBefore = stats.connections;
+                const result = decodeWindow(best, from, to, { constraints, cutThreshold: threshold, deadline,
+                  reverse, round: Math.floor(round / 3), breadth: round ? 4 : 3 }, s => {
+                  stats.sections = s.total; stats.prepared = s.prepared; stats.variants = s.variants;
+                  stats.trials = trialsBefore + s.tested; stats.connections = connectionsBefore + s.connections;
+                  emit();
+                });
+                if (result) {
+                  stats.completed++;
+                  if (result.gain > epsilon) {
+                    const candidate = best.slice(0, from).concat(result.path, best.slice(to));
+                    if (keep(candidate)) stats.accepted++;
+                  }
+                }
+                emit();
+              }
+            }
           }
-          stats.refinements++; stage = "sections"; phase = "Affinement des entrees et sorties";
-          convert(entry.route, true, ++round, boundaries);
+          links = rankLinks();
         }
-        // A final orientation gain must receive a full new inactivity interval.
+        // Preserve the common final direction pass and restart inactivity only for a real global gain.
+        phase = "Verification finale des sens"; emit();
         const improved = keep(model.orient(best, threshold, constraints, true));
         if (!stopAfterInactivity || !improved) break;
+        links = rankLinks();
       }
       if (metrics.score <= lowerBound + epsilon) reason = "lower-bound";
       else if (!editable) reason = "locked";
-      stage = "complete"; phase = reason === "lower-bound" ? "Borne minimale atteinte" : "Sous-sections : recherche terminee";
+      else if (!links.length) reason = "no-links";
+      stage = "complete"; phase = reason === "lower-bound" ? "Borne minimale atteinte" : "Retouches locales : recherche terminee";
       changed = true; emit(true);
       const finished = clock();
       return { method: "point-sections", stage, phase, path: best, metrics, initialMetrics, improvements,
-        attempts: stats.pointEvaluations + stats.trials + stats.connections, restarts: stats.restarts,
+        attempts: stats.trials + stats.connections, restarts: Math.max(0, stats.passes - 1),
         sectionSearch: { ...stats }, elapsedMs: finished - started, totalLimitMs, reason, ...timing(finished) };
     }
-    return { splitSections, sectionVariants, combineSections, decode, optimizePath, unpack };
+    return { splitSections, sectionVariants, combineSections, decode, decodeWindow, optimizePath, unpack };
   }
-  function workerMain(createModel, createPoints, createBuilder, createOptimizer) {
+  function workerMain(createModel, createBuilder, createOptimizer) {
     self.onmessage = event => {
       const options = event.data; if (options.type !== "start") return;
       try {
-        const result = createOptimizer(createModel(), createPoints, createBuilder).optimizePath(options,
+        const result = createOptimizer(createModel(), createBuilder).optimizePath(options,
           snapshot => self.postMessage({ ...snapshot, type: "progress", runId: options.runId }));
         self.postMessage({ ...result, type: "complete", runId: options.runId });
       } catch (error) { self.postMessage({ type: "error", runId: options.runId, message: error.message }); }
     };
   }
   root.createSectionOptimizerWorker = () => {
-    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createPointOrderSearch.toString()},${root.createOrthogonalPathBuilder.toString()},${createSectionOptimizer.toString()});`;
+    const source = `(${workerMain.toString()})(${root.createStitchModel.toString()},${root.createOrthogonalPathBuilder.toString()},${createSectionOptimizer.toString()});`;
     const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     const worker = new Worker(url); URL.revokeObjectURL(url); return worker;
   };

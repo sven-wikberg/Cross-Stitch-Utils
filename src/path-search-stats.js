@@ -5,7 +5,7 @@
     normal: { short: "M1", label: "Moteur 1 : blocs", color: "#167d9a" },
     segments: { short: "M2", label: "Moteur 2 : raccordements", color: "#3465bd" },
     points: { short: "M3", label: "Moteur 3 : points", color: "#607d24" },
-    sections: { short: "M4", label: "Moteur 4 : sous-sections", color: "#975299" },
+    sections: { short: "M4", label: "Moteur 4 : retouches locales", color: "#975299" },
     adaptive: { short: "M5", label: "Moteur 5 : adaptatif", color: "#ba4c22" },
     deep: { short: "M6", label: "Moteur 6 : approfondie", color: "#776328" },
     chains: { short: "B1", label: "Boucle 1 : chaines", color: "#b42f60" },
