@@ -139,14 +139,16 @@ test("inactivity follows only accepted global gains, not diversification, with n
     const search = createSegmentOptimizer(tracked, builder, relay, () => ++now, random);
     const result = search.optimizePath({ points, initialPath, constraints, cutThreshold: 3, stopAfterInactivity: true,
       stagnationLimitMs: limit, ...(totalLimitMs === undefined ? {} : { totalLimitMs }) }, s => snapshots.push(s));
-    let previousScore = score(initialPath), previousGain = 0;
+    let previousScore = score(initialPath), previousGain = 0, searchReady = false;
     for (const s of [...snapshots, result]) {
       assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
       assert.equal(s.stagnationLimitMs, limit);
       assert.equal(s.remainingMs, Math.max(0, limit - s.lastImprovementMs));
       assert.equal(s.progress, s.stage === "complete" ? 100 : Math.min(100, s.lastImprovementMs / limit * 100));
       const gainAt = s.elapsedMs - s.lastImprovementMs;
-      if (s.metrics.score < previousScore - 1e-8) {
+      if (s.preparing) assert.equal(s.lastImprovementMs, 0);
+      else if (!searchReady) { assert.equal(gainAt, s.preparationMs); searchReady = true; }
+      else if (s.metrics.score < previousScore - 1e-8) {
         assert.ok(gainAt > previousGain); assert.ok(s.lastImprovementMs <= 1); assert.ok(s.path);
       } else assert.equal(gainAt, previousGain, "ties and working-route changes must not reset inactivity");
       if (s.path) {
@@ -178,7 +180,7 @@ test("a final orientation gain resumes inactivity search but legacy mode finishe
     const result = search.optimizePath({ points, initialPath, cutThreshold: 3, stopAfterInactivity,
       stagnationLimitMs: limit, totalLimitMs: limit }, s => {
       snapshots.push(s);
-      if (s.path && !s.improvements) now = limit + 1;
+      if (!s.preparing && !s.improvements) now = s.preparationMs + limit + 1;
       if (s.improvements) resumed = true;
     });
     const gain = snapshots.find(s => s.improvements);

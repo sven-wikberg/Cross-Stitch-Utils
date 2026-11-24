@@ -70,6 +70,11 @@ ne suffit pas. L'interface n'impose aucun plafond de temps total et transmet
 Une derniere passe globale sur les sens est toujours effectuee a la fin normale,
 meme si l'echeance de recherche vient d'etre atteinte.
 
+En mode sans amelioration, l'orientation initiale et la creation du premier
+index de segments sont hors minuteur. Le suivi affiche `Preparation`, puis
+le delai complet commence avant les premiers essais de raccordements.
+La reconstruction de cet index apres un essai reste du temps de recherche.
+
 Le mode API a budget fixe `totalLimitMs` reste disponible lorsque
 `stopAfterInactivity` est absent ou faux, notamment pour les tests et benchmarks.
 Il inclut la preparation ; la passe finale peut le depasser legerement. La

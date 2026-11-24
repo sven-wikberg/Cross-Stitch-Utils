@@ -21,7 +21,8 @@
       const stagnationLimitMs = Math.max(1000, Number(options.stagnationLimitMs) || 60000);
       const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
       const startedAt = now();
-      const deadline = startedAt + Math.max(1, options.totalLimitMs || 60000);
+      const searchBudget = Math.max(1, options.totalLimitMs || 60000);
+      let deadline = options.excludeSetupTime ? Infinity : startedAt + searchBudget;
       const offer = (route, phase) => options.onCandidate?.(route.slice(), { phase, pointScore: routeMetrics(route).score });
       const random = randomSource || createRandom(hashPoints(points));
       let evaluations = 0;
@@ -101,6 +102,8 @@
       bestMetrics = rankedSeeds[0].metrics;
       initialMetrics = { ...bestMetrics };
       lastImprovementAt = now();
+      if (options.excludeSetupTime) deadline = lastImprovementAt + searchBudget;
+      options.onReady?.();
       emitProgress("Meilleur point de depart", true);
 
       const consider = (route, phase) => {
@@ -395,6 +398,7 @@
         lastProgressAt = current;
         onProgress({
           phase,
+          preparing: true,
           progress: 0,
           elapsedMs: current - startedAt,
           stagnationLimitMs,
@@ -402,7 +406,7 @@
           restarts,
           improvements,
           passes,
-          lastImprovementMs: current - lastImprovementAt,
+          lastImprovementMs: 0,
           route: bestRoute.length ? bestRoute.slice() : null,
           metrics: bestRoute.length ? { ...bestMetrics } : null,
           initialMetrics: bestRoute.length ? { ...initialMetrics } : null
@@ -419,6 +423,7 @@
         const elapsedMs = current - startedAt;
         onProgress({
           phase,
+          preparing: false,
           progress: forcedProgress === null
             ? Math.min(99, ((current - lastImprovementAt) / stagnationLimitMs) * 100)
             : forcedProgress,

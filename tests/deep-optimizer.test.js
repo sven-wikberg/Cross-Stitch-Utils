@@ -169,12 +169,14 @@ test("M6 inactivity restarts only for accepted global gains, not repairs or dive
   const initialPath = model.expandCells(points, 3), reports = []; let now = 0;
   const result = engine(() => ++now).optimizePath({ points, initialPath, cutThreshold: 3, warmupMs: 0,
     stopAfterInactivity: true, stagnationLimitMs: 1000, totalLimitMs: 1 }, s => reports.push(s));
-  let score = model.metrics(initialPath, 3, true).score, lastGainAt = 0, gains = 0;
+  let score = model.metrics(initialPath, 3, true).score, lastGainAt = 0, gains = 0, searchReady = false;
   for (const s of reports) {
     assert.equal(s.stopAfterInactivity, true); assert.equal(s.totalLimitMs, null);
     assert.equal(s.stagnationLimitMs, 1000);
     const gainAt = s.elapsedMs - s.lastImprovementMs;
-    if (s.metrics.score < score - 1e-8) {
+    if (s.preparing) assert.equal(s.lastImprovementMs, 0);
+    else if (!searchReady) { assert.equal(gainAt, s.preparationMs); searchReady = true; }
+    else if (s.metrics.score < score - 1e-8) {
       assert.ok(gainAt > lastGainAt); assert.ok(s.lastImprovementMs < 10); gains++;
     } else assert.equal(gainAt, lastGainAt, "No reset without a strict improvement in the published best");
     lastGainAt = gainAt; score = s.metrics.score;

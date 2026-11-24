@@ -143,7 +143,8 @@
       const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimitMs = stopAfterInactivity ? null : Math.max(1, options.totalLimitMs || 3600000);
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
-      let lastImproved = started, deadline = started + budgetMs;
+      let lastImproved = started, deadline = stopAfterInactivity ? Infinity : started + budgetMs;
+      let preparing = stopAfterInactivity, searchStarted = null;
       const pointDeadline = started + budgetMs * 0.65, lowerBound = Math.max(0, cells.length * 2 - 1);
       const stats = { orders: 0, conversions: 0, completed: 0, bestConversionScore: null, sections: 0, prepared: 0, crosses: 0, variants: 0,
         connections: 0, trials: 0, refinements: 0, pointEvaluations: 0, restarts: 0 };
@@ -160,9 +161,16 @@
         changed = false;
       }
       function timing(now) {
-        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
-          remainingMs: Math.max(0, deadline - now),
-          progress: stage === "complete" ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+          stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImproved,
+          remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
+          progress: stage === "complete" ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+      }
+      function beginSearch() {
+        if (searchStarted !== null) return;
+        searchStarted = clock(); preparing = false;
+        if (stopAfterInactivity) { lastImproved = searchStarted; deadline = searchStarted + stagnationLimitMs; }
+        phase = "Points : recherche"; emit(true);
       }
       function keep(path) {
         if (!valid(path)) return false;
@@ -170,7 +178,7 @@
         if (best && value.score >= metrics.score - epsilon) return false;
         if (best) {
           improvements++; lastImproved = clock();
-          if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+          if (stopAfterInactivity && !preparing) deadline = lastImproved + stagnationLimitMs;
         }
         best = path.map(model.copy); metrics = value; changed = true; emit(true); return true;
       }
@@ -203,7 +211,7 @@
         stats.conversions++; stats.sections = 0; stats.prepared = 0;
         const trialsBefore = stats.trials, connectionsBefore = stats.connections;
         const result = decode(route.map(i => cells[i]), { constraints, cutThreshold: threshold, round, boundaries,
-          breadth: round ? 4 : 3, deadline: Math.min(deadline, clock() + Math.max(1000, Math.min(15000, budgetMs * 0.15))) }, s => {
+          breadth: round ? 4 : 3, deadline: preparing ? Infinity : Math.min(deadline, clock() + Math.max(1000, Math.min(15000, budgetMs * 0.15))) }, s => {
           stage = s.phase; stats.sections = s.total;
           stats.prepared = s.phase === "sections" ? s.prepared : s.total; stats.crosses = s.crosses || 0;
           stats.variants = s.variants; stats.trials = trialsBefore + s.tested;
@@ -227,10 +235,12 @@
         stage = previousStage; phase = previousPhase; emit(); return result;
       }
       stats.orders++; convert(initialOrder, true);
-      if (editable && metrics.score > lowerBound + epsilon && clock() < pointDeadline) {
+      if (editable && metrics.score > lowerBound + epsilon && (stopAfterInactivity || clock() < pointDeadline)) {
         try {
           const result = createPoints(clock, random).optimizePath({ points: cells, initialPath: initialOrder.map(id => cells[id]),
-            cutThreshold: threshold, totalLimitMs: Math.max(1, pointDeadline - clock()), stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
+            cutThreshold: threshold, totalLimitMs: stopAfterInactivity ? budgetMs * 0.65 : Math.max(1, pointDeadline - clock()),
+            excludeSetupTime: stopAfterInactivity, onReady: beginSearch,
+            stagnationLimitMs: stopAfterInactivity ? Infinity : totalLimitMs,
             shouldStop: () => metrics.score <= lowerBound + epsilon || (stopAfterInactivity && clock() >= deadline),
             onCandidate: route => { pending = route.slice(); stats.orders++; convert(route); },
             onProgress: s => { stats.pointEvaluations = s.evaluations; stats.restarts = s.restarts;
@@ -238,6 +248,7 @@
           pending = result.route;
         } catch (error) { if (error.message !== "POINT_SEARCH_TIMEOUT") throw error; }
       }
+      beginSearch();
       convert(pending, true);
       // Refine the section interfaces without returning to unrestricted diagonal permutations.
       let round = 0;

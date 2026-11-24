@@ -61,6 +61,11 @@ approfondie de 1 heure (moteur 6) ; seule cette derniere est exclue du cycle aut
   sur un parcours moins bon ne le remettent a zero. Il n'y a pas de plafond de
   temps total. Arreter conserve le dernier meilleur parcours recu par l'interface.
 
+En mode sans amelioration, les constructions initiales, l'amorcage par blocs
+et les index precedant la LNS sont hors minuteur. Le suivi affiche `Preparation`,
+puis le delai complet commence au premier cycle de recherche adaptative.
+Les nouvelles constructions de candidats pendant la recherche ne le suspendent pas.
+
 L'interface transmet `stopAfterInactivity: true` et `stagnationLimitMs`, sans
 `totalLimitMs`. L'API conserve le mode a budget total `totalLimitMs` lorsque
 `stopAfterInactivity` est absent ou faux, notamment pour les tests et benchmarks.

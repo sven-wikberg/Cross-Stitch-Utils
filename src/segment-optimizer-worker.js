@@ -171,7 +171,7 @@
       const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
       const totalLimitMs = stopAfterInactivity ? null : Math.max(0, options.totalLimitMs ?? 3600000);
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
-      let deadline = started + budgetMs;
+      let deadline = stopAfterInactivity ? Infinity : started + budgetMs, preparing = stopAfterInactivity, searchStarted = null;
       let best = options.initialPath.map(model.copy), metrics = measure(best, threshold), initialMetrics = metrics;
       let stage = "preparation", phase = "Preparation des segments", changed = true, lastReport = -Infinity, lastGain = 0, lastImproved = started;
       const stats = { repairs: 0, segments: 0, diagonals: 0, totalSegments: 0, rank: 0, total: 0, passes: 0, improvements: 0, diversifications: 0 };
@@ -185,9 +185,10 @@
           ...(changed ? { path: best.map(model.copy) } : {}) }); changed = false;
       }
       function timing(now) {
-        return { stopAfterInactivity, stagnationLimitMs, lastImprovementMs: now - lastImproved,
-          remainingMs: Math.max(0, deadline - now),
-          progress: stage === "complete" || !budgetMs ? 100 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
+        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+          stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImproved,
+          remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
+          progress: stage === "complete" || !budgetMs ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImproved : started)) / budgetMs * 100) };
       }
       function keep(path) {
         if (!valid(path)) return false;
@@ -195,14 +196,17 @@
         if (next.score >= metrics.score - epsilon) return false;
         lastGain = metrics.score - next.score; best = path.map(model.copy); metrics = next;
         stats.improvements++; lastImproved = clock();
-        if (stopAfterInactivity) deadline = lastImproved + stagnationLimitMs;
+        if (stopAfterInactivity && !preparing) deadline = lastImproved + stagnationLimitMs;
         changed = true; emit(true); return true;
       }
       emit(true);
       try { keep(model.orient(best, threshold, constraints, true)); } catch { /* Preserve the valid incumbent. */ }
-      let working = best, workScore = metrics.score, state = null, misses = 0, rank = 0, round = 0;
+      let working = best, workScore = metrics.score, state = context(working, threshold, constraints), misses = 0, rank = 0, round = 0;
+      stats.totalSegments = state.segments.length;
       const weights = [1, 1, 1], names = ["Segments entiers", "Portions de segments", "Segments et diagonales liees"];
-      stage = "search";
+      searchStarted = clock(); preparing = false;
+      if (stopAfterInactivity) { lastImproved = searchStarted; deadline = searchStarted + stagnationLimitMs; }
+      stage = "search"; phase = "Recherche des raccordements"; emit(true);
       while (true) {
         while (clock() < deadline) {
           if (metrics.score <= Math.max(0, best.length - 1) + epsilon) { reason = "lower-bound"; break; }
