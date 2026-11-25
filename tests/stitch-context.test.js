@@ -77,15 +77,27 @@ async function run() {
         const upper = holePixel({ x: points.at(-1).x + 0.25, y: 2.25 }, 44);
         const link = holePixel({ x: points[6].x, y: 2.25 }, 44);
         const previousLink = holePixel({ x: points[5].x, y: 2.25 }, 44);
-        return { mode, onlyPreviousInk: strokes.every(s => [STITCH_PREVIOUS_COLOR, "#ffffff"].includes(s.color)),
+        const pastLink = holePixel({ x: points[1].x, y: 2.25 }, 44);
+        return { mode, onlyExpectedInk: strokes.every(s => ["#222426", STITCH_PREVIOUS_COLOR, "#ffffff"].includes(s.color)),
+          completedDiagonals: strokes.filter(s => s.color === "#222426" && !s.dash.length).length,
+          completedLinks: strokes.filter(s => s.color === "#222426" && s.dash.length).length,
           futureHidden: whiteAt(future.x, future.y), upperHidden: whiteAt(upper.x, upper.y),
-          futureLinkHidden: whiteAt(link.x, link.y), pastHidden: whiteAt(past.x, past.y),
-          earlierHidden: whiteAt(earlier.x, earlier.y), previousVisible: !whiteAt(previous.x, previous.y),
+          futureLinkHidden: whiteAt(link.x, link.y), pastVisible: !whiteAt(past.x, past.y),
+          earlierVisible: !whiteAt(earlier.x, earlier.y), pastLinkVisible: !whiteAt(pastLink.x, pastLink.y),
+          previousVisible: !whiteAt(previous.x, previous.y),
           previousLinkVisible: !whiteAt(previousLink.x, previousLink.y) };
       });
+      const originalCount = stitchedByDmc["310"];
+      const completedCases = [0, 1, points.length].map(count => {
+        stitchedByDmc["310"] = count;
+        strokes.length = 0; drawStitchProgress(ctx, 44);
+        return { count, diagonals: strokes.filter(s => s.color === "#222426" && !s.dash.length).length,
+          links: strokes.filter(s => s.color === "#222426" && s.dash.length).length };
+      });
+      stitchedByDmc["310"] = originalCount;
       sessionMode = originalMode;
       stitchView = originalView;
-      return { highlighted, cases, cut, threadLinks, alphaRestored, renderChecks,
+      return { highlighted, cases, cut, threadLinks, alphaRestored, renderChecks, completedCases,
         unchanged: JSON.stringify({ loadedPaths, stitchedByDmc, stitchStats }) === before };
     });
     assert.equal(checks.highlighted.filter(s => !s.dash.length).length, 1, "Only the last stitched diagonal");
@@ -96,9 +108,15 @@ async function run() {
     assert.ok(checks.cut[0].dash[0] > 2); assert.equal(checks.threadLinks.length, 0, "Cuts stay red, not orange thread links");
     assert.ok(checks.alphaRestored && checks.unchanged);
     for (const check of checks.renderChecks) {
-      assert.ok(check.onlyPreviousInk && check.futureHidden && check.upperHidden && check.futureLinkHidden
-        && check.pastHidden && check.earlierHidden, `Only the immediate predecessor is drawn: ${JSON.stringify(check)}`);
+      assert.ok(check.onlyExpectedInk && check.futureHidden && check.upperHidden && check.futureLinkHidden,
+        `Future diagonals and links stay hidden: ${JSON.stringify(check)}`);
+      assert.equal(check.completedDiagonals, 5); assert.equal(check.completedLinks, 4);
+      assert.ok(check.pastVisible && check.earlierVisible && check.pastLinkVisible, "The completed path is visible in black");
       assert.ok(check.previousVisible && check.previousLinkVisible, "The last diagonal and its connection remain visible");
+    }
+    for (const check of checks.completedCases) {
+      assert.equal(check.diagonals, check.count, "Draw exactly the completed diagonals, including when the color is finished");
+      assert.equal(check.links, Math.max(0, check.count - 1), "Draw only links between completed diagonals");
     }
 
     await page.evaluate(() => {
@@ -128,7 +146,7 @@ async function run() {
     await page.screenshot({ path: path.join(output, "stitch-context-mobile.png"), fullPage: true });
     assert.deepEqual(errors, []);
     for (let i = 0; i < saveFiles.length; i++) assert.deepEqual(await fs.readFile(path.join(root, saveFiles[i])), originalSaves[i]);
-    console.log("Stitch context passed: only the last stitched diagonal and its link, no earlier/future traces, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
+    console.log("Stitch context passed: completed path in black, last diagonal and its link in orange, no future traces, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

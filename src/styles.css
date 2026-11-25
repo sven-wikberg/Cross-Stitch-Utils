@@ -1205,6 +1205,7 @@ select:focus {
 .stitch-context-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; color: var(--muted); font-size: 0.75rem; }
 .stitch-context-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .stitch-context-legend i { width: 18px; height: 0; border-top: 3px solid; }
+.stitch-completed-key { color: #222426; }
 .stitch-previous-key { color: #ad600e; }
 .stitch-current-key { color: #c63848; }
 .review-toolbar label { flex: 0 1 230px; }

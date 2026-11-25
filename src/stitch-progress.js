@@ -525,7 +525,22 @@ function centerCurrentPointIfNeeded(cellSize) {
 function drawStitchProgress(context, cellSize) {
   const path = pathForDmc(selectedDmc);
   if (!path) return;
-  drawStitchContext(context, path.points, stitchedCountForDmc(selectedDmc), cellSize);
+  const count = stitchedCountForDmc(selectedDmc);
+  context.save();
+  context.globalAlpha = 1; context.lineCap = "round"; context.lineJoin = "round";
+  context.strokeStyle = "#222426";
+  context.lineWidth = Math.max(1.1, Math.min(4, cellSize * 0.07));
+  context.setLineDash([]);
+  for (let index = 0; index < count; index++) {
+    const point = path.points[index];
+    if (index > 0) drawPathSegment(context, path.points[index - 1], point, cellSize);
+    if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
+        || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) continue;
+    const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
+    context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+  }
+  context.restore();
+  drawStitchContext(context, path.points, count, cellSize);
 }
 
 function drawStitchContext(context, points, count, cellSize) {
@@ -583,7 +598,7 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1, highl
   const from = holePixel(StitchModel.holes(fromPoint).end, cellSize), to = holePixel(StitchModel.holes(toPoint).start, cellSize);
   const isCut = isCutJump(fromPoint, toPoint);
   context.save(); context.globalAlpha = alpha;
-  const color = isCut ? "#c63848" : highlightColor || "#56616a";
+  const color = isCut ? "#c63848" : highlightColor || "#222426";
   const width = highlightColor && !isCut ? Math.max(1.2, Math.min(3, cellSize * 0.055))
     : Math.max(0.6, Math.min(2, cellSize * (isCut ? 0.035 : 0.05)));
   context.setLineDash(isCut ? [Math.max(2, cellSize * 0.4), Math.max(2, cellSize * 0.3)] : [2, 2]);
