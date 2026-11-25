@@ -386,7 +386,7 @@ function renderStitchView() {
   }
 
   const pattern = loadedPaths.pattern;
-  const colorByDmc = new Map(pattern.colors.map((color) => [color.dmc, color]));
+  const colorByDmc = new Map(pattern.colors.map(color => [color.dmc, { ...color, hex: DmcPalette.hex(color) }]));
   const baseCellSize = gridCellSize(
     pattern.grid.width,
     pattern.grid.height,
@@ -736,7 +736,7 @@ function renderStitchColorLegend() {
       <span>DMC ${path.dmc}</span>
       <span class="stat-label">${stitched}/${path.points.length}</span>
     `;
-    item.querySelector(".color-swatch").style.background = color?.hex || "#d9dddd";
+    item.querySelector(".color-swatch").style.background = DmcPalette.hex(color);
     stitchColorLegend.appendChild(item);
   });
 }
@@ -761,7 +761,7 @@ function renderCompletedColorList() {
       <span>DMC ${path.dmc}</span>
       <span class="stat-label">${path.points.length}</span>
     `;
-    item.querySelector(".color-swatch").style.background = color?.hex || "#d9dddd";
+    item.querySelector(".color-swatch").style.background = DmcPalette.hex(color);
     completedColorList.appendChild(item);
   });
 }

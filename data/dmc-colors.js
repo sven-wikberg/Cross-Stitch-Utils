@@ -1,411 +1,413 @@
+// DMC screen colors: craft-color-codes by MakeBead (CC BY 4.0 compilation).
+// Source, attribution and limits: data/DMC-COLORS-SOURCES.md.
 window.DMC_COLORS = [
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "01",
-    "hex": "#8D99AB"
+    "hex": "#E3E3E6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "02",
-    "hex": "#D5D5D7"
+    "hex": "#D7D7D8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "03",
-    "hex": "#CCCCD0"
+    "hex": "#B8B8BB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "04",
-    "hex": "#B4B3BA"
+    "hex": "#AEAEB1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "05",
-    "hex": "#776859"
+    "hex": "#E3CCBE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "06",
-    "hex": "#D0C5BE"
+    "hex": "#DCC6B8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "07",
-    "hex": "#CDBFB8"
+    "hex": "#8F7B6E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "08",
-    "hex": "#A89388"
+    "hex": "#6A5046"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "09",
-    "hex": "#7E696A"
+    "hex": "#55200E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "10",
-    "hex": "#C4C1E1"
+    "hex": "#EDFED9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "11",
-    "hex": "#E5E0C7"
+    "hex": "#E2EDB5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "12",
-    "hex": "#E3DA88"
+    "hex": "#CDD99A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "13",
-    "hex": "#B6E2D1"
+    "hex": "#BFF6E0"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "14",
-    "hex": "#C3C0E0"
+    "hex": "#D0FBB2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "15",
-    "hex": "#DBDFAA"
+    "hex": "#D1EDA4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "16",
-    "hex": "#CCD38E"
+    "hex": "#C9C258"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "17",
-    "hex": "#C5C2E2"
+    "hex": "#E5E272"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "18",
-    "hex": "#E6D276"
+    "hex": "#D9D56D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "19",
-    "hex": "#F6CC87"
+    "hex": "#F7C95F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "20",
-    "hex": "#58303B"
+    "hex": "#F7AF93"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "21",
-    "hex": "#EEC4B0"
+    "hex": "#D79982"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "22",
-    "hex": "#D37766"
+    "hex": "#BC604E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "23",
-    "hex": "#C2BFE0"
+    "hex": "#EDE2ED"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "24",
-    "hex": "#62525B"
+    "hex": "#E0D7EE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "25",
-    "hex": "#E7DFE9"
+    "hex": "#DAD2E9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "26",
-    "hex": "#DCD3E4"
+    "hex": "#D7CAE6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "27",
-    "hex": "#867480"
+    "hex": "#F0EEF9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "28",
-    "hex": "#DFDEE5"
+    "hex": "#9086A9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "29",
-    "hex": "#A49CB6"
+    "hex": "#674076"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "30",
-    "hex": "#7064AA"
+    "hex": "#7D77A5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "31",
-    "hex": "#9B99C4"
+    "hex": "#50518D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "32",
-    "hex": "#8081B1"
+    "hex": "#4D2E8A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "33",
-    "hex": "#7D3953"
+    "hex": "#9C599E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "34",
-    "hex": "#9F5D98"
+    "hex": "#7D3064"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "35",
-    "hex": "#92447C"
+    "hex": "#46052D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "150",
-    "hex": "#BA3153"
+    "hex": "#AB0249"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "151",
-    "hex": "#A92C34"
+    "hex": "#F0CED4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "152",
-    "hex": "#DD949D"
+    "hex": "#E2A099"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "153",
-    "hex": "#88577F"
+    "hex": "#E6CCD9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "154",
-    "hex": "#76546E"
+    "hex": "#572433"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "155",
-    "hex": "#9B9ED1"
+    "hex": "#9891B6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "156",
-    "hex": "#A9C1E3"
+    "hex": "#A3AED1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "157",
-    "hex": "#70709F"
+    "hex": "#BBC3D9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "158",
-    "hex": "#4978B8"
+    "hex": "#4C526E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "159",
-    "hex": "#BFBCDF"
+    "hex": "#C7CAD7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "160",
-    "hex": "#AABBDE"
+    "hex": "#999FB7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "161",
-    "hex": "#7C94C5"
+    "hex": "#7880A4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "162",
-    "hex": "#104071"
+    "hex": "#DBECF5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "163",
-    "hex": "#7AAA88"
+    "hex": "#4D8361"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "164",
-    "hex": "#62786A"
+    "hex": "#C8D8B8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "165",
-    "hex": "#DBD362"
+    "hex": "#EFF4A4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "166",
-    "hex": "#EDE679"
+    "hex": "#C0C840"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "167",
-    "hex": "#E3BE6C"
+    "hex": "#A77C49"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "168",
-    "hex": "#787674"
+    "hex": "#D1D1D1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "169",
-    "hex": "#B7CAD5"
+    "hex": "#848484"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "208",
-    "hex": "#C19DCD"
+    "hex": "#835B8B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "209",
-    "hex": "#D4BCDF"
+    "hex": "#A37BA7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "210",
-    "hex": "#E5D4EA"
+    "hex": "#C39FC3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "211",
-    "hex": "#CFC6DF"
+    "hex": "#E3CBE3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "221",
-    "hex": "#9A3037"
+    "hex": "#883E43"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "223",
-    "hex": "#D58591"
+    "hex": "#CC847C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "224",
-    "hex": "#EBCBCC"
+    "hex": "#EBB7AF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "225",
-    "hex": "#6A4529"
+    "hex": "#FFDFD5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "300",
-    "hex": "#874927"
+    "hex": "#6F2F00"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "301",
-    "hex": "#D76224"
+    "hex": "#B35F2B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "304",
-    "hex": "#D72E11"
+    "hex": "#B71F33"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "307",
-    "hex": "#F8EA87"
+    "hex": "#FDED54"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "309",
-    "hex": "#DE5273"
+    "hex": "#C12041"
   },
   {
     "brand": "DMC",
@@ -417,2478 +419,2478 @@ window.DMC_COLORS = [
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "311",
-    "hex": "#2E5883"
+    "hex": "#1C5066"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "312",
-    "hex": "#3C7BBD"
+    "hex": "#35668B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "315",
-    "hex": "#A16A7B"
+    "hex": "#814952"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "316",
-    "hex": "#D89FB7"
+    "hex": "#B7737F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "317",
-    "hex": "#93A4AB"
+    "hex": "#6C6C6C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "318",
-    "hex": "#BFCADA"
+    "hex": "#ABABAB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "319",
-    "hex": "#599574"
+    "hex": "#205F2E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "320",
-    "hex": "#98C794"
+    "hex": "#69885A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "321",
-    "hex": "#E91911"
+    "hex": "#C72B3B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "322",
-    "hex": "#4C94C9"
+    "hex": "#5A8FB8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "326",
-    "hex": "#E05173"
+    "hex": "#B33B4B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "327",
-    "hex": "#8161AA"
+    "hex": "#633666"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "333",
-    "hex": "#7876B9"
+    "hex": "#5C5478"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "334",
-    "hex": "#6DB7E4"
+    "hex": "#739FC1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "335",
-    "hex": "#E16187"
+    "hex": "#EE546E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "336",
-    "hex": "#274C7B"
+    "hex": "#253B73"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "340",
-    "hex": "#8DA8D6"
+    "hex": "#ADA7C7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "341",
-    "hex": "#D5DFEB"
+    "hex": "#B7BFDD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "347",
-    "hex": "#C93A39"
+    "hex": "#BF2D2D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "349",
-    "hex": "#EA381F"
+    "hex": "#D21035"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "350",
-    "hex": "#EE472E"
+    "hex": "#E04848"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "351",
-    "hex": "#F17665"
+    "hex": "#E96A67"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "352",
-    "hex": "#F4AD9F"
+    "hex": "#FD9C97"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "353",
-    "hex": "#BE291D"
+    "hex": "#FED7CC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "355",
-    "hex": "#B93228"
+    "hex": "#984436"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "356",
-    "hex": "#D86258"
+    "hex": "#C56A5B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "367",
-    "hex": "#6FA681"
+    "hex": "#617A52"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "368",
-    "hex": "#CAE1BB"
+    "hex": "#A6C298"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "369",
-    "hex": "#50816E"
+    "hex": "#D7EDCC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "370",
-    "hex": "#D2B366"
+    "hex": "#B89D64"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "371",
-    "hex": "#DDD298"
+    "hex": "#BFA671"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "372",
-    "hex": "#81784E"
+    "hex": "#CCB784"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "400",
-    "hex": "#B3471C"
+    "hex": "#8F430F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "402",
-    "hex": "#EAB9A1"
+    "hex": "#F7A777"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "407",
-    "hex": "#C77B69"
+    "hex": "#BB8161"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "413",
-    "hex": "#768293"
+    "hex": "#565656"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "414",
-    "hex": "#9CABC3"
+    "hex": "#8C8C8C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "415",
-    "hex": "#DBE1E6"
+    "hex": "#D3D3D6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "420",
-    "hex": "#D5A760"
+    "hex": "#A07042"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "422",
-    "hex": "#F9EEC8"
+    "hex": "#C69F7B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "433",
-    "hex": "#C57F33"
+    "hex": "#7A451F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "434",
-    "hex": "#E29C4A"
+    "hex": "#985E33"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "435",
-    "hex": "#EEB86E"
+    "hex": "#B87748"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "436",
-    "hex": "#F4D698"
+    "hex": "#CB9051"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "437",
-    "hex": "#F5E4B4"
+    "hex": "#E4BB8E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "444",
-    "hex": "#F5CA44"
+    "hex": "#FFD600"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "445",
-    "hex": "#CFCDE5"
+    "hex": "#FFFB8B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "451",
-    "hex": "#D7CAD3"
+    "hex": "#917B73"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "452",
-    "hex": "#E6E4E5"
+    "hex": "#C0B3AE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "453",
-    "hex": "#C6C4E2"
+    "hex": "#D7CECB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "469",
-    "hex": "#879318"
+    "hex": "#72843C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "470",
-    "hex": "#95A113"
+    "hex": "#94AB4F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "471",
-    "hex": "#D7CC30"
+    "hex": "#AEBF79"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "472",
-    "hex": "#57742F"
+    "hex": "#D8E498"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "498",
-    "hex": "#CA1C14"
+    "hex": "#A7132B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "500",
-    "hex": "#5D7262"
+    "hex": "#044D33"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "501",
-    "hex": "#789A78"
+    "hex": "#396F52"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "502",
-    "hex": "#88B094"
+    "hex": "#5B9071"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "503",
-    "hex": "#ABC7A9"
+    "hex": "#7BAC94"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "505",
-    "hex": "#5E9D60"
+    "hex": "#338362"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "517",
-    "hex": "#2878A6"
+    "hex": "#3B768F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "518",
-    "hex": "#6BAFD3"
+    "hex": "#4F93A7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "519",
-    "hex": "#97C9DF"
+    "hex": "#7EB1C8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "520",
-    "hex": "#899D66"
+    "hex": "#666D4F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "522",
-    "hex": "#C0BC90"
+    "hex": "#969E7E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "523",
-    "hex": "#959539"
+    "hex": "#ABB197"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "524",
-    "hex": "#747955"
+    "hex": "#C4CDAC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "535",
-    "hex": "#918F96"
+    "hex": "#636458"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "543",
-    "hex": "#424240"
+    "hex": "#F2E3CE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "550",
-    "hex": "#9A64A6"
+    "hex": "#5C184E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "552",
-    "hex": "#AD7DB8"
+    "hex": "#803A6B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "553",
-    "hex": "#D9B4D8"
+    "hex": "#A3638B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "554",
-    "hex": "#E8D0E6"
+    "hex": "#DBB3CB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "561",
-    "hex": "#5C8C6C"
+    "hex": "#2C6A45"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "562",
-    "hex": "#9ACA93"
+    "hex": "#53976A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "563",
-    "hex": "#ADD09C"
+    "hex": "#8FC098"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "564",
-    "hex": "#AFC795"
+    "hex": "#A7CDAF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "580",
-    "hex": "#ACC235"
+    "hex": "#888D33"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "581",
-    "hex": "#DBD137"
+    "hex": "#A7AE38"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "597",
-    "hex": "#7FB4AA"
+    "hex": "#5BA3B3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "598",
-    "hex": "#9DCAC2"
+    "hex": "#90C3CC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "600",
-    "hex": "#D53B68"
+    "hex": "#CD2F63"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "601",
-    "hex": "#E74E85"
+    "hex": "#D1286A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "602",
-    "hex": "#ED74A3"
+    "hex": "#E24874"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "603",
-    "hex": "#EE89B4"
+    "hex": "#FFA4BE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "604",
-    "hex": "#F1A6CA"
+    "hex": "#FFB0BE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "605",
-    "hex": "#783D55"
+    "hex": "#FFC0CD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "606",
-    "hex": "#F7603E"
+    "hex": "#FA3203"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "608",
-    "hex": "#F67456"
+    "hex": "#FD5D35"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "610",
-    "hex": "#A99364"
+    "hex": "#796047"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "611",
-    "hex": "#D6C08A"
+    "hex": "#967656"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "612",
-    "hex": "#EEECDA"
+    "hex": "#BC9A78"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "613",
-    "hex": "#977141"
+    "hex": "#DCC4AA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "632",
-    "hex": "#A66356"
+    "hex": "#875539"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "640",
-    "hex": "#B0A380"
+    "hex": "#857B61"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "642",
-    "hex": "#DDD4B1"
+    "hex": "#A49878"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "644",
-    "hex": "#EEE6D0"
+    "hex": "#DDD8CB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "645",
-    "hex": "#9D9C92"
+    "hex": "#6E655C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "646",
-    "hex": "#C1C0B7"
+    "hex": "#877D73"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "647",
-    "hex": "#CDD8D2"
+    "hex": "#B0A69C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "648",
-    "hex": "#DFDDD4"
+    "hex": "#BCB4AC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "666",
-    "hex": "#F32429"
+    "hex": "#E31D42"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "676",
-    "hex": "#C8C6E3"
+    "hex": "#E5CE97"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "677",
-    "hex": "#FAF4EC"
+    "hex": "#F5ECCB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "680",
-    "hex": "#E7C054"
+    "hex": "#BC8D0E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "699",
-    "hex": "#217335"
+    "hex": "#056517"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "700",
-    "hex": "#248330"
+    "hex": "#07731B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "701",
-    "hex": "#48982A"
+    "hex": "#3F8F29"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "702",
-    "hex": "#7CB223"
+    "hex": "#47A72F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "703",
-    "hex": "#96BA14"
+    "hex": "#7BB547"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "704",
-    "hex": "#C8CE66"
+    "hex": "#9ECF34"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "712",
-    "hex": "#5F4B4D"
+    "hex": "#FFFBEF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "718",
-    "hex": "#CA5293"
+    "hex": "#9C2462"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "720",
-    "hex": "#F45219"
+    "hex": "#E55C1F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "721",
-    "hex": "#F57B46"
+    "hex": "#F27842"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "722",
-    "hex": "#F1AD7D"
+    "hex": "#F7976F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "725",
-    "hex": "#F7CE5C"
+    "hex": "#FFC840"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "726",
-    "hex": "#F6E086"
+    "hex": "#FDD755"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "727",
-    "hex": "#F5E7A3"
+    "hex": "#FFF1AF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "728",
-    "hex": "#E9B437"
+    "hex": "#E4B468"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "729",
-    "hex": "#F3DF92"
+    "hex": "#D0A53E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "730",
-    "hex": "#A49337"
+    "hex": "#827B30"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "732",
-    "hex": "#D4BD3B"
+    "hex": "#948C36"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "733",
-    "hex": "#E4D25E"
+    "hex": "#BCB34C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "734",
-    "hex": "#5A7153"
+    "hex": "#C7C077"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "738",
-    "hex": "#FBEED0"
+    "hex": "#ECCC9E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "739",
-    "hex": "#FCF5E3"
+    "hex": "#F8E4C8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "740",
-    "hex": "#F7903F"
+    "hex": "#FF8B00"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "741",
-    "hex": "#F5AA49"
+    "hex": "#FFA32B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "742",
-    "hex": "#F6C354"
+    "hex": "#FFBF57"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "743",
-    "hex": "#F6D57A"
+    "hex": "#FED376"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "744",
-    "hex": "#F4DF9E"
+    "hex": "#FFE793"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "745",
-    "hex": "#F4AB42"
+    "hex": "#FFE9AD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "746",
-    "hex": "#947043"
+    "hex": "#FCFCEE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "747",
-    "hex": "#274461"
+    "hex": "#E5FCFD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "754",
-    "hex": "#ECCDC8"
+    "hex": "#F7CBBF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "758",
-    "hex": "#E8937E"
+    "hex": "#EEAA9B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "760",
-    "hex": "#EFA0AA"
+    "hex": "#F5ADAD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "761",
-    "hex": "#F0BCC0"
+    "hex": "#FFC9C9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "762",
-    "hex": "#F8F6EC"
+    "hex": "#ECECEC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "772",
-    "hex": "#4E8661"
+    "hex": "#E4ECD4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "775",
-    "hex": "#E8F1F1"
+    "hex": "#D9EBF1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "777",
-    "hex": "#C2242E"
+    "hex": "#913546"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "778",
-    "hex": "#C5C2E2"
+    "hex": "#DFB3BB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "779",
-    "hex": "#997D80"
+    "hex": "#624B45"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "780",
-    "hex": "#DC943A"
+    "hex": "#94631A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "782",
-    "hex": "#EFAC39"
+    "hex": "#AE7720"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "783",
-    "hex": "#F8D154"
+    "hex": "#CE9124"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "791",
-    "hex": "#4A6DA6"
+    "hex": "#464563"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "792",
-    "hex": "#5982BF"
+    "hex": "#555B7B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "793",
-    "hex": "#8BBDE2"
+    "hex": "#707DA2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "794",
-    "hex": "#AFD5EC"
+    "hex": "#8F9CC1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "796",
-    "hex": "#094683"
+    "hex": "#11416D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "797",
-    "hex": "#0C5AA0"
+    "hex": "#13477D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "798",
-    "hex": "#368CC7"
+    "hex": "#466A8E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "799",
-    "hex": "#5A9DD2"
+    "hex": "#748EB6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "800",
-    "hex": "#3558A8"
+    "hex": "#C0CCDE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "801",
-    "hex": "#916744"
+    "hex": "#653919"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "803",
-    "hex": "#1E5C91"
+    "hex": "#2C597C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "807",
-    "hex": "#6CB7CC"
+    "hex": "#64ABBA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "809",
-    "hex": "#93C3DE"
+    "hex": "#94A8C6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "813",
-    "hex": "#73BDE0"
+    "hex": "#A1C2D7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "814",
-    "hex": "#87272B"
+    "hex": "#7B001B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "815",
-    "hex": "#9B2124"
+    "hex": "#87071F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "816",
-    "hex": "#A51F21"
+    "hex": "#970B23"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "817",
-    "hex": "#D62313"
+    "hex": "#BB051F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "818",
-    "hex": "#F23D49"
+    "hex": "#FFDFD9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "819",
-    "hex": "#C3303E"
+    "hex": "#FFEEEB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "820",
-    "hex": "#0A437D"
+    "hex": "#0E365C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "822",
-    "hex": "#F5EED7"
+    "hex": "#E7E2D3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "823",
-    "hex": "#324367"
+    "hex": "#213063"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "824",
-    "hex": "#0C5895"
+    "hex": "#396987"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "825",
-    "hex": "#0B74B1"
+    "hex": "#4781A5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "826",
-    "hex": "#3198C9"
+    "hex": "#6B9EBF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "827",
-    "hex": "#A0D0E2"
+    "hex": "#BDDDED"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "828",
-    "hex": "#C3C0E0"
+    "hex": "#C5E8ED"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "829",
-    "hex": "#9A7D43"
+    "hex": "#7E6B42"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "830",
-    "hex": "#BE973B"
+    "hex": "#8D784B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "831",
-    "hex": "#D3AC3C"
+    "hex": "#AA8F56"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "832",
-    "hex": "#E6C84F"
+    "hex": "#BD9B51"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "833",
-    "hex": "#ECD875"
+    "hex": "#C8AB6C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "834",
-    "hex": "#DBC350"
+    "hex": "#DBBE7F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "838",
-    "hex": "#776458"
+    "hex": "#594937"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "839",
-    "hex": "#AB8C64"
+    "hex": "#675541"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "840",
-    "hex": "#C8A47E"
+    "hex": "#9A7C5C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "841",
-    "hex": "#E4D1B0"
+    "hex": "#B69B7E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "842",
-    "hex": "#F3EFE1"
+    "hex": "#D1BAA1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "844",
-    "hex": "#5D5A56"
+    "hex": "#484848"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "869",
-    "hex": "#BD823F"
+    "hex": "#835E39"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "890",
-    "hex": "#618274"
+    "hex": "#174923"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "891",
-    "hex": "#F54752"
+    "hex": "#FF5773"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "892",
-    "hex": "#F25871"
+    "hex": "#FF798C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "893",
-    "hex": "#F3809F"
+    "hex": "#FC90A2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "894",
-    "hex": "#C1BDDF"
+    "hex": "#FFB2BB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "895",
-    "hex": "#68896A"
+    "hex": "#1B5300"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "898",
-    "hex": "#86654E"
+    "hex": "#492A13"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "899",
-    "hex": "#ED92A9"
+    "hex": "#F27688"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "900",
-    "hex": "#F2613D"
+    "hex": "#D15807"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "902",
-    "hex": "#835165"
+    "hex": "#822637"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "904",
-    "hex": "#598526"
+    "hex": "#557822"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "905",
-    "hex": "#67A722"
+    "hex": "#628A28"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "906",
-    "hex": "#9FC012"
+    "hex": "#7FB335"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "907",
-    "hex": "#376039"
+    "hex": "#C7E666"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "909",
-    "hex": "#3E936F"
+    "hex": "#156F49"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "910",
-    "hex": "#3AA37C"
+    "hex": "#187E56"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "911",
-    "hex": "#47B592"
+    "hex": "#189065"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "912",
-    "hex": "#65C2A0"
+    "hex": "#1B9D6B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "913",
-    "hex": "#88D2B6"
+    "hex": "#6DAB77"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "915",
-    "hex": "#B63A7A"
+    "hex": "#820043"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "917",
-    "hex": "#B63A7C"
+    "hex": "#9B1359"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "918",
-    "hex": "#A5361B"
+    "hex": "#82340A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "919",
-    "hex": "#B93817"
+    "hex": "#A64510"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "920",
-    "hex": "#DB4B19"
+    "hex": "#AC5414"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "921",
-    "hex": "#E85B24"
+    "hex": "#C66218"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "922",
-    "hex": "#F6986B"
+    "hex": "#E27323"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "924",
-    "hex": "#567079"
+    "hex": "#566A6A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "926",
-    "hex": "#A3B3A8"
+    "hex": "#98AEAE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "927",
-    "hex": "#C1CAC1"
+    "hex": "#BDCBCB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "928",
-    "hex": "#426672"
+    "hex": "#DDE3E3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "930",
-    "hex": "#5A8AA6"
+    "hex": "#455C71"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "931",
-    "hex": "#81ACC6"
+    "hex": "#6A859E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "932",
-    "hex": "#A7CBDF"
+    "hex": "#A2B5C6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "934",
-    "hex": "#5E6951"
+    "hex": "#313919"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "935",
-    "hex": "#697449"
+    "hex": "#424D21"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "936",
-    "hex": "#7A8337"
+    "hex": "#4C5826"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "937",
-    "hex": "#748727"
+    "hex": "#627133"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "938",
-    "hex": "#6A5C53"
+    "hex": "#361F0E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "939",
-    "hex": "#1C2949"
+    "hex": "#1B2853"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "943",
-    "hex": "#43AF92"
+    "hex": "#3D9384"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "945",
-    "hex": "#F4E1D1"
+    "hex": "#FBD5BB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "946",
-    "hex": "#F66B3A"
+    "hex": "#EB6307"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "947",
-    "hex": "#F88045"
+    "hex": "#FF7B4D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "948",
-    "hex": "#C2BFE0"
+    "hex": "#FEE7DA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "950",
-    "hex": "#E4C5BB"
+    "hex": "#EED3C4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "951",
-    "hex": "#C4C1E1"
+    "hex": "#FFE2CF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "954",
-    "hex": "#B1D8B7"
+    "hex": "#88BA91"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "955",
-    "hex": "#D0CEE6"
+    "hex": "#A2D6AD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "956",
-    "hex": "#F38EAE"
+    "hex": "#FF9191"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "957",
-    "hex": "#F2C5CC"
+    "hex": "#FDB5B5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "958",
-    "hex": "#62C1B4"
+    "hex": "#3EB6A1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "959",
-    "hex": "#A6DBD4"
+    "hex": "#59C7B4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "961",
-    "hex": "#E36B90"
+    "hex": "#CF7373"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "962",
-    "hex": "#F090AF"
+    "hex": "#E68A8A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "963",
-    "hex": "#F13847"
+    "hex": "#FFD7D7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "964",
-    "hex": "#C5C2E1"
+    "hex": "#A9E2D8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "966",
-    "hex": "#45816A"
+    "hex": "#B9D7C0"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "967",
-    "hex": "#D55A3D"
+    "hex": "#FFDED5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "970",
-    "hex": "#F9703D"
+    "hex": "#F78B13"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "972",
-    "hex": "#F2B951"
+    "hex": "#FFB515"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "973",
-    "hex": "#F6DB46"
+    "hex": "#FFE300"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "975",
-    "hex": "#BF683A"
+    "hex": "#914F12"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "976",
-    "hex": "#EC964D"
+    "hex": "#C28142"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "977",
-    "hex": "#EEA660"
+    "hex": "#DC9C56"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "986",
-    "hex": "#56956A"
+    "hex": "#405230"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "987",
-    "hex": "#6EAB65"
+    "hex": "#587141"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "988",
-    "hex": "#8ABD76"
+    "hex": "#738B5B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "989",
-    "hex": "#A9D3A1"
+    "hex": "#8DA675"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "991",
-    "hex": "#409073"
+    "hex": "#477B6E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "992",
-    "hex": "#7DC3A2"
+    "hex": "#6FAE9F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "993",
-    "hex": "#3E8770"
+    "hex": "#90C0B4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "995",
-    "hex": "#0981C6"
+    "hex": "#2696B6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "996",
-    "hex": "#124B7F"
+    "hex": "#30C2EC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3011",
-    "hex": "#BCAE61"
+    "hex": "#898A58"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3012",
-    "hex": "#D4D39D"
+    "hex": "#A6A75D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3013",
-    "hex": "#807546"
+    "hex": "#B9B982"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3021",
-    "hex": "#747067"
+    "hex": "#4F4B41"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3022",
-    "hex": "#C6BFA4"
+    "hex": "#8E9078"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3023",
-    "hex": "#AAB1A4"
+    "hex": "#B1AA97"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3024",
-    "hex": "#ABAA8A"
+    "hex": "#EBEAE7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3031",
-    "hex": "#AB8564"
+    "hex": "#4B3C2A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3032",
-    "hex": "#D6C097"
+    "hex": "#B39F8B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3033",
-    "hex": "#7D7E7B"
+    "hex": "#E3D8CC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3041",
-    "hex": "#B9AABE"
+    "hex": "#956F7C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3042",
-    "hex": "#CDC4D1"
+    "hex": "#B79DA7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3045",
-    "hex": "#EEE29F"
+    "hex": "#BC966A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3046",
-    "hex": "#F6F1D4"
+    "hex": "#D8BC9A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3047",
-    "hex": "#977B52"
+    "hex": "#E7D6C1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3051",
-    "hex": "#9A9B63"
+    "hex": "#5F6648"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3052",
-    "hex": "#B2B065"
+    "hex": "#889268"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3053",
-    "hex": "#A2AD6E"
+    "hex": "#9CA482"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3064",
-    "hex": "#E4B1A5"
+    "hex": "#C48E70"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3072",
-    "hex": "#D1CFE6"
+    "hex": "#E6E8E8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3078",
-    "hex": "#F3C540"
+    "hex": "#FDF9CD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3325",
-    "hex": "#B4DCEE"
+    "hex": "#B8D2E6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3326",
-    "hex": "#EED5D7"
+    "hex": "#FBADB4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3328",
-    "hex": "#DC5558"
+    "hex": "#E36D6D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3340",
-    "hex": "#F58A79"
+    "hex": "#FF836F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3341",
-    "hex": "#F5A197"
+    "hex": "#FCAB98"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3345",
-    "hex": "#789A64"
+    "hex": "#1B5915"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3346",
-    "hex": "#87AC6A"
+    "hex": "#406A3A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3347",
-    "hex": "#D5D28C"
+    "hex": "#71935C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3348",
-    "hex": "#DEE6B5"
+    "hex": "#CCD9B1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3350",
-    "hex": "#D6466A"
+    "hex": "#BC4365"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3354",
-    "hex": "#ECA0BB"
+    "hex": "#E4A6AC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3362",
-    "hex": "#628D55"
+    "hex": "#5E6B47"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3363",
-    "hex": "#8DA761"
+    "hex": "#728256"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3364",
-    "hex": "#595E54"
+    "hex": "#83975F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3371",
-    "hex": "#544E4B"
+    "hex": "#1E1108"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3607",
-    "hex": "#DB86B7"
+    "hex": "#C54989"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3608",
-    "hex": "#D84887"
+    "hex": "#EA9CC4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3609",
-    "hex": "#CF3A72"
+    "hex": "#F4AED5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3685",
-    "hex": "#944260"
+    "hex": "#881531"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3687",
-    "hex": "#D86794"
+    "hex": "#C96B70"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3688",
-    "hex": "#ECA4C5"
+    "hex": "#E7A9AC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3689",
-    "hex": "#F0E0E5"
+    "hex": "#FBBFC2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3705",
-    "hex": "#F56F89"
+    "hex": "#FF7992"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3706",
-    "hex": "#F596B8"
+    "hex": "#FFADBC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3708",
-    "hex": "#F45A7A"
+    "hex": "#FFCBD5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3712",
-    "hex": "#EB727A"
+    "hex": "#F18787"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3713",
-    "hex": "#C0BCDF"
+    "hex": "#FFE2E2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3716",
-    "hex": "#F2BACA"
+    "hex": "#FFBDBD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3721",
-    "hex": "#B33F51"
+    "hex": "#A14B51"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3722",
-    "hex": "#C15B71"
+    "hex": "#BC6C64"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3726",
-    "hex": "#C77FA6"
+    "hex": "#9B5B66"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3727",
-    "hex": "#DCAABA"
+    "hex": "#DBA9B2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3731",
-    "hex": "#E66A8D"
+    "hex": "#DA6783"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3733",
-    "hex": "#E389A5"
+    "hex": "#E8879B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3740",
-    "hex": "#998395"
+    "hex": "#785762"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3743",
-    "hex": "#CDCBE6"
+    "hex": "#D7CBD3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3746",
-    "hex": "#9A96CC"
+    "hex": "#776B98"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3747",
-    "hex": "#796C8B"
+    "hex": "#D3D7ED"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3750",
-    "hex": "#1D576E"
+    "hex": "#384C5E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3752",
-    "hex": "#C4DDE8"
+    "hex": "#C7D1DB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3753",
-    "hex": "#251B41"
+    "hex": "#DBE2E9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3755",
-    "hex": "#90C6E7"
+    "hex": "#93B4CE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3756",
-    "hex": "#5A76AB"
+    "hex": "#EEFCFC"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3760",
-    "hex": "#3591B7"
+    "hex": "#3E85A2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3761",
-    "hex": "#AED0D7"
+    "hex": "#ACD8E2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3765",
-    "hex": "#3795B5"
+    "hex": "#347F8C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3766",
-    "hex": "#B4D8DE"
+    "hex": "#99CFD9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3768",
-    "hex": "#7B8B8B"
+    "hex": "#657F7F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3770",
-    "hex": "#8D3625"
+    "hex": "#FFEEE3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3771",
-    "hex": "#ECA297"
+    "hex": "#F4BBA9"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3772",
-    "hex": "#C78177"
+    "hex": "#A06C50"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3774",
-    "hex": "#B63F3A"
+    "hex": "#F3E1D7"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3776",
-    "hex": "#E98C53"
+    "hex": "#CF7939"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3777",
-    "hex": "#A03026"
+    "hex": "#863022"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3778",
-    "hex": "#E79487"
+    "hex": "#D98978"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3779",
-    "hex": "#993129"
+    "hex": "#F8CAC8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3781",
-    "hex": "#937D60"
+    "hex": "#6B5743"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3782",
-    "hex": "#EBE1C6"
+    "hex": "#D2BCA6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3787",
-    "hex": "#9C8E71"
+    "hex": "#625D50"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3790",
-    "hex": "#C0AB80"
+    "hex": "#7F6A55"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3799",
-    "hex": "#72787D"
+    "hex": "#424242"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3801",
-    "hex": "#832E30"
+    "hex": "#E74967"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3802",
-    "hex": "#8E616E"
+    "hex": "#714149"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3803",
-    "hex": "#C94A7B"
+    "hex": "#AB3357"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3804",
-    "hex": "#DA4988"
+    "hex": "#E02876"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3805",
-    "hex": "#E86DA0"
+    "hex": "#F3478B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3806",
-    "hex": "#CC355A"
+    "hex": "#FF8CAE"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3807",
-    "hex": "#71A0CF"
+    "hex": "#60678C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3808",
-    "hex": "#2F7185"
+    "hex": "#366970"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3809",
-    "hex": "#358995"
+    "hex": "#3F7C85"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3810",
-    "hex": "#539FAB"
+    "hex": "#488E9A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3811",
-    "hex": "#2E6689"
+    "hex": "#BCE3E6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3812",
-    "hex": "#49B4A3"
+    "hex": "#2F8C84"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3813",
-    "hex": "#4C7057"
+    "hex": "#B2D4BD"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3814",
-    "hex": "#54AF95"
+    "hex": "#508B7D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3815",
-    "hex": "#5C9065"
+    "hex": "#477759"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3816",
-    "hex": "#A8CAA5"
+    "hex": "#65A57D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3817",
-    "hex": "#4B7F53"
+    "hex": "#99C3AA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3818",
-    "hex": "#418669"
+    "hex": "#115A3B"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3819",
-    "hex": "#EEE997"
+    "hex": "#E0E868"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3820",
-    "hex": "#F7DB67"
+    "hex": "#DFB65F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3821",
-    "hex": "#F6E48D"
+    "hex": "#F3CE75"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3822",
-    "hex": "#D09C3F"
+    "hex": "#F6DC98"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3823",
-    "hex": "#B5753F"
+    "hex": "#FFFDE3"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3824",
-    "hex": "#F5BAB1"
+    "hex": "#FECDC2"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3825",
-    "hex": "#E8400E"
+    "hex": "#FDBD96"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3826",
-    "hex": "#DE7F36"
+    "hex": "#AD7239"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3827",
-    "hex": "#ED783B"
+    "hex": "#F7BB77"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3828",
-    "hex": "#DFC489"
+    "hex": "#B78B61"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3829",
-    "hex": "#DCB04B"
+    "hex": "#A98204"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3830",
-    "hex": "#CB4B40"
+    "hex": "#B95544"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3831",
-    "hex": "#DC384E"
+    "hex": "#B32F48"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3832",
-    "hex": "#E25874"
+    "hex": "#DB556E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3833",
-    "hex": "#A91D22"
+    "hex": "#EA8699"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3834",
-    "hex": "#996792"
+    "hex": "#72375D"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3835",
-    "hex": "#C393BA"
+    "hex": "#946083"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3836",
-    "hex": "#78545D"
+    "hex": "#BA91AA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3837",
-    "hex": "#9E79B9"
+    "hex": "#6C3A6E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3838",
-    "hex": "#5B7BC0"
+    "hex": "#5C7294"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3839",
-    "hex": "#85B9E4"
+    "hex": "#7B8EAB"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3840",
-    "hex": "#C0BCDF"
+    "hex": "#B0C0DA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3841",
-    "hex": "#C9E1EB"
+    "hex": "#CDDFED"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3842",
-    "hex": "#276799"
+    "hex": "#32667C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3843",
-    "hex": "#0A96D5"
+    "hex": "#14AAD0"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3844",
-    "hex": "#099AC4"
+    "hex": "#12AEBA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3845",
-    "hex": "#13ACD2"
+    "hex": "#04C4CA"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3846",
-    "hex": "#0863AE"
+    "hex": "#06E3E6"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3847",
-    "hex": "#328371"
+    "hex": "#347D75"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3848",
-    "hex": "#4AA08E"
+    "hex": "#559392"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3849",
-    "hex": "#4C5D60"
+    "hex": "#52B3A4"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3850",
-    "hex": "#369782"
+    "hex": "#378477"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3851",
-    "hex": "#3F8F7A"
+    "hex": "#49B3A1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3852",
-    "hex": "#EEC53F"
+    "hex": "#CD9D37"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3853",
-    "hex": "#F3A05C"
+    "hex": "#F29746"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3854",
-    "hex": "#F6CA85"
+    "hex": "#F2AF68"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3855",
-    "hex": "#F3EAC6"
+    "hex": "#FAD396"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3856",
-    "hex": "#EBCBB8"
+    "hex": "#FFD3B5"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3857",
-    "hex": "#813B41"
+    "hex": "#68251A"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3858",
-    "hex": "#BE5F61"
+    "hex": "#964A3F"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3859",
-    "hex": "#E89C9A"
+    "hex": "#BA8B7C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3860",
-    "hex": "#C3AAB2"
+    "hex": "#7D5D57"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3861",
-    "hex": "#B3A4A9"
+    "hex": "#A68881"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3862",
-    "hex": "#C6A07F"
+    "hex": "#8A6E4E"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3863",
-    "hex": "#E4CCB1"
+    "hex": "#A4835C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3864",
-    "hex": "#F6F0E7"
+    "hex": "#CBB69C"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3865",
-    "hex": "#C9C7E3"
+    "hex": "#F9F7F1"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "3866",
-    "hex": "#887066"
+    "hex": "#FAF6F0"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "B5200",
-    "hex": "#878783"
+    "hex": "#FFFFFF"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "BLANC",
-    "hex": "#F9F7EE"
+    "hex": "#FCFBF8"
   },
   {
     "brand": "DMC",
     "series": "Mouliné Spécial",
     "code": "ECRU",
-    "hex": "#F9F4E2"
+    "hex": "#F0EADA"
   }
 ];

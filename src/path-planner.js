@@ -497,7 +497,7 @@ function renderPatternGrid(canvasOnly = false) {
   const cellSize = pathViewport.state.scale, bounds = pathViewport.bounds;
   const selectedColor = colorByDmc.get(selectedDmc);
   const workPalette = PathVisuals.workPalette(workColor);
-  const mutedColors = new Map(loadedPattern.colors.map(color => [color.dmc, mutedHex(color.hex || "#d9dddd")]));
+  const mutedColors = new Map(loadedPattern.colors.map(color => [color.dmc, mutedHex(DmcPalette.hex(color))]));
   selectedColorLabel.textContent = selectedColor
     ? `DMC ${selectedColor.dmc} - ${selectedColor.symbol || ""}`
     : "Aucune couleur selectionnee";
@@ -821,7 +821,7 @@ function renderOverview() {
   const offsetX = (width - loadedPattern.grid.width * scale) / 2, offsetY = (height - loadedPattern.grid.height * scale) / 2;
   if (overviewCache?.pattern !== loadedPattern || overviewCache.dmc !== selectedDmc || overviewCache.color !== workColor) {
     const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
-    const context = canvas.getContext("2d"), colors = new Map(loadedPattern.colors.map(color => [color.dmc, color.hex]));
+    const context = canvas.getContext("2d"), colors = new Map(loadedPattern.colors.map(color => [color.dmc, DmcPalette.hex(color)]));
     context.fillStyle = "#f4f6f4"; context.fillRect(0, 0, width, height);
     loadedPattern.grid.cells.forEach(cell => {
       if (cell.empty) return;
@@ -1148,7 +1148,7 @@ function renderPathColorLegend() {
       <span>DMC ${color.dmc}</span>
       <span class="stat-label">${path.length}/${expected}</span>
     `;
-    item.querySelector(".color-swatch").style.background = color.hex;
+    item.querySelector(".color-swatch").style.background = DmcPalette.hex(color);
     pathColorLegend.appendChild(item);
   });
 }
