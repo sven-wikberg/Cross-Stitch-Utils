@@ -73,9 +73,7 @@ const MIN_STITCH_ZOOM = 0.5;
 const MAX_STITCH_ZOOM = 4;
 const STITCH_ZOOM_STEP = 0.25;
 const REALISTIC_JUMP_THRESHOLD = 10;
-const STITCH_CONTEXT_ALPHA = [0.95, 0.72, 0.5, 0.3];
 const STITCH_PREVIOUS_COLOR = "#ad600e";
-const STITCH_NEXT_COLOR = "#087cb6";
 const progressStore = window.StitchProgressStore;
 const syncStateText = document.querySelector("#syncStateText");
 const autoSyncToggle = document.querySelector("#autoSyncToggle");
@@ -527,59 +525,23 @@ function centerCurrentPointIfNeeded(cellSize) {
 function drawStitchProgress(context, cellSize) {
   const path = pathForDmc(selectedDmc);
   if (!path) return;
-  const count = stitchedCountForDmc(selectedDmc);
-  const selectedColor = loadedPaths.pattern.colors.find(c => c.dmc === selectedDmc);
-  const rgb = parseHexColor(selectedColor?.hex || "#ffffff");
-  const dark = rgb && (rgb.red * 0.299 + rgb.green * 0.587 + rgb.blue * 0.114) < 110;
-  const completion = StitchModel.completion(path.points, count).cells;
-  const hasCurrent = count < path.points.length;
-  const radius = STITCH_CONTEXT_ALPHA.length;
-  context.save(); context.lineCap = "round"; context.lineJoin = "round";
-  path.points.forEach((point, index) => {
-    // The recent incoming and upcoming outgoing links are drawn in the context overlay.
-    if (index >= count || (hasCurrent && index > count - radius)) return;
-    if (index) drawPathSegment(context, path.points[index - 1], point, cellSize, 0.7);
-  });
-  path.points.forEach((point, index) => {
-    if (index >= count || (hasCurrent && count - index <= radius)) return;
-    if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
-        || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) return;
-    const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
-    const ink = dark && completion.get(cellKey(point)) === 3 ? "#ffffff" : "#222426";
-    context.globalAlpha = 1;
-    context.strokeStyle = ink;
-    context.lineWidth = Math.max(1, cellSize * 0.085);
-    context.setLineDash([]);
-    context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
-  });
-  if (hasCurrent) drawStitchContext(context, path.points, count, cellSize);
-  context.restore();
+  drawStitchContext(context, path.points, stitchedCountForDmc(selectedDmc), cellSize);
 }
 
 function drawStitchContext(context, points, count, cellSize) {
-  if (!points[count]) return;
-  const neighbors = [];
-  for (let distance = STITCH_CONTEXT_ALPHA.length; distance >= 1; distance--) {
-    const alpha = STITCH_CONTEXT_ALPHA[distance - 1];
-    if (points[count - distance]) neighbors.push({ index: count - distance, link: count - distance + 1, color: STITCH_PREVIOUS_COLOR, alpha });
-    if (points[count + distance]) neighbors.push({ index: count + distance, link: count + distance, color: STITCH_NEXT_COLOR, alpha });
-  }
-  // Distant links first, then front-side diagonals; the current arrow remains above everything.
-  for (const item of neighbors) {
-    drawPathSegment(context, points[item.link - 1], points[item.link], cellSize, item.alpha, item.color);
-  }
-  context.save(); context.setLineDash([]); context.lineCap = "round";
+  const previous = points[count - 1], current = points[count];
+  if (!previous || !current) return;
+  context.save(); context.lineCap = "round"; context.lineJoin = "round";
+  drawPathSegment(context, previous, current, cellSize, 1, STITCH_PREVIOUS_COLOR);
+  context.setLineDash([]); context.globalAlpha = 1;
   const width = Math.max(1.8, Math.min(6, cellSize * 0.09));
   const halo = Math.max(1, Math.min(2.5, cellSize * 0.025));
-  for (const item of neighbors) {
-    const point = points[item.index];
-    if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
-        || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) continue;
-    const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
-    context.globalAlpha = item.alpha;
+  if (previous.x >= stitchView.startX && previous.x < stitchView.startX + stitchView.width
+      && previous.y >= stitchView.startY && previous.y < stitchView.startY + stitchView.height) {
+    const holes = StitchModel.holes(previous), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
     context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y);
     context.strokeStyle = "#ffffff"; context.lineWidth = width + halo * 2; context.stroke();
-    context.strokeStyle = item.color; context.lineWidth = width; context.stroke();
+    context.strokeStyle = STITCH_PREVIOUS_COLOR; context.lineWidth = width; context.stroke();
   }
   context.restore();
 }

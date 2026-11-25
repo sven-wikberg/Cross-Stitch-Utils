@@ -53,23 +53,17 @@ async function run() {
       const points = pathForDmc("310").points;
       ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawStitchContext(ctx, points, 5, 44);
-      const highlighted = strokes.filter(s => [STITCH_PREVIOUS_COLOR, STITCH_NEXT_COLOR].includes(s.color));
-      const contrasts = side => [1, 2, 3, 4].map(distance => {
-        const point = points[5 + side * distance], center = pointCenter(point, 44);
-        const pixel = ctx.getImageData(Math.floor(center.x), Math.floor(center.y), 1, 1).data;
-        return Math.hypot(255 - pixel[0], 255 - pixel[1], 255 - pixel[2]);
-      });
-      const pixels = { previous: contrasts(-1), next: contrasts(1) };
+      const highlighted = strokes.filter(s => s.color === STITCH_PREVIOUS_COLOR);
       const cases = [0, 1, points.length - 1, points.length].map(count => {
         strokes.length = 0; drawStitchContext(ctx, points, count, 44);
         return { count, previous: strokes.filter(s => s.color === STITCH_PREVIOUS_COLOR && !s.dash.length).length,
-          next: strokes.filter(s => s.color === STITCH_NEXT_COLOR && !s.dash.length).length };
+          links: strokes.filter(s => s.color === STITCH_PREVIOUS_COLOR && s.dash.length).length };
       });
       strokes.length = 0;
-      const forced = points.map(p => ({ ...p })); forced[7].cutBefore = true;
+      const forced = points.map(p => ({ ...p })); forced[5].cutBefore = true;
       drawStitchContext(ctx, forced, 5, 44);
       const cut = strokes.filter(s => s.color === "#c63848");
-      const futureLinks = strokes.filter(s => s.color === STITCH_NEXT_COLOR && s.dash.length);
+      const threadLinks = strokes.filter(s => s.color === STITCH_PREVIOUS_COLOR && s.dash.length);
       const alphaRestored = ctx.globalAlpha === 1;
       const originalMode = sessionMode;
       const renderChecks = [false, true].map(mode => {
@@ -78,33 +72,33 @@ async function run() {
         ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         drawStitchProgress(ctx, 44);
         const whiteAt = (x, y) => [...ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].every(value => value === 255);
-        const future = pointCenter(points[10], 44), past = pointCenter(points[0], 44);
+        const future = pointCenter(points[6], 44), past = pointCenter(points[0], 44);
+        const earlier = pointCenter(points[3], 44), previous = pointCenter(points[4], 44);
         const upper = holePixel({ x: points.at(-1).x + 0.25, y: 2.25 }, 44);
-        const link = holePixel({ x: points[10].x, y: 2.25 }, 44);
-        return { mode, noFadedBase: strokes.every(s => s.alpha !== 0.2),
+        const link = holePixel({ x: points[6].x, y: 2.25 }, 44);
+        const previousLink = holePixel({ x: points[5].x, y: 2.25 }, 44);
+        return { mode, onlyPreviousInk: strokes.every(s => [STITCH_PREVIOUS_COLOR, "#ffffff"].includes(s.color)),
           futureHidden: whiteAt(future.x, future.y), upperHidden: whiteAt(upper.x, upper.y),
-          futureLinkHidden: whiteAt(link.x, link.y), pastVisible: !whiteAt(past.x, past.y) };
+          futureLinkHidden: whiteAt(link.x, link.y), pastHidden: whiteAt(past.x, past.y),
+          earlierHidden: whiteAt(earlier.x, earlier.y), previousVisible: !whiteAt(previous.x, previous.y),
+          previousLinkVisible: !whiteAt(previousLink.x, previousLink.y) };
       });
       sessionMode = originalMode;
       stitchView = originalView;
-      return { highlighted, pixels, cases, cut, futureLinks, alphaRestored, renderChecks,
+      return { highlighted, cases, cut, threadLinks, alphaRestored, renderChecks,
         unchanged: JSON.stringify({ loadedPaths, stitchedByDmc, stitchStats }) === before };
     });
-    assert.equal(checks.highlighted.filter(s => !s.dash.length).length, 8, "Four diagonals on each side");
-    assert.equal(checks.highlighted.filter(s => s.dash.length).length, 8, "Four connecting back-side links on each side");
-    for (const color of ["#ad600e", "#087cb6"]) {
-      for (const dashed of [false, true]) assert.deepEqual(checks.highlighted.filter(s => s.color === color && Boolean(s.dash.length) === dashed)
-        .map(s => s.alpha), [0.3, 0.5, 0.72, 0.95], "Nearest is strongest and drawn last");
-    }
-    for (const values of Object.values(checks.pixels)) assert.ok(values.every((value, i) => !i || value < values[i - 1]), "Actual canvas pixels fade with distance");
-    assert.deepEqual(checks.cases.map(({ previous, next }) => [previous, next]), [[0, 4], [1, 4], [4, 0], [0, 0]]);
-    assert.equal(checks.cut.length, 1); assert.equal(checks.cut[0].alpha, 0.72);
-    assert.ok(checks.cut[0].dash[0] > 2); assert.equal(checks.futureLinks.length, 3, "Cuts stay red, not blue thread links");
+    assert.equal(checks.highlighted.filter(s => !s.dash.length).length, 1, "Only the last stitched diagonal");
+    assert.equal(checks.highlighted.filter(s => s.dash.length).length, 1, "Only its link to the current diagonal");
+    assert.ok(checks.highlighted.every(s => s.alpha === 1));
+    assert.deepEqual(checks.cases.map(({ previous, links }) => [previous, links]), [[0, 0], [1, 1], [1, 1], [0, 0]]);
+    assert.equal(checks.cut.length, 1); assert.equal(checks.cut[0].alpha, 1);
+    assert.ok(checks.cut[0].dash[0] > 2); assert.equal(checks.threadLinks.length, 0, "Cuts stay red, not orange thread links");
     assert.ok(checks.alphaRestored && checks.unchanged);
     for (const check of checks.renderChecks) {
-      assert.ok(check.noFadedBase && check.futureHidden && check.upperHidden && check.futureLinkHidden,
-        `No residual future diagonals or back-side links: ${JSON.stringify(check)}`);
-      assert.ok(check.pastVisible, "Already stitched diagonals remain visible");
+      assert.ok(check.onlyPreviousInk && check.futureHidden && check.upperHidden && check.futureLinkHidden
+        && check.pastHidden && check.earlierHidden, `Only the immediate predecessor is drawn: ${JSON.stringify(check)}`);
+      assert.ok(check.previousVisible && check.previousLinkVisible, "The last diagonal and its connection remain visible");
     }
 
     await page.evaluate(() => {
@@ -134,7 +128,7 @@ async function run() {
     await page.screenshot({ path: path.join(output, "stitch-context-mobile.png"), fullPage: true });
     assert.deepEqual(errors, []);
     for (let i = 0; i < saveFiles.length; i++) assert.deepEqual(await fs.readFile(path.join(root, saveFiles[i])), originalSaves[i]);
-    console.log("Stitch context passed: 4 previous/next diagonals and links, no residual future path, fading pixels, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
+    console.log("Stitch context passed: only the last stitched diagonal and its link, no earlier/future traces, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1207,7 +1207,6 @@ select:focus {
 .stitch-context-legend i { width: 18px; height: 0; border-top: 3px solid; }
 .stitch-previous-key { color: #ad600e; }
 .stitch-current-key { color: #c63848; }
-.stitch-next-key { color: #087cb6; }
 .review-toolbar label { flex: 0 1 230px; }
 .review-toolbar output { font-variant-numeric: tabular-nums; }
 .compact-status { font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere; }
