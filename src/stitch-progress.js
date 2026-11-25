@@ -41,6 +41,7 @@ const globalProgressColors = document.querySelector("#globalProgressColors");
 const selectedProgressPanel = document.querySelector("#selectedProgressPanel");
 const selectedProgressBar = document.querySelector("#selectedProgressBar");
 const selectedProgressColor = document.querySelector("#selectedProgressColor");
+const selectedPathScore = document.querySelector("#selectedPathScore");
 const selectedProgressPoints = document.querySelector("#selectedProgressPoints");
 const selectedProgressPercent = document.querySelector("#selectedProgressPercent");
 const selectedProgressRemaining = document.querySelector("#selectedProgressRemaining");
@@ -104,6 +105,7 @@ let restoringSession = false;
 autoSyncToggle.checked = localStorage.getItem("cross-stitch-auto-sync") === "true";
 
 const upgradedProgressSaves = new WeakMap();
+const stitchPathScoreCache = new WeakMap();
 let pendingLegacyBackup = null;
 let storedProgressState = loadStoredProgressState();
 let loadedPaths = storedProgressState.pathsFile;
@@ -283,6 +285,7 @@ function renderProgressMetrics() {
     globalProgressColors.textContent = "0 / 0";
     selectedProgressBar.value = 0;
     selectedProgressColor.textContent = "-";
+    selectedPathScore.textContent = "-";
     selectedProgressPoints.textContent = "0 / 0";
     selectedProgressPercent.textContent = "0%";
     selectedProgressRemaining.textContent = "0";
@@ -304,6 +307,7 @@ function renderProgressMetrics() {
   if (!selectedPath) {
     selectedProgressBar.value = 0;
     selectedProgressColor.textContent = "-";
+    selectedPathScore.textContent = "-";
     selectedProgressPoints.textContent = "0 / 0";
     selectedProgressPercent.textContent = "0%";
     selectedProgressRemaining.textContent = "0";
@@ -314,6 +318,13 @@ function renderProgressMetrics() {
   const selectedPercent = progressPercent(selectedStitched, selectedPath.points.length);
   selectedProgressBar.value = selectedPercent;
   selectedProgressColor.textContent = `DMC ${selectedDmc}`;
+  const threshold = loadedPaths.settings?.cutThreshold ?? REALISTIC_JUMP_THRESHOLD;
+  let score = stitchPathScoreCache.get(selectedPath);
+  if (!score || score.threshold !== threshold) {
+    score = { threshold, value: StitchModel.metrics(selectedPath.points, threshold, true).score };
+    stitchPathScoreCache.set(selectedPath, score);
+  }
+  selectedPathScore.textContent = score.value.toLocaleString("fr-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   selectedProgressPoints.textContent = `${selectedStitched} / ${selectedPath.points.length}`;
   selectedProgressPercent.textContent = formatPercent(selectedPercent);
   selectedProgressRemaining.textContent = String(Math.max(0, selectedPath.points.length - selectedStitched));
