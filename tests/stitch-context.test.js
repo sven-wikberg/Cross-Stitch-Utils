@@ -76,16 +76,18 @@ async function run() {
         const earlier = pointCenter(points[3], 44), previous = pointCenter(points[4], 44);
         const upper = holePixel({ x: points.at(-1).x + 0.25, y: 2.25 }, 44);
         const link = holePixel({ x: points[6].x, y: 2.25 }, 44);
-        const previousLink = holePixel({ x: points[5].x, y: 2.25 }, 44);
-        const pastLink = holePixel({ x: points[1].x, y: 2.25 }, 44);
+        const linkVisible = point => [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].some(offset => {
+          const pixel = holePixel({ x: point.x, y: 2 + offset }, 44);
+          return !whiteAt(pixel.x, pixel.y);
+        });
         return { mode, onlyExpectedInk: strokes.every(s => ["#222426", STITCH_PREVIOUS_COLOR, "#ffffff"].includes(s.color)),
           completedDiagonals: strokes.filter(s => s.color === "#222426" && !s.dash.length).length,
           completedLinks: strokes.filter(s => s.color === "#222426" && s.dash.length).length,
           futureHidden: whiteAt(future.x, future.y), upperHidden: whiteAt(upper.x, upper.y),
           futureLinkHidden: whiteAt(link.x, link.y), pastVisible: !whiteAt(past.x, past.y),
-          earlierVisible: !whiteAt(earlier.x, earlier.y), pastLinkVisible: !whiteAt(pastLink.x, pastLink.y),
+          earlierVisible: !whiteAt(earlier.x, earlier.y), pastLinkVisible: linkVisible(points[1]),
           previousVisible: !whiteAt(previous.x, previous.y),
-          previousLinkVisible: !whiteAt(previousLink.x, previousLink.y) };
+          previousLinkVisible: linkVisible(points[5]) };
       });
       const originalCount = stitchedByDmc["310"];
       const completedCases = [0, 1, points.length].map(count => {
@@ -95,9 +97,22 @@ async function run() {
           links: strokes.filter(s => s.color === "#222426" && s.dash.length).length };
       });
       stitchedByDmc["310"] = originalCount;
+      const zoomChecks = [8, 18, 44, 88].map(size => {
+        strokes.length = 0; drawStitchProgress(ctx, size);
+        const completed = strokes.find(s => s.color === "#222426" && !s.dash.length);
+        const back = strokes.find(s => s.color === "#222426" && s.dash.length);
+        const recent = strokes.find(s => s.color === STITCH_PREVIOUS_COLOR && !s.dash.length);
+        ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawPathSegment(ctx, { x: 0, y: 0, diagonal: "lower", direction: 1 },
+          { x: 1, y: 0, diagonal: "lower", direction: 1 }, size);
+        const start = holePixel({ x: 1, y: 0 }, size);
+        const inkAt = offset => ctx.getImageData(Math.floor(start.x), Math.floor(start.y + offset), 1, 1).data[0] < 220;
+        return { size, completed, back, recent,
+          dashVisible: inkAt(back.dash[0] / 2), gapVisible: !inkAt(back.dash[0] + back.dash[1] / 2) };
+      });
       sessionMode = originalMode;
       stitchView = originalView;
-      return { highlighted, cases, cut, threadLinks, alphaRestored, renderChecks, completedCases,
+      return { highlighted, cases, cut, threadLinks, alphaRestored, renderChecks, completedCases, zoomChecks,
         unchanged: JSON.stringify({ loadedPaths, stitchedByDmc, stitchStats }) === before };
     });
     assert.equal(checks.highlighted.filter(s => !s.dash.length).length, 1, "Only the last stitched diagonal");
@@ -118,6 +133,14 @@ async function run() {
       assert.equal(check.diagonals, check.count, "Draw exactly the completed diagonals, including when the color is finished");
       assert.equal(check.links, Math.max(0, check.count - 1), "Draw only links between completed diagonals");
     }
+    for (const check of checks.zoomChecks) {
+      assert.ok(check.dashVisible && check.gapVisible, `Readable back-side dashes and gaps at ${check.size}px`);
+      assert.ok(check.completed.width > check.back.width, "Front stitches stay thicker than back-side links");
+      assert.ok(check.recent.width >= check.completed.width, "The last diagonal keeps its visual emphasis");
+    }
+    const maximumZoom = checks.zoomChecks.at(-1);
+    assert.ok(maximumZoom.completed.width > 4 && maximumZoom.back.width > 2, "Slightly thicker stitches at maximum zoom");
+    assert.ok(maximumZoom.back.dash[0] >= 10 && maximumZoom.back.dash[1] >= 6, "Dashes grow with the zoom instead of staying at two pixels");
 
     await page.evaluate(() => {
       window.contextFrames = [];

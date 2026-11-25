@@ -529,7 +529,7 @@ function drawStitchProgress(context, cellSize) {
   context.save();
   context.globalAlpha = 1; context.lineCap = "round"; context.lineJoin = "round";
   context.strokeStyle = "#222426";
-  context.lineWidth = Math.max(1.1, Math.min(4, cellSize * 0.07));
+  context.lineWidth = Math.max(1.1, Math.min(5, cellSize * 0.085));
   context.setLineDash([]);
   for (let index = 0; index < count; index++) {
     const point = path.points[index];
@@ -599,9 +599,11 @@ function drawPathSegment(context, fromPoint, toPoint, cellSize, alpha = 1, highl
   const isCut = isCutJump(fromPoint, toPoint);
   context.save(); context.globalAlpha = alpha;
   const color = isCut ? "#c63848" : highlightColor || "#222426";
-  const width = highlightColor && !isCut ? Math.max(1.2, Math.min(3, cellSize * 0.055))
-    : Math.max(0.6, Math.min(2, cellSize * (isCut ? 0.035 : 0.05)));
-  context.setLineDash(isCut ? [Math.max(2, cellSize * 0.4), Math.max(2, cellSize * 0.3)] : [2, 2]);
+  const width = isCut ? Math.max(0.6, Math.min(2, cellSize * 0.035))
+    : highlightColor ? Math.max(1.2, Math.min(3.5, cellSize * 0.055))
+    : Math.max(1, Math.min(3, cellSize * 0.045));
+  context.setLineDash(isCut ? [Math.max(2, cellSize * 0.4), Math.max(2, cellSize * 0.3)]
+    : [Math.max(3, Math.min(14, cellSize * 0.18)), Math.max(3, Math.min(10, cellSize * 0.12))]);
   context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y);
   if (highlightColor && !isCut) {
     context.strokeStyle = "#ffffff"; context.lineWidth = width + Math.max(1, Math.min(2, cellSize * 0.025)) * 2; context.stroke();
