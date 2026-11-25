@@ -537,18 +537,17 @@ function drawStitchProgress(context, cellSize) {
   context.save(); context.lineCap = "round"; context.lineJoin = "round";
   path.points.forEach((point, index) => {
     // The recent incoming and upcoming outgoing links are drawn in the context overlay.
-    if (hasCurrent && index > count - radius && index <= count + radius) return;
-    if (index && (!sessionMode || index < count + 8)) drawPathSegment(context, path.points[index - 1], point, cellSize, index > count ? 0.2 : 0.7);
+    if (index >= count || (hasCurrent && index > count - radius)) return;
+    if (index) drawPathSegment(context, path.points[index - 1], point, cellSize, 0.7);
   });
   path.points.forEach((point, index) => {
-    if (hasCurrent && Math.abs(index - count) <= radius) return;
-    if (sessionMode && index >= count + 8) return;
+    if (index >= count || (hasCurrent && count - index <= radius)) return;
     if (point.x < stitchView.startX || point.x >= stitchView.startX + stitchView.width
         || point.y < stitchView.startY || point.y >= stitchView.startY + stitchView.height) return;
     const holes = StitchModel.holes(point), from = holePixel(holes.start, cellSize), to = holePixel(holes.end, cellSize);
     const ink = dark && completion.get(cellKey(point)) === 3 ? "#ffffff" : "#222426";
-    context.globalAlpha = index > count ? 0.2 : 1;
-    context.strokeStyle = index < count ? ink : "#222426";
+    context.globalAlpha = 1;
+    context.strokeStyle = ink;
     context.lineWidth = Math.max(1, cellSize * 0.085);
     context.setLineDash([]);
     context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();

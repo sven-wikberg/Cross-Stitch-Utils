@@ -71,8 +71,23 @@ async function run() {
       const cut = strokes.filter(s => s.color === "#c63848");
       const futureLinks = strokes.filter(s => s.color === STITCH_NEXT_COLOR && s.dash.length);
       const alphaRestored = ctx.globalAlpha === 1;
+      const originalMode = sessionMode;
+      const renderChecks = [false, true].map(mode => {
+        sessionMode = mode;
+        strokes.length = 0;
+        ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawStitchProgress(ctx, 44);
+        const whiteAt = (x, y) => [...ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].every(value => value === 255);
+        const future = pointCenter(points[10], 44), past = pointCenter(points[0], 44);
+        const upper = holePixel({ x: points.at(-1).x + 0.25, y: 2.25 }, 44);
+        const link = holePixel({ x: points[10].x, y: 2.25 }, 44);
+        return { mode, noFadedBase: strokes.every(s => s.alpha !== 0.2),
+          futureHidden: whiteAt(future.x, future.y), upperHidden: whiteAt(upper.x, upper.y),
+          futureLinkHidden: whiteAt(link.x, link.y), pastVisible: !whiteAt(past.x, past.y) };
+      });
+      sessionMode = originalMode;
       stitchView = originalView;
-      return { highlighted, pixels, cases, cut, futureLinks, alphaRestored,
+      return { highlighted, pixels, cases, cut, futureLinks, alphaRestored, renderChecks,
         unchanged: JSON.stringify({ loadedPaths, stitchedByDmc, stitchStats }) === before };
     });
     assert.equal(checks.highlighted.filter(s => !s.dash.length).length, 8, "Four diagonals on each side");
@@ -86,6 +101,11 @@ async function run() {
     assert.equal(checks.cut.length, 1); assert.equal(checks.cut[0].alpha, 0.72);
     assert.ok(checks.cut[0].dash[0] > 2); assert.equal(checks.futureLinks.length, 3, "Cuts stay red, not blue thread links");
     assert.ok(checks.alphaRestored && checks.unchanged);
+    for (const check of checks.renderChecks) {
+      assert.ok(check.noFadedBase && check.futureHidden && check.upperHidden && check.futureLinkHidden,
+        `No residual future diagonals or back-side links: ${JSON.stringify(check)}`);
+      assert.ok(check.pastVisible, "Already stitched diagonals remain visible");
+    }
 
     await page.evaluate(() => {
       window.contextFrames = [];
@@ -114,7 +134,7 @@ async function run() {
     await page.screenshot({ path: path.join(output, "stitch-context-mobile.png"), fullPage: true });
     assert.deepEqual(errors, []);
     for (let i = 0; i < saveFiles.length; i++) assert.deepEqual(await fs.readFile(path.join(root, saveFiles[i])), originalSaves[i]);
-    console.log("Stitch context passed: 4 previous/next diagonals and links, fading pixels, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
+    console.log("Stitch context passed: 4 previous/next diagonals and links, no residual future path, fading pixels, red cuts, boundaries, advance/back, color changes, zoom/session/mobile, reload and untouched saves.");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
