@@ -4,7 +4,8 @@
     function searchPresentation(snapshot, running) {
       const stage = snapshot?.stage || "preparation";
       const chaining = running && snapshot?.method === "chain-reinsertion" && snapshot.untilStable && stage !== "complete";
-      const timed = running && !snapshot?.stopAfterInactivity && !snapshot?.untilStable
+      const renewable = snapshot?.resetBudgetOnImprovement === true;
+      const timed = running && (!snapshot?.stopAfterInactivity || renewable && !snapshot?.preparing) && !snapshot?.untilStable
         && ["deep-optimization", "adaptive-optimization", "points-diagonals", "point-sections", "segment-optimization", "chain-reinsertion"].includes(snapshot?.method);
       const setup = running && snapshot?.preparing === true && !timed;
       const searching = running && stage !== "complete" && (stage === "search" || snapshot?.stopAfterInactivity === true) && !timed && !chaining && !setup;
@@ -14,8 +15,9 @@
       const total = chaining ? snapshot.chainSearch?.total : relaying ? snapshot.relay?.total : constructing ? snapshot.zone?.total : snapshot?.blocks?.total;
       const done = chaining ? snapshot.chainSearch?.rank : relaying ? snapshot.relay?.examined : constructing ? snapshot.zone?.completed : snapshot?.blocks?.prepared;
       const knownCount = Number.isFinite(total) && total > 0 && Number.isFinite(done);
-      const max = timed ? snapshot.totalLimitMs || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs ?? 60000) : knownCount ? total : 1;
-      const value = timed ? snapshot.elapsedMs || 0 : searching ? (snapshot.stagnationLimitMs === 0 ? max : snapshot.lastImprovementMs || 0) : knownCount ? done : null;
+      const max = timed ? (renewable ? snapshot.stagnationLimitMs : snapshot.totalLimitMs) || 3600000 : searching ? Math.max(1, snapshot.stagnationLimitMs ?? 60000) : knownCount ? total : 1;
+      const value = timed ? (renewable ? max - (snapshot.remainingMs ?? max) : snapshot.elapsedMs || 0)
+        : searching ? (snapshot.stagnationLimitMs === 0 ? max : snapshot.lastImprovementMs || 0) : knownCount ? done : null;
       return {
         phase: { preparation: "Preparation de la recherche", construction: "Construction des blocs",
           configuration: "Preparation des entrees et sorties", search: "Recherche en cours", relay: "Recherche de relais", complete: "Recherche terminee" }[stage] || (setup ? "Preparation de la recherche" : "Recherche en cours"),

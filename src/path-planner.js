@@ -31,6 +31,7 @@ const pathColorLegend = document.querySelector("#pathColorLegend");
 const pathBuildStatus = document.querySelector("#pathBuildStatus");
 const optimizedPathButton = document.querySelector("#optimizedPathButton");
 const deepOptimizeButton = document.querySelector("#deepOptimizeButton");
+const deepResetOnGainInput = document.querySelector("#deepResetOnGain");
 const lnsOptimizeButton = document.querySelector("#lnsOptimizeButton");
 const adaptiveOptimizeButton = document.querySelector("#adaptiveOptimizeButton");
 const pointsOptimizeButton = document.querySelector("#pointsOptimizeButton");
@@ -175,6 +176,7 @@ let pathAlgorithmRunning = false;
 let pathOptimizationBaselinesByDmc = storedState.pathOptimizationBaselinesByDmc || {};
 let cutThreshold = storedState.cutThreshold || DEFAULT_CUT_THRESHOLD;
 let pathStagnationLimitMs = storedState.pathStagnationLimitMs || DEFAULT_PATH_STAGNATION_LIMIT;
+let deepResetOnGain = storedState.deepResetOnGain === true;
 let activePathOptimizerWorker = null;
 let activePathOptimizerDeadlineTimer = null;
 let activePathOptimizerRunId = null;
@@ -251,6 +253,7 @@ function loadStoredState() {
         selectedDmc: typeof parsed.selectedDmc === "string" ? parsed.selectedDmc : null,
         cutThreshold: normalizeCutThreshold(parsed.cutThreshold),
         pathStagnationLimitMs: normalizePathStagnationLimit(parsed.pathStagnationLimitMs),
+        deepResetOnGain: parsed.deepResetOnGain === true,
         constraintsByDmc: parsed.constraintsByDmc || {},
         pathOptimizationBaselinesByDmc: parsed.pathOptimizationBaselinesByDmc || {},
         pathSearchStatsByDmc: parsed.pathSearchStatsByDmc,
@@ -276,6 +279,7 @@ function plannerDraft() {
     selectedDmc,
     cutThreshold,
     pathStagnationLimitMs,
+    deepResetOnGain,
     constraintsByDmc,
     batchPlan,
     pathSearchStatsByDmc,
@@ -344,6 +348,7 @@ function applyPlannerDraft(state) {
   selectedDmc = state.selectedDmc || orderedPathColors()[0]?.dmc || null;
   cutThreshold = normalizeCutThreshold(state.cutThreshold) || DEFAULT_CUT_THRESHOLD;
   pathStagnationLimitMs = normalizePathStagnationLimit(state.pathStagnationLimitMs) || DEFAULT_PATH_STAGNATION_LIMIT;
+  deepResetOnGain = state.deepResetOnGain === true;
   constraintsByDmc = state.constraintsByDmc || {};
   batchPlan = PathBatchPlan.normalize(state.batchPlan);
   pathOptimizationBaselinesByDmc = state.pathOptimizationBaselinesByDmc || {};
@@ -411,6 +416,7 @@ function renderPathTool() {
   renderPathHistory();
   cutThresholdInput.value = String(cutThreshold);
   pathStagnationLimit.value = String(pathStagnationLimitMs);
+  deepResetOnGainInput.checked = deepResetOnGain;
 
   pathStepButtons.forEach((button) => {
     const step = button.dataset.step;
@@ -883,6 +889,7 @@ function renderPathBuilder() {
   stopPathAlgorithmButton.classList.toggle("hidden", !activePathOptimizerWorker);
   stopPathAlgorithmButton.disabled = !activePathOptimizerWorker;
   pathStagnationLimit.disabled = pathAlgorithmRunning;
+  deepResetOnGainInput.disabled = pathAlgorithmRunning;
   cutThresholdInput.disabled = pathAlgorithmRunning;
 
   if (!loadedPattern || !selectedDmc) {
@@ -1835,6 +1842,7 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null, searchOptions
     return;
   }
   const deepTimed = deep && !batchJob && searchOptions.stopAfterInactivity !== true;
+  const resetBudgetOnImprovement = deepTimed && searchOptions.resetBudgetOnImprovement === true;
   const inactivityEngine = !deepTimed && !chains && !relayOnly;
   const budget = 3600000;
   try {
@@ -1945,11 +1953,12 @@ function startAdvancedPathSearch(mode = "normal", batchJob = null, searchOptions
     cutThreshold,
     stagnationLimitMs: pathStagnationLimitMs,
     ...(deepTimed ? { totalLimitMs: budget } : {}),
+    ...(resetBudgetOnImprovement ? { resetBudgetOnImprovement: true } : {}),
     ...(inactivityEngine ? { stopAfterInactivity: true } : {}),
     ...(chains ? { untilStable: true } : {}),
     constraints: constraintsByDmc[dmc] || {}
   });
-  if (deepTimed) {
+  if (deepTimed && !resetBudgetOnImprovement) {
     activePathOptimizerDeadlineTimer = setTimeout(() => {
       if (worker !== activePathOptimizerWorker) return;
       flushAdvancedPathSnapshot();
@@ -2227,7 +2236,7 @@ function updateAlgorithmLiveMetrics(snapshot) {
   pathAlgorithmRestarts.textContent = String(snapshot.restarts ?? 0);
   pathAlgorithmImprovements.textContent = String(snapshot.improvements ?? 0);
   pathAlgorithmLastImprovement.textContent = view.timed
-    ? formatAlgorithmTime(Math.max(0, (snapshot.totalLimitMs || 3600000) - (snapshot.elapsedMs || 0)))
+    ? formatAlgorithmTime(Math.max(0, snapshot.remainingMs ?? ((snapshot.totalLimitMs || 3600000) - (snapshot.elapsedMs || 0))))
     : `${formatAlgorithmTime(snapshot.lastImprovementMs || 0)} / ${formatAlgorithmTime(snapshot.stagnationLimitMs ?? pathStagnationLimitMs, true)}`;
   pathAlgorithmProgress.setAttribute("aria-valuetext", view.timed ? `${pathAlgorithmLastImprovement.textContent} restant`
     : view.searching ? pathAlgorithmLastImprovement.textContent : view.count || "Preparation en cours");
@@ -2258,7 +2267,12 @@ optimizedPathButton.addEventListener("click", () => {
 
 deepOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
-  startAdvancedPathSearch("deep");
+  startAdvancedPathSearch("deep", null, { resetBudgetOnImprovement: deepResetOnGain });
+});
+deepResetOnGainInput.addEventListener("change", () => {
+  if (pathAlgorithmRunning) return;
+  deepResetOnGain = deepResetOnGainInput.checked;
+  savePathPlannerState();
 });
 lnsOptimizeButton.addEventListener("click", () => {
   batchRunning = false;
@@ -2449,6 +2463,7 @@ resetPathToolButton.addEventListener("click", () => {
   batchRunning = false;
   cutThreshold = DEFAULT_CUT_THRESHOLD;
   pathStagnationLimitMs = DEFAULT_PATH_STAGNATION_LIMIT;
+  deepResetOnGain = false;
   pathOptimizationBaselinesByDmc = {};
   pathProgress = {
     load: false,

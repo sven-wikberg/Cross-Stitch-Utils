@@ -134,9 +134,11 @@
   function createDeepOptimizer(model, createBuilder, createBlock, createRelay, createLns, clock = () => performance.now(), random = Math.random) {
     const epsilon = 1e-8, builder = createBuilder(model, clock), lns = createLns(model, clock, random);
     function optimizePath(options, report = () => {}) {
-      const started = clock(), stopAfterInactivity = options.stopAfterInactivity === true;
-      const stagnationLimitMs = Math.max(1, Number(options.stagnationLimitMs) || 60000);
-      const totalLimitMs = stopAfterInactivity ? null : Math.min(3600000, Math.max(1, Number(options.totalLimitMs) || 3600000));
+      const started = clock(), resetBudgetOnImprovement = options.resetBudgetOnImprovement === true && options.stopAfterInactivity !== true;
+      const stopAfterInactivity = options.stopAfterInactivity === true || resetBudgetOnImprovement;
+      const timedBudget = Math.min(3600000, Math.max(1, Number(options.totalLimitMs) || 3600000));
+      const stagnationLimitMs = resetBudgetOnImprovement ? timedBudget : Math.max(1, Number(options.stagnationLimitMs) || 60000);
+      const totalLimitMs = stopAfterInactivity ? null : timedBudget;
       const budgetMs = stopAfterInactivity ? stagnationLimitMs : totalLimitMs;
       let deadline = stopAfterInactivity ? Infinity : started + budgetMs, preparing = stopAfterInactivity, searchStarted = null;
       const threshold = options.cutThreshold || 10, cells = options.points || [];
@@ -152,7 +154,7 @@
       let warm = {}, stage = "preparation", phase = "Preparation du parcours", reason = stopAfterInactivity ? "inactivity" : "time-limit";
       const stats = { iterations: 0, repairs: 0, improvements: 0, diversifications: 0, size: 0, kind: "", attempts: 0 };
       function timing(now) {
-        return { stopAfterInactivity, preparing, preparationMs: (searchStarted ?? now) - started,
+        return { stopAfterInactivity, resetBudgetOnImprovement, preparing, preparationMs: (searchStarted ?? now) - started,
           stagnationLimitMs, lastImprovementMs: preparing ? 0 : now - lastImprovement,
           remainingMs: preparing ? stagnationLimitMs : Math.max(0, deadline - now),
           progress: stage === "complete" ? 100 : preparing ? 0 : Math.min(100, (now - (stopAfterInactivity ? lastImprovement : started)) / budgetMs * 100) };

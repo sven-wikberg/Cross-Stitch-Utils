@@ -27,7 +27,8 @@ async function run() {
       worker.addEventListener("message", event => {
         const s = event.data;
         deepReports.push({ type: s.type, stage: s.stage, metrics: s.metrics, lns: s.lns, totalLimitMs: s.totalLimitMs,
-          elapsedMs: s.elapsedMs, stopAfterInactivity: s.stopAfterInactivity, lastImprovementMs: s.lastImprovementMs });
+          elapsedMs: s.elapsedMs, stopAfterInactivity: s.stopAfterInactivity, lastImprovementMs: s.lastImprovementMs,
+          resetBudgetOnImprovement: s.resetBudgetOnImprovement, remainingMs: s.remainingMs, preparing: s.preparing });
       });
       return worker;
     };
@@ -40,10 +41,13 @@ async function run() {
     await page.waitForFunction(() => loadedPattern?.project.name === "Recherche approfondie");
     const initial = await page.evaluate(() => currentPath());
     const initialScore = model.metrics(initial, 3, true).score;
+    assert.equal(await page.locator("#deepResetOnGain").isChecked(), false);
     await instrument();
     await page.locator("#deepOptimizeButton").click();
     await page.waitForFunction(() => activePathOptimizerSnapshot?.lns?.improvements > 0);
     assert.equal(await page.evaluate(() => deepPosted[0].totalLimitMs), 3600000);
+    assert.equal(await page.evaluate(() => deepPosted[0].resetBudgetOnImprovement), undefined);
+    assert.notEqual(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
     assert.ok(await page.locator("#optimizedPathButton").isDisabled());
     assert.ok(await page.locator("#deepOptimizeButton").isDisabled());
     assert.ok(await page.locator("#lnsOptimizeButton").isDisabled());
@@ -108,8 +112,41 @@ async function run() {
     await page.waitForFunction(() => !pathAlgorithmRunning);
     assert.equal(await page.evaluate(() => normalPosted.totalLimitMs), undefined);
     assert.equal(await page.locator("#pathLnsMetrics").isVisible(), false);
+    await page.locator("#deepResetOnGain").check();
+    await page.evaluate(() => plannerSaveQueue); await page.reload();
+    await page.waitForFunction(() => !document.querySelector("main").inert);
+    await page.locator('[data-step="paths"]').click();
+    assert.equal(await page.locator("#deepResetOnGain").isChecked(), true);
+    await instrument(); await page.evaluate(() => { deepTestBudget = 3000; });
+    const fresh = structuredClone(data);
+    fresh.project.name = fresh.pattern.project.name = "Recherche renouvelable";
+    await page.locator("#patternJsonFile").setInputFiles({ name: "renewable.paths.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fresh)) });
+    await page.waitForFunction(() => loadedPattern?.project.name === "Recherche renouvelable");
+    await page.locator("#deepOptimizeButton").click();
+    await page.waitForFunction(() => activePathOptimizerSnapshot?.resetBudgetOnImprovement && activePathOptimizerSnapshot?.lns?.improvements > 0);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).resetBudgetOnImprovement), true);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).totalLimitMs), 3600000);
+    assert.equal(await page.evaluate(() => activePathOptimizerDeadlineTimer), null);
+    assert.ok(await page.locator("#deepResetOnGain").isDisabled());
+    assert.equal(await page.locator("#pathAlgorithmClockLabel").textContent(), "Temps restant");
+    assert.equal(await page.locator("#pathAlgorithmProgress").getAttribute("max"), "3000");
+    assert.ok(await page.evaluate(() => deepReports.some(s => s.resetBudgetOnImprovement && s.lns?.improvements > 0 && s.remainingMs > 2500)));
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.screenshot({ path: path.join(output, "planner-deep-renewable-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.screenshot({ path: path.join(output, "planner-deep-renewable-mobile.png"), fullPage: true });
+    await page.waitForFunction(() => !pathAlgorithmRunning && deepReports.at(-1)?.type === "complete");
+    assert.ok(await page.evaluate(() => deepReports.at(-1).lastImprovementMs >= 3000));
+    assert.equal(await page.evaluate(() => deepReports.at(-1).remainingMs), 0);
+    assert.equal(model.validateRoute(await page.evaluate(() => currentPath()), points), "");
+    await page.locator("#lnsOptimizeButton").click();
+    await page.waitForFunction(() => deepPosted.at(-1)?.stopAfterInactivity === true);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).resetBudgetOnImprovement), undefined);
+    assert.equal(await page.evaluate(() => deepPosted.at(-1).stagnationLimitMs), 60000);
+    await page.waitForFunction(() => !pathAlgorithmRunning);
     assert.deepEqual(errors, []);
-    console.log("deep planner passed: separate one-hour and inactivity M6, real LNS gains, highlights, timers, stop, best retention, undo/redo, reload and shared attribution");
+    console.log("deep planner passed: fixed/renewable one-hour modes, independent automatic M6, real gains, countdown, stop, best, undo/redo, persistence, desktop/mobile");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -218,3 +218,54 @@ test("M6 inactivity feedback uses the shared timer instead of the one-hour count
   assert.ok(view.searching && view.active && !view.timed);
   assert.equal(view.max, 60000); assert.equal(view.value, 20000);
 });
+
+test("renewable deep budget resets only on accepted global gains and has no fixed total deadline", () => {
+  const points = require("./fixtures/combined-search.js").timerRecovery;
+  const initialPath = model.expandCells(points, 3), reports = []; let now = 0;
+  const before = JSON.stringify(initialPath), budget = 1000;
+  const result = engine(() => ++now).optimizePath({ points, initialPath, cutThreshold: 3, warmupMs: 0,
+    resetBudgetOnImprovement: true, totalLimitMs: budget, stagnationLimitMs: 1 }, s => reports.push(s));
+  let score = model.metrics(initialPath, 3, true).score, deadline = null, gains = 0;
+  for (const s of reports) {
+    assert.equal(s.resetBudgetOnImprovement, true); assert.equal(s.stopAfterInactivity, true);
+    assert.equal(s.totalLimitMs, null); assert.equal(s.stagnationLimitMs, budget);
+    if (s.preparing) { assert.equal(s.remainingMs, budget); continue; }
+    const gainAt = s.elapsedMs - s.lastImprovementMs;
+    if (deadline === null) deadline = gainAt + budget;
+    else if (s.metrics.score < score - 1e-8) {
+      assert.ok(gainAt + budget > deadline); deadline = gainAt + budget; gains++;
+      assert.ok(s.remainingMs >= budget - 10);
+    } else assert.equal(gainAt + budget, deadline, "ties, repairs and diversification cannot renew the budget");
+    assert.equal(s.remainingMs, Math.max(0, deadline - s.elapsedMs));
+    if (s.path) assert.equal(model.validateRoute(s.path, points), "");
+    score = s.metrics.score;
+  }
+  assert.ok(gains > 1); assert.ok(result.elapsedMs > budget);
+  assert.ok(result.lastImprovementMs >= budget); assert.equal(result.remainingMs, 0);
+  assert.equal(result.reason, "inactivity"); assert.equal(JSON.stringify(initialPath), before);
+});
+
+test("renewable deep mode defaults to one hour, independently of the common engine timer", () => {
+  const points = [{ x: 0, y: 0 }, { x: 7, y: 3 }], initialPath = model.expandCells(points, 10);
+  let now = 0;
+  const result = engine(() => now += 100000).optimizePath({ points, initialPath, warmupMs: 0,
+    resetBudgetOnImprovement: true, stagnationLimitMs: 10000 });
+  assert.equal(result.stagnationLimitMs, 3600000); assert.equal(result.totalLimitMs, null);
+  assert.equal(result.resetBudgetOnImprovement, true); assert.equal(result.stopAfterInactivity, true);
+  assert.ok(result.elapsedMs - result.preparationMs >= 3600000);
+  const normal = engine(() => ++now).optimizePath({ points, initialPath, warmupMs: 0,
+    resetBudgetOnImprovement: true, stopAfterInactivity: true, stagnationLimitMs: 100 });
+  assert.equal(normal.resetBudgetOnImprovement, false); assert.equal(normal.stagnationLimitMs, 100);
+});
+
+test("renewable countdown uses the current remaining budget even after more than one hour", () => {
+  const visuals = createPathVisuals(model, createOrthogonalPathBuilder(model));
+  const snapshot = { method: "deep-optimization", stage: "lns", stopAfterInactivity: true,
+    resetBudgetOnImprovement: true, totalLimitMs: null, stagnationLimitMs: 3600000,
+    elapsedMs: 7200000, lastImprovementMs: 250, remainingMs: 3599750 };
+  const view = visuals.searchPresentation(snapshot, true);
+  assert.ok(view.timed && !view.searching); assert.equal(view.max, 3600000);
+  assert.equal(view.value, 250); assert.equal(view.label, "Temps restant");
+  const preparing = visuals.searchPresentation({ ...snapshot, preparing: true, stage: "preparation" }, true);
+  assert.ok(preparing.preparing && !preparing.timed); assert.equal(preparing.label, "Preparation");
+});
