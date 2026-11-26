@@ -104,6 +104,11 @@ const pathExportStatus = document.querySelector("#pathExportStatus");
 const pathExportColorsText = document.querySelector("#pathExportColorsText");
 const pathExportPathsText = document.querySelector("#pathExportPathsText");
 const pathExportPointsText = document.querySelector("#pathExportPointsText");
+const threadEstimatePanel = document.querySelector("#threadEstimate");
+const threadCapacityInput = document.querySelector("#threadCapacityInput");
+const threadCapacityError = document.querySelector("#threadCapacityError");
+const threadEstimateRows = document.querySelector("#threadEstimateRows");
+const threadEstimateTotals = document.querySelector("#threadEstimateTotals");
 const backToPathsButton = document.querySelector("#backToPathsButton");
 const downloadPathJsonButton = document.querySelector("#downloadPathJsonButton");
 const pathPerformancePanel = document.querySelector("#pathPerformancePanel");
@@ -148,6 +153,10 @@ const pathColorCountsCache = new WeakMap();
 const OPTIMIZER_PREVIEW_INTERVAL_MS = 750;
 const WORK_COLOR_STORAGE_KEY = "cross-stitch-path-work-color";
 const FOLLOW_GAINS_STORAGE_KEY = "cross-stitch-path-follow-gains";
+const THREAD_CAPACITY_STORAGE_KEY = "cross-stitch-path-thread-capacity";
+let threadCapacity = ThreadEstimate.normalizeCapacity(localStorage.getItem(THREAD_CAPACITY_STORAGE_KEY))
+  || ThreadEstimate.DEFAULT_DIAGONALS_PER_STRAND;
+threadCapacityInput.value = String(threadCapacity);
 let followPathGains = localStorage.getItem(FOLLOW_GAINS_STORAGE_KEY) === "true", followedPathImprovement = null;
 pathFollowGains.checked = followPathGains;
 let workColor = PathVisuals.workPalette(localStorage.getItem(WORK_COLOR_STORAGE_KEY)).color;
@@ -1015,6 +1024,45 @@ function renderPathExport() {
     ? "JSON des chemins pret."
     : "Complete tous les chemins avant l'export.";
   downloadPathJsonButton.disabled = !ready;
+  threadEstimatePanel.classList.toggle("hidden", !ready);
+  if (ready && activePathStep === "export") renderThreadEstimate();
+}
+
+function renderThreadEstimate() {
+  const fields = ["diagonals", "cuts", "strands", "pieces", "skeins"];
+  const totals = Object.fromEntries(fields.map(field => [field, 0]));
+  const rows = document.createDocumentFragment();
+  const format = value => value.toLocaleString("fr-FR");
+  const appendCounts = (row, counts) => {
+    for (const field of fields) {
+      const cell = document.createElement("td");
+      cell.dataset.quantity = field;
+      cell.textContent = format(counts[field]);
+      row.appendChild(cell);
+    }
+  };
+  for (const color of orderedPathColors()) {
+    const counts = ThreadEstimate.estimate(pathsByDmc[color.dmc] || [], threadCapacity, cutThreshold);
+    const row = document.createElement("tr"), label = document.createElement("th");
+    row.dataset.dmc = color.dmc;
+    label.scope = "row";
+    const swatch = document.createElement("span");
+    swatch.className = "color-swatch";
+    swatch.style.backgroundColor = DmcPalette.hex(color);
+    swatch.setAttribute("aria-hidden", "true");
+    label.append(swatch, document.createTextNode(`DMC ${color.dmc}`));
+    row.appendChild(label);
+    appendCounts(row, counts);
+    rows.appendChild(row);
+    for (const field of fields) totals[field] += counts[field];
+  }
+  threadEstimateRows.replaceChildren(rows);
+  const totalRow = document.createElement("tr"), totalLabel = document.createElement("th");
+  totalLabel.scope = "row";
+  totalLabel.textContent = "Total";
+  totalRow.appendChild(totalLabel);
+  appendCounts(totalRow, totals);
+  threadEstimateTotals.replaceChildren(totalRow);
 }
 
 function mutedHex(hex) {
@@ -2399,6 +2447,18 @@ savePathAndNextButton.addEventListener("click", () => {
 
 backToPathsButton.addEventListener("click", () => {
   goToPathStep("paths");
+});
+
+threadCapacityInput.addEventListener("input", () => {
+  const capacity = ThreadEstimate.normalizeCapacity(threadCapacityInput.value);
+  threadCapacityInput.setAttribute("aria-invalid", String(!capacity));
+  threadCapacityError.hidden = Boolean(capacity);
+  threadCapacityError.textContent = capacity ? "" : "Nombre entier superieur ou egal a 1 requis. Estimation inchangee.";
+  if (!capacity) return;
+  threadCapacity = capacity;
+  try { localStorage.setItem(THREAD_CAPACITY_STORAGE_KEY, String(capacity)); }
+  catch { /* The estimate remains available when browser storage is full. */ }
+  if (loadedPattern && activePathStep === "export") renderThreadEstimate();
 });
 
 downloadPathJsonButton.addEventListener("click", () => {

@@ -392,6 +392,33 @@
             </div>
           </div>
 
+          <section id="threadEstimate" class="thread-estimate hidden" aria-labelledby="thread-estimate-title">
+            <div class="thread-estimate-heading">
+              <div>
+                <h4 id="thread-estimate-title">Fil necessaire (estimation)</h4>
+                <p>1 brin par bout &middot; 50 cm par morceau &middot; 6 brins par morceau &middot; 8 m par echevette</p>
+              </div>
+              <label for="threadCapacityInput">Diagonales par bout
+                <input id="threadCapacityInput" type="number" min="1" step="1" value="45" aria-describedby="threadCapacityError">
+              </label>
+            </div>
+            <p id="threadCapacityError" class="error-message" role="alert" hidden></p>
+            <div class="thread-estimate-scroll" tabindex="0" role="region" aria-label="Quantites de fil par couleur">
+              <table class="thread-estimate-table">
+                <thead><tr>
+                  <th scope="col">Couleur</th>
+                  <th scope="col">Diagonales</th>
+                  <th scope="col">Coupes</th>
+                  <th scope="col">Bouts<br><small>1 brin</small></th>
+                  <th scope="col">Morceaux min.<br><small>50 cm, 6 brins</small></th>
+                  <th scope="col">Echevettes min.<br><small>8 m</small></th>
+                </tr></thead>
+                <tbody id="threadEstimateRows"></tbody>
+                <tfoot id="threadEstimateTotals" aria-live="polite"></tfoot>
+              </table>
+            </div>
+          </section>
+
           <div class="actions split-actions">
             <button id="backToPathsButton" class="secondary-button" type="button">Retour</button>
             <button id="downloadPathJsonButton" class="primary-button" type="button">Telecharger le JSON des chemins</button>
@@ -403,6 +430,7 @@
     <script src="data/dmc-colors.js"></script>
     <script src="src/dmc-palette.js"></script>
     <script src="src/stitch-model.js"></script>
+    <script src="src/thread-estimate.js"></script>
     <script src="src/orthogonal-path-worker.js"></script>
     <script src="src/relay-search.js"></script>
     <script src="src/relay-optimizer-worker.js"></script>
