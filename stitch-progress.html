@@ -247,6 +247,33 @@
               </div>
             </div>
           </div>
+          <section id="remainingThreadEstimate" class="thread-estimate" aria-labelledby="remaining-thread-title">
+            <div class="thread-estimate-heading">
+              <div>
+                <h3 id="remaining-thread-title">Fil restant (estimation)</h3>
+                <p>1 brin par bout &middot; 50 cm par morceau &middot; 6 brins par morceau</p>
+              </div>
+              <label for="remainingThreadCapacityInput">Diagonales par bout
+                <input id="remainingThreadCapacityInput" type="number" min="1" step="1" value="45" aria-describedby="remainingThreadCapacityError">
+              </label>
+            </div>
+            <p id="remainingThreadCapacityError" class="form-error" role="alert" hidden></p>
+            <div class="thread-estimate-scroll" tabindex="0" role="region" aria-label="Fil restant par couleur">
+              <table class="thread-estimate-table">
+                <thead><tr>
+                  <th scope="col">Couleur</th>
+                  <th scope="col">Diagonales<br><small>restantes</small></th>
+                  <th scope="col">Coupes<br><small>restantes</small></th>
+                  <th scope="col">Bout en cours<br><small>diagonales disponibles</small></th>
+                  <th scope="col">Bouts neufs<br><small>1 brin</small></th>
+                  <th scope="col">Morceaux min.<br><small>50 cm, 6 brins</small></th>
+                </tr></thead>
+                <tbody id="remainingThreadRows"></tbody>
+                <tfoot id="remainingThreadTotals"></tfoot>
+              </table>
+            </div>
+            <p id="remainingThreadNote" class="empty-message" hidden></p>
+          </section>
           <section class="stitch-statistics" aria-labelledby="stitch-statistics-title">
             <h3 id="stitch-statistics-title">Journal de broderie</h3>
             <p id="stitchStatsSince" class="empty-message"></p>
@@ -283,6 +310,7 @@
     <script src="src/progress-store.js"></script>
     <script src="src/path-settings.js"></script>
     <script src="src/stitch-model.js"></script>
+    <script src="src/thread-estimate.js"></script>
     <script src="src/stitch-stats.js"></script>
     <script src="src/stitch-stats-view.js"></script>
     <script src="src/color-order.js"></script>

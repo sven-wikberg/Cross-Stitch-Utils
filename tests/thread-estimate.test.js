@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const model = require("../src/stitch-model.js");
-const { estimate, normalizeCapacity } = require("../src/thread-estimate.js");
+const { estimate, normalizeCapacity, createRemainingEstimator } = require("../src/thread-estimate.js");
 
 function route(length) {
   return model.expandCells(Array.from({ length: Math.ceil(length / 2) }, (_, x) => ({ x, y: 0 }))).slice(0, length);
@@ -52,4 +52,39 @@ for (const bad of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "", n
 }
 assert.equal(normalizeCapacity("47"), 47);
 assert.throws(() => estimate([], 45, 0), RangeError);
-console.log("Thread estimates passed: capacity, cuts, hole distances, rounding, empty and large routes, validation, no mutation.");
+const current = (start, partial = false) => ({ start, end: null, partial });
+const remainingPath = route(100);
+remainingPath[30].cutBefore = true;
+const remainingBefore = structuredClone(remainingPath), index = createRemainingEstimator(remainingPath);
+assert.deepEqual(index.at(10, current(0)), { diagonals: 90, cuts: 1, currentDiagonals: 20, strands: 2, pieces: 1, uncertainCurrent: false });
+assert.deepEqual(index.at(30, current(0)), { diagonals: 70, cuts: 1, currentDiagonals: 0, strands: 2, pieces: 1, uncertainCurrent: false });
+assert.deepEqual(index.at(31, current(30)), { diagonals: 69, cuts: 0, currentDiagonals: 44, strands: 1, pieces: 1, uncertainCurrent: false });
+assert.deepEqual(index.at(31, current(0)), { diagonals: 69, cuts: 0, currentDiagonals: 0, strands: 2, pieces: 1, uncertainCurrent: true });
+assert.equal(index.at(31, current(30, true)).currentDiagonals, 0, "Unknown starting length is never credited");
+assert.equal(index.at(31, current(30, true)).uncertainCurrent, true);
+assert.equal(index.at(31, { start: 30, end: 31, partial: false }).currentDiagonals, 0, "A finished thread is not reused");
+assert.equal(index.at(80, current(30)).currentDiagonals, 0, "An exhausted thread is not reused");
+assert.equal(index.at(95, current(90)).currentDiagonals, 5, "Useful capacity is capped by remaining diagonals");
+assert.equal(index.at(95, current(90)).strands, 0);
+assert.deepEqual(index.at(100, current(90)), { diagonals: 0, cuts: 0, currentDiagonals: 0, strands: 0, pieces: 0, uncertainCurrent: false });
+assert.deepEqual(createRemainingEstimator([]).at(0), index.at(100));
+assert.deepEqual(remainingPath, remainingBefore);
+for (const bad of [-1, 101, 0.5, NaN]) assert.throws(() => index.at(bad), RangeError);
+assert.throws(() => createRemainingEstimator([], 0), RangeError);
+assert.throws(() => createRemainingEstimator([], 45, 0), RangeError);
+
+for (const capacity of [1, 6, 45, 47, 100]) {
+  const indexed = createRemainingEstimator(remainingPath, capacity);
+  for (let count = 0; count <= remainingPath.length; count++) {
+    const expected = estimate(remainingPath.slice(count), capacity), actual = indexed.at(count);
+    for (const field of ["diagonals", "strands", "pieces"]) assert.equal(actual[field], expected[field]);
+    assert.equal(actual.cuts, expected.cuts + Number(count === 30), "Include a cut immediately before the next diagonal");
+  }
+}
+const largeIndex = createRemainingEstimator(route(40000));
+const originalDistance = model.distance;
+try {
+  model.distance = () => { throw new Error("Query should not rescan path distances"); };
+  for (let count = 0; count <= 40000; count++) assert.equal(largeIndex.at(count).diagonals, 40000 - count);
+} finally { model.distance = originalDistance; }
+console.log("Thread estimates passed: capacity, cuts, hole distances, rounding, progress, current/partial/exhausted threads, indexed large routes, validation, no mutation.");

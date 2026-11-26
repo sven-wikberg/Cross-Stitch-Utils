@@ -84,6 +84,16 @@ const markUntilToggle = document.querySelector("#markUntilToggle");
 const threadMarkersToggle = document.querySelector("#threadMarkersToggle");
 const changeThreadButton = document.querySelector("#changeThreadButton");
 const activityProgressPanel = document.querySelector("#activityProgressPanel");
+const remainingThreadCapacityInput = document.querySelector("#remainingThreadCapacityInput");
+const remainingThreadCapacityError = document.querySelector("#remainingThreadCapacityError");
+const remainingThreadRows = document.querySelector("#remainingThreadRows");
+const remainingThreadTotals = document.querySelector("#remainingThreadTotals");
+const remainingThreadNote = document.querySelector("#remainingThreadNote");
+const PROGRESS_THREAD_CAPACITY_KEY = "cross-stitch-progress-thread-capacity";
+let remainingThreadCapacity = ThreadEstimate.normalizeCapacity(localStorage.getItem(PROGRESS_THREAD_CAPACITY_KEY))
+  || ThreadEstimate.DEFAULT_DIAGONALS_PER_STRAND;
+remainingThreadCapacityInput.value = String(remainingThreadCapacity);
+const remainingThreadCache = new WeakMap();
 let threadMarkerHits = [];
 let stitchStatsRevision = 0;
 let localSaveQueue = Promise.resolve();
@@ -246,12 +256,75 @@ function renderProgressTool() {
   renderZoomControls();
   renderProgressMetrics();
   StitchStatsView.render(stitchStats, loadedPaths, stitchedByDmc, selectedDmc, stitchStatsRevision);
+  if (showProgressPanels) renderRemainingThreads();
   document.querySelector("#sessionModeButton").textContent = sessionMode ? "Vue d'ensemble" : "Vue rapprochee";
   document.querySelector("#sessionModeButton").setAttribute("aria-pressed", String(sessionMode));
   undoActionButton.disabled = undoActions.length === 0;
   redoActionButton.disabled = redoActions.length === 0;
   renderCutNotice();
 }
+
+function renderRemainingThreads() {
+  const fields = ["diagonals", "cuts", "currentDiagonals", "strands", "pieces"];
+  const totals = Object.fromEntries(fields.map(field => [field, 0]));
+  const threshold = loadedPaths.settings?.cutThreshold || REALISTIC_JUMP_THRESHOLD;
+  const colors = new Map(loadedPaths.pattern.colors.map(color => [color.dmc, color]));
+  const rows = document.createDocumentFragment(), uncertain = [];
+  const appendCounts = (row, counts) => {
+    for (const field of fields) {
+      const cell = document.createElement("td");
+      cell.dataset.quantity = field;
+      cell.textContent = counts[field].toLocaleString("fr-FR");
+      row.appendChild(cell);
+    }
+  };
+  for (const path of orderedStitchPaths()) {
+    let cached = remainingThreadCache.get(path.points);
+    if (!cached || cached.capacity !== remainingThreadCapacity || cached.threshold !== threshold) {
+      cached = { capacity: remainingThreadCapacity, threshold,
+        estimator: ThreadEstimate.createRemainingEstimator(path.points, remainingThreadCapacity, threshold) };
+      remainingThreadCache.set(path.points, cached);
+    }
+    const counts = cached.estimator.at(stitchedCountForDmc(path.dmc), StitchStats.currentThread(stitchStats, path.dmc));
+    const row = document.createElement("tr"), label = document.createElement("th");
+    row.dataset.dmc = path.dmc;
+    row.classList.toggle("selected-thread-color", path.dmc === selectedDmc);
+    row.classList.toggle("completed-thread-color", counts.diagonals === 0);
+    label.scope = "row";
+    const swatch = document.createElement("span");
+    swatch.className = "color-swatch";
+    swatch.style.backgroundColor = DmcPalette.hex(colors.get(path.dmc));
+    swatch.setAttribute("aria-hidden", "true");
+    label.append(swatch, document.createTextNode(`DMC ${path.dmc}`));
+    row.appendChild(label);
+    appendCounts(row, counts);
+    rows.appendChild(row);
+    if (counts.uncertainCurrent) uncertain.push(`DMC ${path.dmc}`);
+    for (const field of fields) totals[field] += counts[field];
+  }
+  remainingThreadRows.replaceChildren(rows);
+  const totalRow = document.createElement("tr"), totalLabel = document.createElement("th");
+  totalLabel.scope = "row";
+  totalLabel.textContent = "Total";
+  totalRow.appendChild(totalLabel);
+  appendCounts(totalRow, totals);
+  remainingThreadTotals.replaceChildren(totalRow);
+  remainingThreadNote.hidden = uncertain.length === 0;
+  remainingThreadNote.textContent = uncertain.length
+    ? `Reserve du bout en cours non deduite (${uncertain.join(", ")}) : debut inconnu ou coupe deja franchie.` : "";
+}
+
+remainingThreadCapacityInput.addEventListener("input", () => {
+  const capacity = ThreadEstimate.normalizeCapacity(remainingThreadCapacityInput.value);
+  remainingThreadCapacityInput.setAttribute("aria-invalid", String(!capacity));
+  remainingThreadCapacityError.hidden = Boolean(capacity);
+  remainingThreadCapacityError.textContent = capacity ? "" : "Nombre entier superieur ou egal a 1 requis. Estimation inchangee.";
+  if (!capacity) return;
+  remainingThreadCapacity = capacity;
+  try { localStorage.setItem(PROGRESS_THREAD_CAPACITY_KEY, String(capacity)); }
+  catch { /* Keep estimating even when browser storage is full. */ }
+  if (loadedPaths && activeProgressStep === "stitch") renderRemainingThreads();
+});
 
 function renderLoadedPaths() {
   if (!loadedPaths) {

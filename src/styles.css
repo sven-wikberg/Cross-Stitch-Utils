@@ -1147,7 +1147,7 @@ select:focus {
 
 .thread-estimate { min-width: 0; border-top: 1px solid var(--line); padding-top: 20px; }
 .thread-estimate-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.thread-estimate-heading h4 { margin: 0 0 8px; font-size: 1rem; }
+.thread-estimate-heading h3, .thread-estimate-heading h4 { margin: 0 0 8px; font-size: 1rem; }
 .thread-estimate-heading p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.6; }
 .thread-estimate-heading label { flex: 0 1 180px; font-size: 0.8rem; }
 #threadCapacityError { color: #8b2633; font-size: 0.8rem; }
@@ -1159,6 +1159,8 @@ select:focus {
 .thread-estimate-table small { font-size: 0.72rem; font-weight: 500; }
 .thread-estimate-table .color-swatch { display: inline-block; width: 18px; height: 18px; margin-right: 8px; vertical-align: middle; }
 .thread-estimate-table tfoot { font-weight: 800; background: #f2f5f5; }
+.thread-estimate-table .selected-thread-color { background: #edf6f5; }
+.thread-estimate-table .completed-thread-color { color: var(--muted); }
 
 .clipboard-drop-zone {
   display: grid;
