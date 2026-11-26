@@ -73,6 +73,23 @@
           </div>
         </div>
 
+        <details id="aiImportPromptPanel" class="ai-import-prompt">
+          <summary>Conversion PDF avec une IA</summary>
+          <div class="ai-prompt-toolbar">
+            <label for="aiImportPrompt">Prompt PDF vers JSON</label>
+            <div>
+              <button id="copyAiImportPrompt" class="icon-button" type="button" title="Copier le prompt" aria-label="Copier le prompt">
+                <img src="assets/icons/copy.svg" alt="" width="20" height="20">
+              </button>
+              <button id="downloadAiImportPrompt" class="icon-button" type="button" title="Telecharger le prompt (.txt)" aria-label="Telecharger le prompt (.txt)">
+                <img src="assets/icons/download.svg" alt="" width="20" height="20">
+              </button>
+            </div>
+          </div>
+          <textarea id="aiImportPrompt" readonly spellcheck="false" rows="12"></textarea>
+          <p id="aiImportPromptStatus" class="empty-message" role="status"></p>
+        </details>
+
         <form id="projectForm" class="tool-panel" data-panel="project">
           <label for="projectName">Nom</label>
           <input id="projectName" name="projectName" type="text" autocomplete="off" required>
@@ -532,6 +549,8 @@
     </main>
 
     <script src="data/dmc-colors.js"></script>
+    <script src="src/ai-import-prompt.js"></script>
+    <script src="src/ai-import-prompt-ui.js"></script>
     <script src="src/group-operations.js"></script>
     <script src="src/color-order.js"></script>
     <script src="src/app.js"></script>

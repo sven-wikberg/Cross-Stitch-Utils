@@ -1,4 +1,5 @@
 Icons from https://github.com/lucide-icons/lucide (retrieved 2026-11-18).
+Copy and download icons retrieved 2026-11-26 from the same source.
 
 ISC License
 

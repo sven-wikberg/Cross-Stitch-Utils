@@ -1145,6 +1145,17 @@ select:focus {
   font-size: 1.35rem;
 }
 
+.ai-import-prompt { min-width: 0; padding-block: 12px; border-block: 1px solid var(--line); }
+.ai-import-prompt > summary { cursor: pointer; font-weight: 700; font-size: 0.9rem; }
+.ai-import-prompt > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.ai-prompt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 8px; }
+.ai-prompt-toolbar label { font-size: 0.85rem; }
+.ai-prompt-toolbar > div { display: flex; gap: 8px; flex-shrink: 0; }
+.ai-prompt-toolbar button { display: grid; place-items: center; width: 40px; height: 40px; }
+#aiImportPrompt { display: block; width: 100%; min-width: 0; height: 320px; min-height: 160px; max-height: 70vh; resize: vertical; padding: 14px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); font: 0.8rem/1.6 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+#aiImportPrompt:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+#aiImportPromptStatus { min-height: 1.4em; margin: 8px 0 0; }
+
 .thread-estimate { min-width: 0; border-top: 1px solid var(--line); padding-top: 20px; }
 .thread-estimate-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .thread-estimate-heading h3, .thread-estimate-heading h4 { margin: 0 0 8px; font-size: 1rem; }
